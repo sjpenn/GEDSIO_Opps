@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from typing import List, Optional
 from datetime import datetime
 import httpx
 import logging
+import math
 
 from fedops_api.deps import get_db
 from fedops_core.db.models import Opportunity as OpportunityModel, OpportunityComment as OpportunityCommentModel
@@ -66,6 +67,8 @@ async def list_opportunities(
     setAside: Optional[str] = Query(None, description="Set Aside Code"),
     db: AsyncSession = Depends(get_db)
 ):
+    logger.info(f"list_opportunities called with skip={skip}, limit={limit}")
+    
     # If SAM.gov parameters are provided, fetch from external API
     if postedFrom and settings.SAM_API_KEY:
         try:
@@ -115,7 +118,7 @@ async def list_opportunities(
                     result = await db.execute(stmt)
                     existing_opp = result.scalar_one_or_none()
                     
-                    logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
+                    # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
 
                     opp_dict = {
                         "notice_id": notice_id,
@@ -160,13 +163,14 @@ async def list_opportunities(
                 
         except Exception as e:
             logger.error(f"Error fetching from SAM.gov: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            # import traceback
+            # logger.error(traceback.format_exc())
             # Fallback to local DB if API fails or just log error
             pass
 
     # Return from local DB (which is now updated)
     try:
+        logger.info("Querying local DB for opportunities")
         # Build query with filters
         query = select(OpportunityModel)
         
@@ -177,7 +181,6 @@ async def list_opportunities(
             query = query.where(OpportunityModel.type_of_set_aside.ilike(f"%{setAside}%"))
             
         if keywords:
-            from sqlalchemy import or_
             search_term = f"%{keywords}%"
             query = query.where(
                 or_(
@@ -191,26 +194,29 @@ async def list_opportunities(
 
         # Calculate total count for pagination
         count_stmt = select(func.count()).select_from(query.subquery())
+        logger.info("Executing count query")
         count_result = await db.execute(count_stmt)
         total = count_result.scalar_one()
+        logger.info(f"Count result: {total}")
 
         # Calculate total pages
-        import math
         total_pages = math.ceil(total / limit) if limit > 0 else 0
         current_page = (skip // limit) + 1 if limit > 0 else 1
 
         # Apply sorting and pagination
         query = query.order_by(OpportunityModel.posted_date.desc()).offset(skip).limit(limit)
+        logger.info("Executing main query")
         result = await db.execute(query)
         opportunities = result.scalars().all()
+        logger.info(f"Main query returned {len(opportunities)} items")
         
-        return {
-            "items": opportunities,
-            "total": total,
-            "page": current_page,
-            "limit": limit,
-            "pages": total_pages
-        }
+        return PaginatedResponse(
+            items=opportunities,
+            total=total,
+            page=current_page,
+            limit=limit,
+            pages=total_pages
+        )
     except Exception as e:
         logger.error(f"Error querying local DB: {e}")
         import traceback

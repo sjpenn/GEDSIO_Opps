@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
+import { AgentControlPanel } from '@/components/AgentControlPanel'
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -523,6 +524,11 @@ export default function OpportunitiesPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Agentic Analysis Panel */}
+              <div className="border-t border-border pt-6 mt-6">
+                <AgentControlPanel opportunityId={selectedOpp.id} />
               </div>
 
               {/* Comments Section */}

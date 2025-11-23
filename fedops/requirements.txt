@@ -17,3 +17,4 @@ pdfplumber
 Pillow
 openai
 google-generativeai
+pytesseract

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ARRAY, Text, ForeignKey, Float, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, JSON, ARRAY, Date
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from fedops_core.db.engine import Base
 from datetime import datetime
@@ -39,6 +40,10 @@ class Opportunity(Base):
     resource_files = Column(JSONB, nullable=True) # Store resolved filenames: [{url, filename}]
     
     full_response = Column(JSONB, nullable=True) # Store the complete raw response
+    
+    # Agentic Pipeline Fields
+    compliance_status = Column(String, default="PENDING") # PENDING, COMPLIANT, NON_COMPLIANT
+    risk_score = Column(Float, nullable=True) # Overall risk score
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -108,3 +113,64 @@ class OpportunityComment(Base):
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class AgentActivityLog(Base):
+    __tablename__ = "agent_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, index=True)
+    agent_name = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    details = Column(JSONB, nullable=True)
+    status = Column(String, nullable=False) # SUCCESS, FAILURE, IN_PROGRESS
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+class OpportunityScore(Base):
+    __tablename__ = "opportunity_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, unique=True)
+    
+    # Scores
+    strategic_alignment_score = Column(Float, default=0.0)
+    financial_viability_score = Column(Float, default=0.0)
+    contract_risk_score = Column(Float, default=0.0)
+    internal_capacity_score = Column(Float, default=0.0)
+    data_integrity_score = Column(Float, default=0.0)
+    
+    weighted_score = Column(Float, default=0.0)
+    go_no_go_decision = Column(String, nullable=True) # GO, NO_GO, REVIEW
+    
+    details = Column(JSONB, nullable=True) # Breakdown of scoring factors
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Proposal(Base):
+    __tablename__ = "proposals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, index=True)
+    
+    version = Column(Integer, default=1)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    volumes = relationship("ProposalVolume", back_populates="proposal", cascade="all, delete-orphan")
+
+class ProposalVolume(Base):
+    __tablename__ = "proposal_volumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proposal_id = Column(Integer, ForeignKey("proposals.id"), nullable=False, index=True)
+    
+    title = Column(String, nullable=False) # e.g., "Volume I: Technical"
+    order = Column(Integer, default=0)
+    
+    # Blocks stored as JSONB: [{id: "uuid", title: "Section", content: "Text", order: 1}]
+    blocks = Column(JSONB, default=[])
+    
+    proposal = relationship("Proposal", back_populates="volumes")
+

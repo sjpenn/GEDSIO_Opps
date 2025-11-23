@@ -9,4 +9,11 @@ asyncpg
 python-multipart
 pytest
 pytest-asyncio
-httpx
+pandas
+openpyxl
+python-docx
+pypdf
+pdfplumber
+Pillow
+openai
+google-generativeai

@@ -31,6 +31,7 @@ class EntityBase(BaseModel):
     legal_business_name: str
     cage_code: Optional[str] = None
     entity_type: str = "OTHER"
+    is_primary: bool = False
     notes: Optional[str] = None
 
 class EntityCreate(EntityBase):

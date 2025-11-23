@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List, Any
+from typing import List, Any, Optional
 
 from fedops_core.db.engine import get_db
 from fedops_core.db.models import Entity, EntityAward
@@ -123,7 +123,8 @@ async def get_entity_awards(
                 total_obligation=award.get("Award Amount"),
                 description=award.get("Description"),
                 award_date=None, # Parse date if needed
-                awarding_agency=award.get("Awarding Agency")
+                awarding_agency=award.get("Awarding Agency"),
+                naics_code=award.get("NAICS Code")
             )
             db.add(db_award)
     
@@ -131,3 +132,94 @@ async def get_entity_awards(
     
     # Return the data directly from API for freshness, or query DB
     return awards_data
+
+@router.put("/{uei}/primary", response_model=schemas.Entity)
+async def set_primary_entity(
+    uei: str,
+    is_primary: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Set an entity as the primary entity. If is_primary is True, unsets others."""
+    # 1. Find the entity
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    entity = result.scalars().first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    # 2. If setting to True, unset others
+    if is_primary:
+        # Unset all others. Note: This requires 'update' import or raw SQL, or iterating.
+        # Using iteration for simplicity with AsyncSession if update() is tricky with async
+        # But update() is better. Let's try to use update()
+        from sqlalchemy import update
+        await db.execute(
+            update(Entity).where(Entity.uei != uei).values(is_primary=False)
+        )
+    
+    # 3. Update this entity
+    entity.is_primary = is_primary
+    await db.commit()
+    await db.refresh(entity)
+    return entity
+
+@router.get("/primary", response_model=Optional[schemas.Entity])
+async def get_primary_entity(db: AsyncSession = Depends(get_db)):
+    """Get the current primary entity"""
+    result = await db.execute(select(Entity).where(Entity.is_primary == True))
+    return result.scalars().first()
+
+@router.post("/match-opportunity", response_model=List[dict])
+async def match_partners_to_opportunity(
+    opportunity_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Find partners that match an opportunity based on NAICS code and past performance.
+    """
+    from fedops_core.db.models import Opportunity
+    from sqlalchemy import func, desc
+    
+    # 1. Get Opportunity
+    result = await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+    opp = result.scalars().first()
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    
+    # 2. Get NAICS
+    naics = opp.naics_code
+    if not naics:
+        # Fallback: Try to match by keywords? For now just return empty.
+        return [] 
+    
+    # 3. Find Entities that have awards with this NAICS
+    # We prioritize entities marked as PARTNER, but search all.
+    
+    stmt = (
+        select(Entity, func.sum(EntityAward.total_obligation).label("total_obligation"), func.count(EntityAward.award_id).label("award_count"))
+        .join(EntityAward, Entity.uei == EntityAward.recipient_uei)
+        .where(EntityAward.naics_code == naics)
+        .group_by(Entity.uei)
+        .order_by(desc("total_obligation"))
+    )
+    
+    results = await db.execute(stmt)
+    matches = []
+    for row in results:
+        entity = row[0]
+        total_ob = row[1] or 0
+        count = row[2] or 0
+        
+        # Serialize entity using Pydantic model
+        entity_data = schemas.Entity.model_validate(entity).model_dump()
+        
+        matches.append({
+            "entity": entity_data,
+            "match_score": total_ob, 
+            "match_details": {
+                "total_obligation": total_ob,
+                "award_count": count,
+                "reason": f"Has {count} awards in NAICS {naics}"
+            }
+        })
+        
+    return matches

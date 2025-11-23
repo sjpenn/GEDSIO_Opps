@@ -66,6 +66,7 @@ class Entity(Base):
     notes = Column(Text, nullable=True)
     full_response = Column(JSONB, nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
+    is_primary = Column(Boolean, default=False)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -79,5 +80,31 @@ class EntityAward(Base):
     description = Column(Text, nullable=True)
     award_date = Column(Date, nullable=True)
     awarding_agency = Column(String, nullable=True)
+    naics_code = Column(String, index=True, nullable=True)
     
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class StoredFile(Base):
+    __tablename__ = "stored_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, index=True, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_type = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    content_summary = Column(Text, nullable=True)
+    analysis_json = Column(JSONB, nullable=True)
+    parsed_content = Column(Text, nullable=True)
+    
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class OpportunityComment(Base):
+    __tablename__ = "opportunity_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False)
+    text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

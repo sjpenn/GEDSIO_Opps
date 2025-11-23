@@ -47,3 +47,17 @@ class Opportunity(OpportunityBase):
 
     class Config:
         from_attributes = True
+
+class OpportunityCommentBase(BaseModel):
+    text: str
+
+class OpportunityCommentCreate(OpportunityCommentBase):
+    pass
+
+class OpportunityComment(OpportunityCommentBase):
+    id: int
+    opportunity_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

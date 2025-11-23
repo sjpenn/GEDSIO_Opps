@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fedops_core.settings import settings
-from fedops_api.routers import ingest, opportunities, company, entities
+from fedops_api.routers import ingest, opportunities, company, entities, files
 from fedops_core.db.engine import engine, Base
 
 app = FastAPI(
@@ -13,6 +13,7 @@ app.include_router(ingest.router, prefix=f"{settings.API_V1_STR}/ingest", tags=[
 app.include_router(opportunities.router, prefix=f"{settings.API_V1_STR}/opportunities", tags=["opportunities"])
 app.include_router(company.router, prefix=f"{settings.API_V1_STR}/company", tags=["company"])
 app.include_router(entities.router, prefix=f"{settings.API_V1_STR}/entities", tags=["entities"])
+app.include_router(files.router, prefix=f"{settings.API_V1_STR}/files", tags=["files"])
 
 @app.on_event("startup")
 async def startup():

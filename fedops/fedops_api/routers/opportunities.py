@@ -7,8 +7,8 @@ import httpx
 import logging
 
 from fedops_api.deps import get_db
-from fedops_core.db.models import Opportunity as OpportunityModel
-from fedops_core.schemas.opportunity import Opportunity as OpportunitySchema
+from fedops_core.db.models import Opportunity as OpportunityModel, OpportunityComment as OpportunityCommentModel
+from fedops_core.schemas.opportunity import Opportunity as OpportunitySchema, OpportunityComment as OpportunityCommentSchema, OpportunityCommentCreate
 from fedops_core.schemas.pagination import PaginatedResponse
 from fedops_core.settings import settings
 
@@ -247,30 +247,53 @@ async def resolve_resources(id: int, db: AsyncSession = Depends(get_db)):
         
     resolved_files = []
     
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
         for link in opportunity.resource_links:
             try:
                 # Default filename from URL
                 filename = link.split("/")[-1]
                 
-                # Try to get real filename from headers
+                # Try to get real filename from headers (without following redirect to S3)
                 response = await client.head(link)
-                if response.status_code == 200 or response.status_code == 303: # 303 See Other often used for downloads
+                
+                # Check for redirect with filename in query params (common for SAM.gov)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if location:
+                        import urllib.parse
+                        parsed = urllib.parse.urlparse(location)
+                        params = urllib.parse.parse_qs(parsed.query)
+                        content_disposition = params.get('response-content-disposition', [None])[0]
+                        if content_disposition:
+                            import re
+                            # Look for filename="name"
+                            match = re.search(r'filename="?([^"]+)"?', content_disposition)
+                            if match:
+                                filename = match.group(1)
+                            else:
+                                # Try filename*=
+                                match = re.search(r"filename\*=UTF-8''(.+)", content_disposition)
+                                if match:
+                                    filename = urllib.parse.unquote(match.group(1))
+
+                # If not a redirect or no filename in redirect, check Content-Disposition header directly
+                elif response.status_code == 200:
                     content_disposition = response.headers.get("content-disposition")
                     if content_disposition:
                         import re
-                        # Look for filename="name" or filename*=utf-8''name
-                        # Simple regex for filename="..."
                         match = re.search(r'filename="?([^"]+)"?', content_disposition)
                         if match:
                             filename = match.group(1)
                         else:
-                            # Try filename*=
                             match = re.search(r"filename\*=UTF-8''(.+)", content_disposition)
                             if match:
                                 import urllib.parse
                                 filename = urllib.parse.unquote(match.group(1))
                                 
+                # Clean up filename (replace + with space)
+                if filename:
+                    filename = filename.replace("+", " ")
+
                 resolved_files.append({
                     "url": link,
                     "filename": filename
@@ -288,3 +311,37 @@ async def resolve_resources(id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return resolved_files
+
+@router.get("/{id}/comments", response_model=List[OpportunityCommentSchema])
+async def get_opportunity_comments(id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(OpportunityCommentModel).where(OpportunityCommentModel.opportunity_id == id).order_by(OpportunityCommentModel.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.post("/{id}/comments", response_model=OpportunityCommentSchema)
+async def create_opportunity_comment(id: int, comment: OpportunityCommentCreate, db: AsyncSession = Depends(get_db)):
+    # Verify opportunity exists
+    result = await db.execute(select(OpportunityModel).where(OpportunityModel.id == id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    
+    db_comment = OpportunityCommentModel(opportunity_id=id, text=comment.text)
+    db.add(db_comment)
+    await db.commit()
+    await db.refresh(db_comment)
+    return db_comment
+
+@router.delete("/{id}/comments/{comment_id}")
+async def delete_opportunity_comment(id: int, comment_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(OpportunityCommentModel).where(
+        OpportunityCommentModel.id == comment_id,
+        OpportunityCommentModel.opportunity_id == id
+    )
+    result = await db.execute(stmt)
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    await db.delete(comment)
+    await db.commit()
+    return {"ok": True}

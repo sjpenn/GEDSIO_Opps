@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Opportunity } from '../types'
+import type { Opportunity, OpportunityComment } from '../types'
+import FileManagementPage from './FileManagement'
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -8,6 +9,12 @@ export default function OpportunitiesPage() {
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null)
   const [resourceFiles, setResourceFiles] = useState<{url: string, filename: string}[]>([])
   const [loadingResources, setLoadingResources] = useState(false)
+  const [showFileManager, setShowFileManager] = useState(false)
+  const [comments, setComments] = useState<OpportunityComment[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [partnerMatches, setPartnerMatches] = useState<any[]>([])
+  const [loadingPartners, setLoadingPartners] = useState(false)
+  const [showPartnerMatches, setShowPartnerMatches] = useState(false)
   
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
@@ -85,6 +92,55 @@ export default function OpportunitiesPage() {
     fetchOpportunities();
   }, [searchParams.skip]); // Only auto-fetch on pagination change
 
+  const fetchComments = async (oppId: number) => {
+    try {
+      const response = await fetch(`/api/v1/opportunities/${oppId}/comments`)
+      if (response.ok) {
+        const data = await response.json()
+        setComments(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch comments', err)
+    }
+  }
+
+  const handleAddComment = async () => {
+    if (!selectedOpp || !newComment.trim()) return
+
+    try {
+      const response = await fetch(`/api/v1/opportunities/${selectedOpp.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: newComment })
+      })
+
+      if (response.ok) {
+        setNewComment('')
+        fetchComments(selectedOpp.id)
+      }
+    } catch (err) {
+      console.error('Failed to add comment', err)
+    }
+  }
+
+  const handleDeleteComment = async (commentId: number) => {
+    if (!selectedOpp) return
+    
+    if (!confirm('Are you sure you want to delete this comment?')) return
+
+    try {
+      const response = await fetch(`/api/v1/opportunities/${selectedOpp.id}/comments/${commentId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setComments(prev => prev.filter(c => c.id !== commentId))
+      }
+    } catch (err) {
+      console.error('Failed to delete comment', err)
+    }
+  }
+
   const fetchResources = async (oppId: number) => {
     try {
       setLoadingResources(true);
@@ -103,11 +159,31 @@ export default function OpportunitiesPage() {
   useEffect(() => {
     if (selectedOpp) {
       setResourceFiles([]); // Reset
+      setComments([]); // Reset comments
+      setPartnerMatches([]); // Reset matches
+      fetchComments(selectedOpp.id); // Fetch comments
       if (selectedOpp.resource_links && selectedOpp.resource_links.length > 0) {
         fetchResources(selectedOpp.id);
       }
     }
   }, [selectedOpp]);
+
+  const handleFindPartners = async () => {
+    if (!selectedOpp) return;
+    setLoadingPartners(true);
+    try {
+      const res = await fetch(`/api/v1/entities/match-opportunity?opportunity_id=${selectedOpp.id}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      setPartnerMatches(data);
+      setShowPartnerMatches(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingPartners(false);
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,6 +410,23 @@ export default function OpportunitiesPage() {
             </div>
             
             <div className="p-6 space-y-8">
+              {/* Actions Bar */}
+              <div className="flex gap-4 mb-6">
+                <button
+                  onClick={() => setShowFileManager(true)}
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+                >
+                  <span>📂</span> Manage Files & AI Analysis
+                </button>
+                <button
+                  onClick={handleFindPartners}
+                  disabled={loadingPartners}
+                  className="bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-medium hover:bg-secondary/90 transition-colors flex items-center gap-2"
+                >
+                  <span>🤝</span> {loadingPartners ? 'Searching...' : 'Find Partners'}
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1">
                   <h3 className="text-sm font-medium text-muted-foreground">Department</h3>
@@ -431,6 +524,47 @@ export default function OpportunitiesPage() {
                   </div>
                 )}
               </div>
+
+              {/* Comments Section */}
+              <div className="border-t border-border pt-6 mt-6">
+                <h3 className="text-lg font-semibold mb-4">Team Comments</h3>
+                
+                <div className="space-y-4 mb-6">
+                  {comments.map(comment => (
+                    <div key={comment.id} className="bg-muted/30 p-4 rounded-lg border border-border group relative">
+                      <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
+                      <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
+                        <span>{new Date(comment.created_at).toLocaleString()}</span>
+                        <button 
+                          onClick={() => handleDeleteComment(comment.id)}
+                          className="text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {comments.length === 0 && (
+                    <p className="text-sm text-muted-foreground italic">No comments yet.</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <textarea
+                    value={newComment}
+                    onChange={e => setNewComment(e.target.value)}
+                    placeholder="Add a comment..."
+                    className="flex-1 min-h-[80px] p-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <button
+                    onClick={handleAddComment}
+                    disabled={!newComment.trim()}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed h-fit"
+                  >
+                    Add Note
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div className="p-6 border-t border-border bg-muted/10">
@@ -440,6 +574,81 @@ export default function OpportunitiesPage() {
                   {JSON.stringify(selectedOpp.full_response, null, 2)}
                 </pre>
               </details>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Partner Matches Modal */}
+      {showPartnerMatches && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-200">
+          <div className="bg-background rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-6 border-b border-border flex justify-between items-start sticky top-0 bg-background z-10">
+              <div>
+                <h2 className="text-2xl font-bold">Partner Matches</h2>
+                <p className="text-sm text-muted-foreground">Based on NAICS: {selectedOpp?.naics_code}</p>
+              </div>
+              <button 
+                onClick={() => setShowPartnerMatches(false)}
+                className="text-muted-foreground hover:text-foreground p-2 hover:bg-accent rounded-full transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+               {partnerMatches.length === 0 ? (
+                   <div className="text-center py-8 text-muted-foreground">
+                       <p>No matches found based on NAICS code.</p>
+                       <p className="text-sm mt-2">Try adding more entities with relevant awards to your database.</p>
+                   </div>
+               ) : (
+                   partnerMatches.map((match, i) => (
+                       <div key={i} className="p-4 border rounded hover:bg-accent/10 transition-colors">
+                           <div className="flex justify-between items-start mb-2">
+                               <div>
+                                   <h3 className="font-bold text-lg">{match.entity.legal_business_name}</h3>
+                                   <p className="text-xs font-mono text-muted-foreground">UEI: {match.entity.uei}</p>
+                               </div>
+                               <div className="text-right">
+                                   <div className="text-sm font-medium text-green-600">
+                                       ${match.match_details.total_obligation.toLocaleString()}
+                                   </div>
+                                   <div className="text-xs text-muted-foreground">Total Obligation</div>
+                               </div>
+                           </div>
+                           <div className="bg-secondary/20 p-2 rounded text-sm">
+                               <p><strong>Match Reason:</strong> {match.match_details.reason}</p>
+                           </div>
+                           <div className="mt-3 flex gap-2">
+                               <button className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">View Profile</button>
+                               {match.entity.entity_type === 'PARTNER' && <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded border border-green-200">Existing Partner</span>}
+                           </div>
+                       </div>
+                   ))
+               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Manager Modal */}
+      {showFileManager && selectedOpp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-200">
+          <div className="bg-background rounded-xl shadow-2xl max-w-6xl w-full h-[90vh] flex flex-col">
+            <div className="p-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Files & AI Analysis</h2>
+                <p className="text-sm text-muted-foreground">For: {selectedOpp.title}</p>
+              </div>
+              <button 
+                onClick={() => setShowFileManager(false)}
+                className="text-muted-foreground hover:text-foreground p-2 hover:bg-accent rounded-full transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <FileManagementPage opportunityId={selectedOpp.id} />
             </div>
           </div>
         </div>

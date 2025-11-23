@@ -29,3 +29,10 @@ export interface Opportunity {
   resource_links: string[]
   full_response: any
 }
+
+export interface OpportunityComment {
+  id: number
+  opportunity_id: number
+  text: string
+  created_at: string
+}

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import CompanyProfilePage from './pages/CompanyProfile';
 import EntitySearchPage from './pages/EntitySearch';
 import OpportunitiesPage from './pages/Opportunities';
+import FileManagementPage from './pages/FileManagement';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
               <Link to="/" className="text-primary hover:underline font-medium">Opportunities</Link>
               <Link to="/entities" className="text-primary hover:underline font-medium">Entity Search</Link>
               <Link to="/profile" className="text-primary hover:underline font-medium">Company Profile</Link>
+              <Link to="/files" className="text-primary hover:underline font-medium">Files & AI</Link>
             </nav>
           </div>
         </header>
@@ -26,6 +28,7 @@ function App() {
             <Route path="/opportunities" element={<OpportunitiesPage />} />
             <Route path="/entities" element={<EntitySearchPage />} />
             <Route path="/profile" element={<CompanyProfilePage />} />
+            <Route path="/files" element={<FileManagementPage />} />
           </Routes>
         </main>
       </div>

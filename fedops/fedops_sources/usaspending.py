@@ -24,7 +24,9 @@ class USASpendingClient:
                 "Place of Performance City Name",
                 "Place of Performance State Code",
                 "Place of Performance ZIP Code",
-                "Place of Performance Country Code"
+                "Place of Performance Country Code",
+                "NAICS Code",
+                "NAICS Description"
             ],
             "limit": limit,
             "page": 1

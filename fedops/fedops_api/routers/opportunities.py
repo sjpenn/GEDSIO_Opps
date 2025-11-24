@@ -65,106 +65,160 @@ async def list_opportunities(
     keywords: Optional[str] = Query(None, description="Keywords to search"),
     naics: Optional[str] = Query(None, description="NAICS Code"),
     setAside: Optional[str] = Query(None, description="Set Aside Code"),
+    active: Optional[str] = Query(None, description="Active status (yes/no)"),
     db: AsyncSession = Depends(get_db)
 ):
+    logger.error(f"DEBUG: list_opportunities called with skip={skip}, limit={limit}, active={active}, keywords={keywords}")
     logger.info(f"list_opportunities called with skip={skip}, limit={limit}")
     
     # If SAM.gov parameters are provided, fetch from external API
-    if postedFrom and settings.SAM_API_KEY:
+    # We fetch if there is a date range OR if there are keywords (in which case we default to a wide date range)
+    should_fetch_sam = (postedFrom is not None) or (keywords is not None)
+    
+    if should_fetch_sam and settings.SAM_API_KEY:
         try:
-            logger.info(f"Fetching from SAM.gov with params: postedFrom={postedFrom}, postedTo={postedTo}")
-            params = {
+            # Date Cycling Strategy: Fetch by year to ensure API coverage
+            # We will fetch from current year back 12 years
+            current_year = datetime.now().year
+            start_year = current_year - 12
+            years = range(current_year, start_year - 1, -1)
+            
+            async def fetch_year(year: int, base_params: dict):
+                year_params = base_params.copy()
+                year_params["postedFrom"] = f"01/01/{year}"
+                year_params["postedTo"] = f"12/31/{year}"
+                # Remove active param from API call to get everything
+                if "active" in year_params:
+                    del year_params["active"]
+                    
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        logger.info(f"Fetching year {year} with params: {year_params}")
+                        resp = await client.get(SAM_API_URL, params=year_params)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            return data.get("opportunitiesData", [])
+                        else:
+                            logger.warning(f"Failed to fetch year {year}: {resp.status_code}")
+                            return []
+                except Exception as e:
+                    logger.error(f"Error fetching year {year}: {e}")
+                    return []
+
+            # Prepare base params
+            base_params = {
                 "api_key": settings.SAM_API_KEY,
-                "postedFrom": postedFrom,
-                "postedTo": postedTo or datetime.now().strftime("%m/%d/%Y"),
-                "limit": limit,
-                "offset": skip
+                "limit": 1000, # Fetch more per year to ensure we find it
+                "offset": 0
             }
             if ptype:
-                params["ptype"] = ptype
+                base_params["ptype"] = ptype
             if keywords:
-                params["keywords"] = keywords
+                base_params["title"] = keywords
             if naics:
-                params["ncode"] = naics
+                base_params["ncode"] = naics
             if setAside:
-                params["setAside"] = setAside
+                base_params["setAside"] = setAside
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(SAM_API_URL, params=params)
-                logger.info(f"SAM.gov response status: {response.status_code}")
-                response.raise_for_status()
-                data = response.json()
-                
-                opportunities_data = data.get("opportunitiesData", [])
-                logger.info(f"Found {len(opportunities_data)} opportunities from SAM.gov")
-                
-                for opp_data in opportunities_data:
-                    # Map SAM.gov data to our model
-                    notice_id = opp_data.get("noticeId")
-                    
-                    # Check if description is a URL or text
-                    raw_description = opp_data.get("description", "")
-                    description_text = raw_description
-                    
-                    # If it looks like a URL to the description endpoint, fetch the actual text
-                    if raw_description and (raw_description.startswith("http") and "noticedesc" in raw_description):
-                        if notice_id:
-                            fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
-                            if fetched_desc:
-                                description_text = fetched_desc
-                    
-                    # Check if exists
-                    stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
-                    result = await db.execute(stmt)
-                    existing_opp = result.scalar_one_or_none()
-                    
-                    # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
+            # Execute parallel requests
+            # Limit concurrency to avoid rate limits (e.g., 5 at a time)
+            all_opportunities_data = []
+            chunk_size = 5
+            for i in range(0, len(years), chunk_size):
+                chunk_years = years[i:i + chunk_size]
+                tasks = [fetch_year(year, base_params) for year in chunk_years]
+                results = await asyncio.gather(*tasks)
+                for res in results:
+                    all_opportunities_data.extend(res)
+            
+            logger.info(f"Total raw opportunities found from all years: {len(all_opportunities_data)}")
 
-                    opp_dict = {
-                        "notice_id": notice_id,
-                        "title": opp_data.get("title"),
-                        "solicitation_number": opp_data.get("solicitationNumber"),
-                        "department": opp_data.get("department"),
-                        "sub_tier": opp_data.get("subTier"),
-                        "office": opp_data.get("office"),
-                        "posted_date": parse_date(opp_data.get("postedDate")),
-                        "type": opp_data.get("type"),
-                        "base_type": opp_data.get("baseType"),
-                        "archive_type": opp_data.get("archiveType"),
-                        "archive_date": parse_date(opp_data.get("archiveDate")),
-                        "type_of_set_aside_description": opp_data.get("typeOfSetAsideDescription"),
-                        "type_of_set_aside": opp_data.get("typeOfSetAside"),
-                        "response_deadline": parse_date(opp_data.get("responseDeadLine")),
-                        "naics_code": opp_data.get("naicsCode"),
-                        "classification_code": opp_data.get("classificationCode"),
+            # Deduplicate by noticeId
+            unique_opps = {}
+            for opp in all_opportunities_data:
+                nid = opp.get("noticeId")
+                if nid and nid not in unique_opps:
+                    unique_opps[nid] = opp
+            
+            opportunities_data = list(unique_opps.values())
+            logger.info(f"Total unique opportunities: {len(opportunities_data)}")
 
-                        "active": opp_data.get("active"),
-                        "award": opp_data.get("award"),
-                        "point_of_contact": opp_data.get("pointOfContact"),
-                        "description": description_text,
-                        "organization_type": opp_data.get("organizationType"),
-                        "office_address": opp_data.get("officeAddress"),
-                        "place_of_performance": opp_data.get("placeOfPerformance"),
-                        "additional_info_link": opp_data.get("additionalInfoLink"),
-                        "ui_link": opp_data.get("uiLink"),
-                        "links": opp_data.get("links"),
-                        "resource_links": opp_data.get("resourceLinks"),
-                        "full_response": opp_data
-                    }
-                    
-                    if existing_opp:
-                        for key, value in opp_dict.items():
-                            setattr(existing_opp, key, value)
-                    else:
-                        new_opp = OpportunityModel(**opp_dict)
-                        db.add(new_opp)
+            # Filter locally by active status if requested
+            if active == "yes":
+                opportunities_data = [o for o in opportunities_data if o.get("active", "Yes") == "Yes"]
+            elif active == "no":
+                opportunities_data = [o for o in opportunities_data if o.get("active", "Yes") == "No"]
+            # If active is None (Both), keep all
+            
+            logger.info(f"Final filtered opportunities: {len(opportunities_data)}")
+
+            for opp_data in opportunities_data:
+                # Map SAM.gov data to our model
+                notice_id = opp_data.get("noticeId")
                 
-                await db.commit()
+                # Check if description is a URL or text
+                raw_description = opp_data.get("description", "")
+                description_text = raw_description
                 
+                # If it looks like a URL to the description endpoint, fetch the actual text
+                if raw_description and (raw_description.startswith("http") and "noticedesc" in raw_description):
+                    if notice_id:
+                        fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
+                        if fetched_desc:
+                            description_text = fetched_desc
+                
+                # Check if exists
+                stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
+                result = await db.execute(stmt)
+                existing_opp = result.scalar_one_or_none()
+                
+                # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
+
+                opp_dict = {
+                    "notice_id": notice_id,
+                    "title": opp_data.get("title"),
+                    "solicitation_number": opp_data.get("solicitationNumber"),
+                    "department": opp_data.get("department"),
+                    "sub_tier": opp_data.get("subTier"),
+                    "office": opp_data.get("office"),
+                    "posted_date": parse_date(opp_data.get("postedDate")),
+                    "type": opp_data.get("type"),
+                    "base_type": opp_data.get("baseType"),
+                    "archive_type": opp_data.get("archiveType"),
+                    "archive_date": parse_date(opp_data.get("archiveDate")),
+                    "type_of_set_aside_description": opp_data.get("typeOfSetAsideDescription"),
+                    "type_of_set_aside": opp_data.get("typeOfSetAside"),
+                    "response_deadline": parse_date(opp_data.get("responseDeadLine")),
+                    "naics_code": opp_data.get("naicsCode"),
+                    "classification_code": opp_data.get("classificationCode"),
+
+                    "active": opp_data.get("active"),
+                    "award": opp_data.get("award"),
+                    "point_of_contact": opp_data.get("pointOfContact"),
+                    "description": description_text,
+                    "organization_type": opp_data.get("organizationType"),
+                    "office_address": opp_data.get("officeAddress"),
+                    "place_of_performance": opp_data.get("placeOfPerformance"),
+                    "additional_info_link": opp_data.get("additionalInfoLink"),
+                    "ui_link": opp_data.get("uiLink"),
+                    "links": opp_data.get("links"),
+                    "resource_links": opp_data.get("resourceLinks"),
+                    "full_response": opp_data
+                }
+                
+                if existing_opp:
+                    for key, value in opp_dict.items():
+                        setattr(existing_opp, key, value)
+                else:
+                    new_opp = OpportunityModel(**opp_dict)
+                    db.add(new_opp)
+            
+            await db.commit()
+            
         except Exception as e:
             logger.error(f"Error fetching from SAM.gov: {e}")
-            # import traceback
-            # logger.error(traceback.format_exc())
+            import traceback
+            logger.error(traceback.format_exc())
             # Fallback to local DB if API fails or just log error
             pass
 

@@ -54,6 +54,7 @@ export default function OpportunitiesPage() {
     keywords: '',
     naics: '',
     setAside: '',
+    active: 'yes',
     postedFrom: thirtyDaysAgo.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
     postedTo: today.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
     limit: 10,
@@ -70,11 +71,13 @@ export default function OpportunitiesPage() {
       if (searchParams.keywords) queryParams.append('keywords', searchParams.keywords);
       if (searchParams.naics) queryParams.append('naics', searchParams.naics);
       if (searchParams.setAside) queryParams.append('setAside', searchParams.setAside);
+      if (searchParams.active) queryParams.append('active', searchParams.active);
       if (searchParams.postedFrom) queryParams.append('postedFrom', searchParams.postedFrom);
       if (searchParams.postedTo) queryParams.append('postedTo', searchParams.postedTo);
       queryParams.append('limit', searchParams.limit.toString());
       queryParams.append('skip', searchParams.skip.toString());
 
+      console.log('Fetching opportunities with params:', queryParams.toString());
       const response = await fetch(`/api/v1/opportunities/?${queryParams.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch opportunities');
@@ -244,28 +247,52 @@ export default function OpportunitiesPage() {
               </div>
 
               <div>
-                <label htmlFor="posted-from" className="block text-sm font-medium mb-1">Posted From</label>
-                <input 
-                  id="posted-from"
-                  type="text" 
-                  placeholder="MM/DD/YYYY"
-                  value={searchParams.postedFrom}
-                  onChange={e => setSearchParams(prev => ({ ...prev, postedFrom: e.target.value }))}
+                <label htmlFor="active" className="block text-sm font-medium mb-1">Status</label>
+                <select
+                  id="active"
+                  value={searchParams.active}
+                  onChange={e => setSearchParams(prev => ({ ...prev, active: e.target.value }))}
                   className="w-full p-2 rounded border border-input bg-background text-sm"
-                />
+                >
+                  <option value="yes">Active Only</option>
+                  <option value="no">Inactive Only</option>
+                  <option value="">Both (Active & Inactive)</option>
+                </select>
               </div>
 
-              <div>
-                <label htmlFor="posted-to" className="block text-sm font-medium mb-1">Posted To</label>
-                <input 
-                  id="posted-to"
-                  type="text" 
-                  placeholder="MM/DD/YYYY"
-                  value={searchParams.postedTo}
-                  onChange={e => setSearchParams(prev => ({ ...prev, postedTo: e.target.value }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="posted-from" className="block text-sm font-medium mb-1">Posted From</label>
+                  <input 
+                    id="posted-from"
+                    type="text" 
+                    placeholder="MM/DD/YYYY"
+                    value={searchParams.postedFrom}
+                    onChange={e => setSearchParams(prev => ({ ...prev, postedFrom: e.target.value }))}
+                    className="w-full p-2 rounded border border-input bg-background text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="posted-to" className="block text-sm font-medium mb-1">Posted To</label>
+                  <input 
+                    id="posted-to"
+                    type="text" 
+                    placeholder="MM/DD/YYYY"
+                    value={searchParams.postedTo}
+                    onChange={e => setSearchParams(prev => ({ ...prev, postedTo: e.target.value }))}
+                    className="w-full p-2 rounded border border-input bg-background text-sm"
+                  />
+                </div>
               </div>
+              
+              <button 
+                type="button"
+                onClick={() => setSearchParams(prev => ({ ...prev, postedFrom: '', postedTo: '' }))}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Clear Dates
+              </button>
 
               <div>
                 <label htmlFor="limit" className="block text-sm font-medium mb-1">Items per page</label>
@@ -290,7 +317,51 @@ export default function OpportunitiesPage() {
 
         {/* Results List */}
         <div className="lg:col-span-3 space-y-4">
-          {loading && <div className="text-center py-8">Loading opportunities...</div>}
+          {loading && (
+            <div className="text-center py-12 px-4">
+              <div className="max-w-md mx-auto space-y-6">
+                {/* Animated spinner */}
+                <div className="relative w-20 h-20 mx-auto">
+                  <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
+                  <div className="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"></div>
+                  <div className="absolute inset-2 border-4 border-transparent border-t-primary/60 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                </div>
+                
+                {/* Loading text */}
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold">Searching Opportunities...</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {searchParams.keywords ? (
+                      <>Searching for "<span className="font-medium text-foreground">{searchParams.keywords}</span>" across 12 years of data</>
+                    ) : (
+                      <>Fetching opportunities from SAM.gov</>
+                    )}
+                  </p>
+                </div>
+                
+                {/* Progress indicators */}
+                <div className="bg-muted/30 rounded-lg p-4 space-y-3 border border-border">
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                    <span className="text-muted-foreground">Querying SAM.gov API...</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <span className="text-muted-foreground">Processing results...</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-2 h-2 bg-primary/40 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                    <span className="text-muted-foreground">Deduplicating records...</span>
+                  </div>
+                </div>
+                
+                {/* Helpful tip */}
+                <p className="text-xs text-muted-foreground italic">
+                  💡 Tip: Date cycling searches may take 10-30 seconds for comprehensive results
+                </p>
+              </div>
+            </div>
+          )}
           {error && <div className="text-center text-destructive py-8">Error: {error}</div>}
           
           {!loading && !error && opportunities.length === 0 && (

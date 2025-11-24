@@ -86,6 +86,7 @@ class EntityAward(Base):
     award_date = Column(Date, nullable=True)
     awarding_agency = Column(String, nullable=True)
     naics_code = Column(String, index=True, nullable=True)
+    solicitation_id = Column(String, index=True, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
 

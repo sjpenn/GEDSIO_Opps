@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Loader2 } from 'lucide-react';
 // Map imports removed for stability
 // import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 // import 'leaflet/dist/leaflet.css';
@@ -13,15 +14,66 @@ interface Entity {
 }
 
 interface Award {
+  // Basic Information
   "Award ID": string;
   "Recipient Name": string;
-  "Award Amount": number;
   "Description": string;
+  
+  // Financial Fields
+  "Award Amount": number;
+  "Total Obligation"?: number;
+  "Base and All Options Value"?: number;
+  "Base Exercised Options Val"?: number;
+  
+  // Date Fields
+  "Start Date"?: string;
+  "End Date"?: string;
+  "Current End Date"?: string;
+  "Period of Performance Start Date"?: string;
+  "Period of Performance Current End Date"?: string;
+  "Last Modified Date"?: string;
+  
+  // Contract Details
+  "Award Type"?: string;
+  "Contract Award Type"?: string;
+  "IDV Type"?: string;
+  "Contract Pricing"?: string;
+  "Type of Set Aside"?: string;
+  "Extent Competed"?: string;
+  
+  // Agency Information
   "Awarding Agency": string;
+  "Awarding Sub Agency"?: string;
+  "Funding Agency"?: string;
+  "Funding Sub Agency"?: string;
+  
+  // Location
   "Place of Performance City Name"?: string;
   "Place of Performance State Code"?: string;
   "Place of Performance ZIP Code"?: string;
   "Place of Performance Country Code"?: string;
+  "Recipient Address Line 1"?: string;
+  "Recipient City Name"?: string;
+  "Recipient State Code"?: string;
+  "Recipient ZIP Code"?: string;
+  
+  // Classification
+  "NAICS Code"?: string;
+  "NAICS Description"?: string;
+  "Product or Service Code"?: string;
+  "Product or Service Code Description"?: string;
+  
+  // Identifiers
+  "Solicitation ID"?: string;
+  "Parent Award ID"?: string;
+  "Referenced IDV Agency Identifier"?: string;
+  "Contract Award Unique Key"?: string;
+  "Recipient UEI"?: string;
+  "Recipient DUNS Number"?: string;
+  
+  // Additional Details
+  "Sub-Award Count"?: number;
+  "Number of Offers Received"?: number;
 }
 
 export default function EntitySearchPage() {
@@ -29,21 +81,37 @@ export default function EntitySearchPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [awards, setAwards] = useState<Award[]>([]);
   const [awardsLoading, setAwardsLoading] = useState(false);
+  const [selectedAward, setSelectedAward] = useState<Award | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query) return;
     
     setLoading(true);
+    setHasSearched(true);
+    setResults([]); // Clear previous results
     try {
       const res = await fetch(`/api/v1/entities/search?q=${encodeURIComponent(query)}`);
+      if (!res.ok) {
+        throw new Error(`Search failed: ${res.statusText}`);
+      }
       const data = await res.json();
-      setResults(data);
+      console.log("Search results:", data);
+      
+      if (Array.isArray(data)) {
+        setResults(data);
+      } else {
+        console.error("Search results is not an array:", data);
+        setResults([]);
+        // You might want to set an error state here to display to the user
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Error searching entities:", err);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -97,10 +165,21 @@ export default function EntitySearchPage() {
     setAwardsLoading(true);
     try {
       const res = await fetch(`/api/v1/entities/${uei}/awards`);
+      if (!res.ok) {
+        console.error('Failed to fetch awards:', res.statusText);
+        setAwards([]);
+        return;
+      }
       const data = await res.json();
-      setAwards(data);
+      if (Array.isArray(data)) {
+        setAwards(data);
+      } else {
+        console.error('Awards data is not an array:', data);
+        setAwards([]);
+      }
     } catch (err) {
       console.error(err);
+      setAwards([]);
     } finally {
       setAwardsLoading(false);
     }
@@ -108,8 +187,11 @@ export default function EntitySearchPage() {
 
   // Prepare Chart Data
   const chartData = useMemo(() => {
+    if (!Array.isArray(awards)) return [];
+    
     const agencyMap: Record<string, number> = {};
     awards.forEach(award => {
+      if (!award) return;
       const agency = award["Awarding Agency"] || "Unknown";
       agencyMap[agency] = (agencyMap[agency] || 0) + (award["Award Amount"] || 0);
     });
@@ -139,21 +221,28 @@ export default function EntitySearchPage() {
               <button 
                 type="submit" 
                 disabled={loading}
-                className="bg-primary text-primary-foreground px-4 py-2 rounded"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded flex items-center justify-center min-w-[80px]"
               >
-                Search
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
               </button>
             </form>
 
             <div className="space-y-4 max-h-[600px] overflow-y-auto">
+              {hasSearched && results.length === 0 && !loading && (
+                <p className="text-muted-foreground text-sm">No results found.</p>
+              )}
+              
               {results.map((entity, i) => (
-                <div key={i} className={`p-4 border rounded cursor-pointer transition-colors ${selectedEntity?.uei === entity.uei ? 'bg-accent/50 border-primary' : 'bg-background hover:bg-accent/50'}`}
-                     onClick={() => {
-                        setSelectedEntity(entity);
-                        fetchAwards(entity.uei);
-                     }}>
+                <div 
+                  key={entity.uei || i} 
+                  className={`p-4 border rounded cursor-pointer transition-colors ${selectedEntity?.uei === entity.uei ? 'bg-accent/50 border-primary' : 'bg-background hover:bg-accent/50'}`}
+                  onClick={() => {
+                    setSelectedEntity(entity);
+                    fetchAwards(entity.uei);
+                  }}
+                >
                   <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-sm mb-1">{entity.legal_business_name}</h3>
+                    <h3 className="font-bold text-sm mb-1">{entity.legal_business_name || 'Unknown Name'}</h3>
                     <div className="flex gap-1">
                         {entity.is_primary && <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">Primary</span>}
                         {entity.entity_type === 'PARTNER' && <span className="text-xs bg-green-100 text-green-800 px-1 rounded">Partner</span>}
@@ -190,10 +279,10 @@ export default function EntitySearchPage() {
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <div className="flex items-center gap-3">
-                        <h2 className="text-2xl font-bold">{selectedEntity.legal_business_name}</h2>
-                        {selectedEntity.is_primary && <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">Primary Entity</span>}
-                        {selectedEntity.entity_type === 'PARTNER' && <span className="bg-green-600 text-white text-xs px-2 py-1 rounded-full">Partner</span>}
-                        {selectedEntity.entity_type === 'COMPETITOR' && <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full">Competitor</span>}
+                      <h2 className="text-2xl font-bold">{selectedEntity.legal_business_name}</h2>
+                      {selectedEntity.is_primary && <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">Primary Entity</span>}
+                      {selectedEntity.entity_type === 'PARTNER' && <span className="bg-green-600 text-white text-xs px-2 py-1 rounded-full">Partner</span>}
+                      {selectedEntity.entity_type === 'COMPETITOR' && <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full">Competitor</span>}
                     </div>
                     <p className="text-muted-foreground font-mono">UEI: {selectedEntity.uei}</p>
                   </div>
@@ -216,7 +305,10 @@ export default function EntitySearchPage() {
                 </div>
 
                 {awardsLoading ? (
-                  <div className="flex justify-center p-12">Loading awards data...</div>
+                  <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
+                    <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                    <p>Loading awards data...</p>
+                  </div>
                 ) : awards.length > 0 ? (
                   <div className="space-y-8">
                     
@@ -281,17 +373,316 @@ export default function EntitySearchPage() {
                           </thead>
                           <tbody className="divide-y">
                             {awards.map((award, i) => (
-                              <tr key={i} className="hover:bg-muted/20">
-                                <td className="p-3 font-mono">{award["Award ID"]}</td>
-                                <td className="p-3">{award["Awarding Agency"]}</td>
-                                <td className="p-3 max-w-xs truncate" title={award["Description"]}>{award["Description"]}</td>
-                                <td className="p-3">
-                                  {award["Place of Performance City Name"]}, {award["Place of Performance State Code"]}
-                                </td>
-                                <td className="p-3 text-right font-mono text-green-600">
-                                  ${award["Award Amount"]?.toLocaleString()}
-                                </td>
-                              </tr>
+                              <>
+                                <tr key={i} className={`hover:bg-muted/20 ${selectedAward?.["Award ID"] === award["Award ID"] ? 'bg-accent/50' : ''}`}>
+                                  <td className="p-3 font-mono">
+                                    <button 
+                                      onClick={() => setSelectedAward(selectedAward?.["Award ID"] === award["Award ID"] ? null : award)}
+                                      className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                    >
+                                      {award["Award ID"]}
+                                    </button>
+                                  </td>
+                                  <td className="p-3">{award["Awarding Agency"]}</td>
+                                  <td className="p-3 max-w-xs truncate" title={award["Description"]}>{award["Description"]}</td>
+                                  <td className="p-3">
+                                    {award["Place of Performance City Name"]}, {award["Place of Performance State Code"]}
+                                  </td>
+                                  <td className="p-3 text-right font-mono text-green-600">
+                                    ${award["Award Amount"]?.toLocaleString()}
+                                  </td>
+                                </tr>
+                                {selectedAward?.["Award ID"] === award["Award ID"] && (
+                                  <tr key={`${i}-details`}>
+                                    <td colSpan={5} className="p-0">
+                                      <div className="bg-accent/20 p-6 border-t border-b">
+                                        <div className="flex justify-between items-start mb-6">
+                                          <h4 className="text-xl font-bold">Complete Award Details</h4>
+                                          <button 
+                                            onClick={() => setSelectedAward(null)}
+                                            className="text-muted-foreground hover:text-foreground text-sm px-3 py-1 border rounded"
+                                          >
+                                            ✕ Close
+                                          </button>
+                                        </div>
+
+                                        <div className="space-y-6">
+                                          {/* Header Section */}
+                                          <div className="bg-card p-4 rounded border">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                              <div>
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Award ID</p>
+                                                <p className="font-mono text-sm">{award["Award ID"]}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Recipient</p>
+                                                <p className="text-sm">{award["Recipient Name"]}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Award Amount</p>
+                                                <p className="text-lg font-bold text-green-600">${award["Award Amount"]?.toLocaleString()}</p>
+                                              </div>
+                                            </div>
+                                            <div className="mt-3">
+                                              <p className="text-xs text-muted-foreground font-medium mb-1">Description</p>
+                                              <p className="text-sm">{award["Description"]}</p>
+                                            </div>
+                                          </div>
+
+                                          {/* Financial Information */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">💰 Financial Information</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card p-4 rounded border">
+                                              {award["Total Obligation"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Total Obligation</p>
+                                                  <p className="text-sm font-mono">${award["Total Obligation"]?.toLocaleString()}</p>
+                                                </div>
+                                              )}
+                                              {award["Base and All Options Value"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Base and All Options Value</p>
+                                                  <p className="text-sm font-mono">${award["Base and All Options Value"]?.toLocaleString()}</p>
+                                                </div>
+                                              )}
+                                              {award["Base Exercised Options Val"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Base Exercised Options</p>
+                                                  <p className="text-sm font-mono">${award["Base Exercised Options Val"]?.toLocaleString()}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Timeline Information */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">📅 Timeline</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card p-4 rounded border">
+                                              {award["Start Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Start Date</p>
+                                                  <p className="text-sm">{award["Start Date"]}</p>
+                                                </div>
+                                              )}
+                                              {award["End Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">End Date</p>
+                                                  <p className="text-sm">{award["End Date"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Current End Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Current End Date</p>
+                                                  <p className="text-sm">{award["Current End Date"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Period of Performance Start Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">PoP Start Date</p>
+                                                  <p className="text-sm">{award["Period of Performance Start Date"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Period of Performance Current End Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">PoP Current End Date</p>
+                                                  <p className="text-sm">{award["Period of Performance Current End Date"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Last Modified Date"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Last Modified</p>
+                                                  <p className="text-sm">{award["Last Modified Date"]}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Contract Information */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">📋 Contract Information</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card p-4 rounded border">
+                                              {award["Award Type"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Award Type</p>
+                                                  <p className="text-sm">{award["Award Type"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Contract Award Type"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Contract Award Type</p>
+                                                  <p className="text-sm">{award["Contract Award Type"]}</p>
+                                                </div>
+                                              )}
+                                              {award["IDV Type"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">IDV Type</p>
+                                                  <p className="text-sm">{award["IDV Type"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Contract Pricing"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Contract Pricing</p>
+                                                  <p className="text-sm">{award["Contract Pricing"]}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Competition & Set Aside */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">🏆 Competition & Set Aside</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card p-4 rounded border">
+                                              {award["Type of Set Aside"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Type of Set Aside</p>
+                                                  <p className="text-sm">{award["Type of Set Aside"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Extent Competed"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Extent Competed</p>
+                                                  <p className="text-sm">{award["Extent Competed"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Number of Offers Received"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Offers Received</p>
+                                                  <p className="text-sm">{award["Number of Offers Received"]}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Agency Information */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">🏛️ Agency Information</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-card p-4 rounded border">
+                                              <div>
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Awarding Agency</p>
+                                                <p className="text-sm">{award["Awarding Agency"]}</p>
+                                                {award["Awarding Sub Agency"] && (
+                                                  <p className="text-xs text-muted-foreground mt-1">{award["Awarding Sub Agency"]}</p>
+                                                )}
+                                              </div>
+                                              {award["Funding Agency"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Funding Agency</p>
+                                                  <p className="text-sm">{award["Funding Agency"]}</p>
+                                                  {award["Funding Sub Agency"] && (
+                                                    <p className="text-xs text-muted-foreground mt-1">{award["Funding Sub Agency"]}</p>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Classification */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">🏷️ Classification</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-card p-4 rounded border">
+                                              {award["NAICS Code"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">NAICS Code</p>
+                                                  <p className="text-sm font-mono">{award["NAICS Code"]}</p>
+                                                  {award["NAICS Description"] && (
+                                                    <p className="text-xs text-muted-foreground mt-1">{award["NAICS Description"]}</p>
+                                                  )}
+                                                </div>
+                                              )}
+                                              {award["Product or Service Code"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">PSC Code</p>
+                                                  <p className="text-sm font-mono">{award["Product or Service Code"]}</p>
+                                                  {award["Product or Service Code Description"] && (
+                                                    <p className="text-xs text-muted-foreground mt-1">{award["Product or Service Code Description"]}</p>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Location Information */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">📍 Location Information</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-card p-4 rounded border">
+                                              <div>
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Place of Performance</p>
+                                                <p className="text-sm">
+                                                  {award["Place of Performance City Name"]}, {award["Place of Performance State Code"]} {award["Place of Performance ZIP Code"]}
+                                                  {award["Place of Performance Country Code"] && ` - ${award["Place of Performance Country Code"]}`}
+                                                </p>
+                                              </div>
+                                              {award["Recipient Address Line 1"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Recipient Address</p>
+                                                  <p className="text-sm">
+                                                    {award["Recipient Address Line 1"]}<br/>
+                                                    {award["Recipient City Name"]}, {award["Recipient State Code"]} {award["Recipient ZIP Code"]}
+                                                  </p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Identifiers */}
+                                          <div>
+                                            <h5 className="font-semibold mb-3 text-sm">🔑 Identifiers</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card p-4 rounded border">
+                                              {award["Solicitation ID"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Solicitation ID</p>
+                                                  <p className="text-sm font-mono">{award["Solicitation ID"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Contract Award Unique Key"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Contract Award Key</p>
+                                                  <p className="text-sm font-mono text-xs">{award["Contract Award Unique Key"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Parent Award ID"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Parent Award ID</p>
+                                                  <p className="text-sm font-mono">{award["Parent Award ID"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Recipient UEI"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">Recipient UEI</p>
+                                                  <p className="text-sm font-mono">{award["Recipient UEI"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Recipient DUNS Number"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">DUNS Number</p>
+                                                  <p className="text-sm font-mono">{award["Recipient DUNS Number"]}</p>
+                                                </div>
+                                              )}
+                                              {award["Referenced IDV Agency Identifier"] && (
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground font-medium mb-1">IDV Agency ID</p>
+                                                  <p className="text-sm font-mono">{award["Referenced IDV Agency Identifier"]}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Additional Details */}
+                                          {award["Sub-Award Count"] && (
+                                            <div>
+                                              <h5 className="font-semibold mb-3 text-sm">📊 Additional Details</h5>
+                                              <div className="bg-card p-4 rounded border">
+                                                <p className="text-xs text-muted-foreground font-medium mb-1">Sub-Award Count</p>
+                                                <p className="text-sm">{award["Sub-Award Count"]}</p>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
                             ))}
                           </tbody>
                         </table>

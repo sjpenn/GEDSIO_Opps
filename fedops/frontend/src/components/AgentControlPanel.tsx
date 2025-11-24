@@ -48,6 +48,8 @@ interface Proposal {
   version: number;
 }
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+
 export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [loading, setLoading] = useState(false);
   const [score, setScore] = useState<ScoreData | null>(null);
@@ -59,17 +61,17 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
 
   const fetchData = async () => {
     try {
-      const scoreRes = await fetch(`http://localhost:8000/api/v1/agents/opportunities/${opportunityId}/score`);
+      const scoreRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/score`);
       if (scoreRes.ok) {
         setScore(await scoreRes.json());
       }
       
-      const logsRes = await fetch(`http://localhost:8000/api/v1/agents/opportunities/${opportunityId}/logs`);
+      const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
       if (logsRes.ok) {
         setLogs(await logsRes.json());
       }
       
-      const propRes = await fetch(`http://localhost:8000/api/v1/proposals/${opportunityId}`);
+      const propRes = await fetch(`${API_URL}/api/v1/proposals/${opportunityId}`);
       if (propRes.ok) {
         const propData = await propRes.json();
         setProposal(propData);
@@ -84,17 +86,25 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunityId]);
 
   const handleAnalyze = async () => {
     setLoading(true);
     try {
-      await fetch(`http://localhost:8000/api/v1/agents/opportunities/${opportunityId}/analyze`, {
+      const response = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze`, {
         method: 'POST'
       });
-      await fetchData();
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error("Analysis failed:", response.status, errorData);
+        alert(`Analysis failed: ${response.status} - ${errorData}`);
+      } else {
+        await fetchData();
+      }
     } catch (error) {
       console.error("Analysis failed", error);
+      alert(`Analysis failed: ${error}`);
     } finally {
       setLoading(false);
     }
@@ -102,7 +112,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
 
   const handleGenerateProposal = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/proposals/generate/${opportunityId}`, {
+      const res = await fetch(`${API_URL}/api/v1/proposals/generate/${opportunityId}`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -127,7 +137,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const saveBlock = async (blockId: string) => {
     if (!proposal || !activeVolumeId) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/proposals/${proposal.id}/volumes/${activeVolumeId}/blocks/${blockId}`, {
+      const res = await fetch(`${API_URL}/api/v1/proposals/${proposal.id}/volumes/${activeVolumeId}/blocks/${blockId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editContent })

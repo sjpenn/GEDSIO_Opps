@@ -1,14 +1,15 @@
 from typing import Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from fedops_agents.base_agent import BaseAgent
 from fedops_core.db.models import Opportunity
 
 class ComplianceAgent(BaseAgent):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__("ComplianceAgent", db)
 
-    def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
-        self.log_activity(opportunity_id, "START_COMPLIANCE_CHECK", "IN_PROGRESS")
+    async def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
+        await self.log_activity(opportunity_id, "START_COMPLIANCE_CHECK", "IN_PROGRESS")
         
         try:
             # Placeholder for compliance logic
@@ -19,18 +20,20 @@ class ComplianceAgent(BaseAgent):
             risk_score = 10.0 # Low risk
             
             # Update Opportunity model
-            opp = self.db.query(Opportunity).filter(Opportunity.id == opportunity_id).first()
+            result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+            opp = result.scalar_one_or_none()
+            
             if opp:
                 opp.compliance_status = compliance_status
                 opp.risk_score = risk_score
-                self.db.commit()
+                await self.db.commit()
             
-            self.log_activity(opportunity_id, "END_COMPLIANCE_CHECK", "SUCCESS", {
+            await self.log_activity(opportunity_id, "END_COMPLIANCE_CHECK", "SUCCESS", {
                 "compliance_status": compliance_status,
                 "risk_score": risk_score
             })
             return {"status": "success", "compliance_status": compliance_status, "risk_score": risk_score}
 
         except Exception as e:
-            self.log_activity(opportunity_id, "COMPLIANCE_ERROR", "FAILURE", {"error": str(e)})
+            await self.log_activity(opportunity_id, "COMPLIANCE_ERROR", "FAILURE", {"error": str(e)})
             raise e

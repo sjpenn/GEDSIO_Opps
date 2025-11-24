@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
-from typing import Dict, Any, List
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
+from sqlalchemy.orm import selectinload
 import uuid
 
 from fedops_core.db.engine import get_db
@@ -16,18 +17,20 @@ class BlockUpdate(BaseModel):
     content: str
 
 @router.post("/generate/{opportunity_id}")
-async def generate_proposal(opportunity_id: int, db: Session = Depends(get_db)):
+async def generate_proposal(opportunity_id: int, db: AsyncSession = Depends(get_db)):
     """
     Generates a proposal draft based on the analysis from the agentic pipeline.
     Requires a 'GO' decision.
     """
     # 1. Check Decision
-    score_entry = db.query(OpportunityScore).filter(OpportunityScore.opportunity_id == opportunity_id).first()
+    result = await db.execute(select(OpportunityScore).where(OpportunityScore.opportunity_id == opportunity_id))
+    score_entry = result.scalar_one_or_none()
     if not score_entry or score_entry.go_no_go_decision != "GO":
         raise HTTPException(status_code=400, detail="Cannot generate proposal: Decision is not GO or analysis incomplete.")
 
     # 2. Gather Data
-    opp = db.query(Opportunity).filter(Opportunity.id == opportunity_id).first()
+    result = await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+    opp = result.scalar_one_or_none()
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
@@ -40,7 +43,7 @@ async def generate_proposal(opportunity_id: int, db: Session = Depends(get_db)):
                 {
                     "id": str(uuid.uuid4()), 
                     "title": "1.0 Title Page", 
-                    "content": f"**Proposal for:** {opp.title}\n**Solicitation Number:** {opp.notice_id}\n**Submitted by:** [Company Name]\n**Date:** [Date]", 
+                    "content": f"**Proposal for:** {opp.title}\n**Solicitation Number:** {opp.solicitation_number}\n**Submitted by:** [Company Name]\n**Date:** [Date]", 
                     "order": 1
                 },
                 {
@@ -120,14 +123,17 @@ async def generate_proposal(opportunity_id: int, db: Session = Depends(get_db)):
     ]
     
     # 4. Save to Database
-    proposal = db.query(Proposal).filter(Proposal.opportunity_id == opportunity_id).first()
+    result = await db.execute(select(Proposal).where(Proposal.opportunity_id == opportunity_id))
+    proposal = result.scalar_one_or_none()
+    
     if not proposal:
         proposal = Proposal(opportunity_id=opportunity_id)
         db.add(proposal)
-        db.commit() # Commit to get ID
+        await db.commit() # Commit to get ID
+        await db.refresh(proposal)
     else:
         # Clear existing volumes for regeneration
-        db.query(ProposalVolume).filter(ProposalVolume.proposal_id == proposal.id).delete()
+        await db.execute(delete(ProposalVolume).where(ProposalVolume.proposal_id == proposal.id))
         proposal.version += 1
     
     for vol_data in volumes_data:
@@ -139,21 +145,55 @@ async def generate_proposal(opportunity_id: int, db: Session = Depends(get_db)):
         )
         db.add(vol)
     
-    db.commit()
+    await db.commit()
     
     # Return full proposal with volumes
-    return get_proposal(opportunity_id, db)
+    return await get_proposal(opportunity_id, db)
 
 @router.get("/{opportunity_id}")
-def get_proposal(opportunity_id: int, db: Session = Depends(get_db)):
-    proposal = db.query(Proposal).options(joinedload(Proposal.volumes)).filter(Proposal.opportunity_id == opportunity_id).first()
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Proposal not found")
-    return proposal
+async def get_proposal(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+    try:
+        result = await db.execute(
+            select(Proposal)
+            .options(selectinload(Proposal.volumes))
+            .where(Proposal.opportunity_id == opportunity_id)
+        )
+        proposal = result.scalar_one_or_none()
+        if not proposal:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        
+        # Convert to dict for safe serialization
+        proposal_dict = {
+            "id": proposal.id,
+            "opportunity_id": proposal.opportunity_id,
+            "version": proposal.version,
+            "created_at": proposal.created_at.isoformat() if proposal.created_at else None,
+            "updated_at": proposal.updated_at.isoformat() if proposal.updated_at else None,
+            "volumes": [
+                {
+                    "id": vol.id,
+                    "title": vol.title,
+                    "order": vol.order,
+                    "blocks": vol.blocks or []
+                }
+                for vol in (proposal.volumes or [])
+            ]
+        }
+        return proposal_dict
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching proposal: {str(e)}")
 
 @router.put("/{proposal_id}/volumes/{volume_id}/blocks/{block_id}")
-async def update_proposal_block(proposal_id: int, volume_id: int, block_id: str, update: BlockUpdate, db: Session = Depends(get_db)):
-    volume = db.query(ProposalVolume).filter(ProposalVolume.id == volume_id, ProposalVolume.proposal_id == proposal_id).first()
+async def update_proposal_block(proposal_id: int, volume_id: int, block_id: str, update: BlockUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ProposalVolume)
+        .where(ProposalVolume.id == volume_id, ProposalVolume.proposal_id == proposal_id)
+    )
+    volume = result.scalar_one_or_none()
     if not volume:
         raise HTTPException(status_code=404, detail="Volume not found")
     
@@ -173,6 +213,6 @@ async def update_proposal_block(proposal_id: int, volume_id: int, block_id: str,
         
     # Force update for JSONB
     volume.blocks = list(new_blocks)
-    db.commit()
+    await db.commit()
     
     return {"status": "success", "blocks": volume.blocks}

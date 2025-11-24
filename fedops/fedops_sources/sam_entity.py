@@ -41,16 +41,17 @@ class SamEntityClient:
             print("Warning: SAM_API_KEY not set")
             return {}
          
-         # Note: Search might use a different endpoint or parameters
-         # For V3, it uses 'legalBusinessName'
+         # Use the 'q' parameter with wildcard search for flexible matching
+         # This supports partial matches better than the direct legalBusinessName parameter
          params = {
             "api_key": self.api_key,
-            "legalBusinessName": legal_business_name
+            "q": f"(legalBusinessName:*{legal_business_name}*)",
+            "includeSections": "entityRegistration"
         }
          
          async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(self.BASE_URL, params=params)
+                response = await client.get(self.BASE_URL, params=params, timeout=30.0)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:

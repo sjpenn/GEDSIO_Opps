@@ -1,5 +1,6 @@
 from typing import Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from fedops_agents.base_agent import BaseAgent
 from fedops_core.db.models import Opportunity, OpportunityScore
 
@@ -10,35 +11,35 @@ from fedops_agents.capability_agent import CapabilityMappingAgent
 from fedops_agents.financial_agent import FinancialAnalysisAgent
 
 class OrchestratorAgent(BaseAgent):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__("OrchestratorAgent", db)
 
-    def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
-        self.log_activity(opportunity_id, "START_WORKFLOW", "IN_PROGRESS", {"step": "init"})
+    async def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
+        await self.log_activity(opportunity_id, "START_WORKFLOW", "IN_PROGRESS", {"step": "init"})
         
         try:
             # 1. Ingestion (Placeholder)
             # ingestion_agent = IngestionAgent(self.db)
-            # ingestion_agent.execute(opportunity_id)
+            # await ingestion_agent.execute(opportunity_id)
 
             # 2. Document Analysis (Sequential)
             doc_agent = DocumentAnalysisAgent(self.db)
-            doc_agent.execute(opportunity_id)
+            await doc_agent.execute(opportunity_id)
 
             # 3. Concurrent Analysis
-            self.log_activity(opportunity_id, "CONCURRENT_ANALYSIS", "IN_PROGRESS")
+            await self.log_activity(opportunity_id, "CONCURRENT_ANALYSIS", "IN_PROGRESS")
             
             # Compliance
             comp_agent = ComplianceAgent(self.db)
-            comp_results = comp_agent.execute(opportunity_id)
+            comp_results = await comp_agent.execute(opportunity_id)
             
             # Capability
             cap_agent = CapabilityMappingAgent(self.db)
-            cap_results = cap_agent.execute(opportunity_id)
+            cap_results = await cap_agent.execute(opportunity_id)
             
             # Financial
             fin_agent = FinancialAnalysisAgent(self.db)
-            fin_results = fin_agent.execute(opportunity_id)
+            fin_results = await fin_agent.execute(opportunity_id)
 
             # 4. Score Calculation
             score_data = {
@@ -50,17 +51,19 @@ class OrchestratorAgent(BaseAgent):
                 "data_integrity_score": 100.0
             }
             
-            final_score = self.calculate_score(opportunity_id, score_data)
+            final_score = await self.calculate_score(opportunity_id, score_data)
             
-            self.log_activity(opportunity_id, "END_WORKFLOW", "SUCCESS", {"final_score": final_score})
+            await self.log_activity(opportunity_id, "END_WORKFLOW", "SUCCESS", {"final_score": final_score})
             return {"status": "success", "score": final_score}
 
         except Exception as e:
-            self.log_activity(opportunity_id, "WORKFLOW_ERROR", "FAILURE", {"error": str(e)})
+            await self.log_activity(opportunity_id, "WORKFLOW_ERROR", "FAILURE", {"error": str(e)})
             raise e
 
-    def calculate_score(self, opportunity_id: int, scores: Dict[str, float]) -> float:
-        score_entry = self.db.query(OpportunityScore).filter(OpportunityScore.opportunity_id == opportunity_id).first()
+    async def calculate_score(self, opportunity_id: int, scores: Dict[str, float]) -> float:
+        result = await self.db.execute(select(OpportunityScore).where(OpportunityScore.opportunity_id == opportunity_id))
+        score_entry = result.scalar_one_or_none()
+        
         if not score_entry:
             score_entry = OpportunityScore(opportunity_id=opportunity_id)
             self.db.add(score_entry)
@@ -106,6 +109,6 @@ class OrchestratorAgent(BaseAgent):
         else:
             score_entry.go_no_go_decision = "NO_GO"
             
-        self.db.commit()
+        await self.db.commit()
         
         return weighted_score

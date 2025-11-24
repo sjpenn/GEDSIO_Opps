@@ -1,17 +1,17 @@
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from fedops_core.db.models import AgentActivityLog
 
 logger = logging.getLogger(__name__)
 
 class BaseAgent(ABC):
-    def __init__(self, name: str, db: Session):
+    def __init__(self, name: str, db: AsyncSession):
         self.name = name
         self.db = db
 
-    def log_activity(self, opportunity_id: int, action: str, status: str, details: Optional[Dict[str, Any]] = None):
+    async def log_activity(self, opportunity_id: int, action: str, status: str, details: Optional[Dict[str, Any]] = None):
         """Logs agent activity to the database."""
         try:
             log_entry = AgentActivityLog(
@@ -22,12 +22,12 @@ class BaseAgent(ABC):
                 details=details
             )
             self.db.add(log_entry)
-            self.db.commit()
+            await self.db.commit()
         except Exception as e:
             logger.error(f"Failed to log activity for {self.name}: {e}")
-            self.db.rollback()
+            await self.db.rollback()
 
     @abstractmethod
-    def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
+    async def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
         """Executes the agent's main logic."""
         pass

@@ -22,55 +22,68 @@ async def search_entities(
     db: AsyncSession = Depends(get_db)
 ):
     """Search for entities on SAM.gov and save them to DB"""
-    client = SamEntityClient()
-    data = await client.search_entities(q)
+    import logging
+    logger = logging.getLogger(__name__)
     
-    # SAM API V3 structure: {'entityData': [...]}
-    entities_data = data.get("entityData", []) if isinstance(data, dict) else data
-    if not isinstance(entities_data, list):
-        entities_data = []
+    try:
+        client = SamEntityClient()
+        data = await client.search_entities(q)
+        
+        logger.info(f"SAM Search response type: {type(data)}")
+        
+        # SAM API V3 structure: {'entityData': [...]}
+        entities_data = data.get("entityData", []) if isinstance(data, dict) else data
+        if not isinstance(entities_data, list):
+            entities_data = []
 
-    results = []
-    for item in entities_data:
-        # Extract fields
-        # Structure: item['entityRegistration']['ueiSAM'], item['entityRegistration']['legalBusinessName']
-        reg = item.get("entityRegistration", {})
-        uei = reg.get("ueiSAM")
-        name = reg.get("legalBusinessName")
-        cage = reg.get("cageCode")
-        
-        if not uei or not name:
-            continue
+        results = []
+        for item in entities_data:
+            if not isinstance(item, dict):
+                logger.warning(f"Skipping non-dict item: {item}")
+                continue
+                
+            # Extract fields
+            # Structure: item['entityRegistration']['ueiSAM'], item['entityRegistration']['legalBusinessName']
+            reg = item.get("entityRegistration", {})
+            uei = reg.get("ueiSAM")
+            name = reg.get("legalBusinessName")
+            cage = reg.get("cageCode")
             
-        # Upsert
-        result = await db.execute(select(Entity).where(Entity.uei == uei))
-        existing = result.scalars().first()
+            if not uei or not name:
+                continue
+                
+            # Upsert
+            result = await db.execute(select(Entity).where(Entity.uei == uei))
+            existing = result.scalars().first()
+            
+            if existing:
+                existing.legal_business_name = name
+                existing.cage_code = cage
+                existing.full_response = item
+                existing.last_synced_at = datetime.utcnow()
+                # Don't overwrite entity_type or notes if they exist
+                results.append(existing)
+            else:
+                new_entity = Entity(
+                    uei=uei,
+                    legal_business_name=name,
+                    cage_code=cage,
+                    full_response=item,
+                    entity_type="OTHER",
+                    last_synced_at=datetime.utcnow()
+                )
+                db.add(new_entity)
+                results.append(new_entity)
         
-        if existing:
-            existing.legal_business_name = name
-            existing.cage_code = cage
-            existing.full_response = item
-            existing.last_synced_at = datetime.utcnow()
-            # Don't overwrite entity_type or notes if they exist
-            results.append(existing)
-        else:
-            new_entity = Entity(
-                uei=uei,
-                legal_business_name=name,
-                cage_code=cage,
-                full_response=item,
-                entity_type="OTHER",
-                last_synced_at=datetime.utcnow()
-            )
-            db.add(new_entity)
-            results.append(new_entity)
-    
-    await db.commit()
-    # Refresh all to get IDs and timestamps
-    for e in results:
-        await db.refresh(e)
-        
-    return results
+        await db.commit()
+        # Refresh all to get IDs and timestamps
+        for e in results:
+            await db.refresh(e)
+            
+        return results
+    except Exception as e:
+        logger.error(f"Error in search_entities: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/", response_model=schemas.Entity)
 async def save_entity(
@@ -97,41 +110,52 @@ async def save_entity(
 @router.get("/{uei}/awards")
 async def get_entity_awards(
     uei: str, 
-    limit: int = 10,
+    limit: int = 100,
     db: AsyncSession = Depends(get_db),
     usaspending: USASpendingClient = Depends(USASpendingClient)
 ):
     """Fetch awards for an entity from USASpending.gov"""
-    # 1. Try to fetch from USASpending
-    awards_data = await usaspending.get_awards_by_uei(uei, limit=limit)
-    
-    # 2. Cache/Update in DB (Simplified logic: just insert new ones)
-    # In a real app, we'd handle updates and duplicates more carefully
-    for award in awards_data:
-        # Map USASpending fields to our model
-        # Note: USASpending field names might need adjustment based on actual API response
-        award_id = award.get("Award ID")
-        if not award_id:
-            continue
-            
-        # Check if exists
-        result = await db.execute(select(EntityAward).where(EntityAward.award_id == award_id))
-        if not result.scalars().first():
-            db_award = EntityAward(
-                award_id=award_id,
-                recipient_uei=uei,
-                total_obligation=award.get("Award Amount"),
-                description=award.get("Description"),
-                award_date=None, # Parse date if needed
-                awarding_agency=award.get("Awarding Agency"),
-                naics_code=award.get("NAICS Code")
-            )
-            db.add(db_award)
-    
-    await db.commit()
-    
-    # Return the data directly from API for freshness, or query DB
-    return awards_data
+    try:
+        # 1. Get the entity name from the database
+        result = await db.execute(select(Entity).where(Entity.uei == uei))
+        entity = result.scalars().first()
+        
+        if not entity:
+            print(f"Entity with UEI {uei} not found")
+            return []
+        
+        # 2. Fetch from USASpending using entity name (not UEI)
+        awards_data = await usaspending.get_awards_by_name(entity.legal_business_name, limit=limit)
+        
+        # 3. Cache/Update in DB (Simplified logic: just insert new ones)
+        for award in awards_data:
+            award_id = award.get("Award ID")
+            if not award_id:
+                continue
+                
+            # Check if exists
+            result = await db.execute(select(EntityAward).where(EntityAward.award_id == award_id))
+            if not result.scalars().first():
+                db_award = EntityAward(
+                    award_id=award_id,
+                    recipient_uei=uei,
+                    total_obligation=award.get("Award Amount"),
+                    description=award.get("Description"),
+                    award_date=None,  # Parse date if needed
+                    awarding_agency=award.get("Awarding Agency"),
+                    naics_code=award.get("NAICS Code")
+                )
+                db.add(db_award)
+        
+        await db.commit()
+        
+        # Return the data directly from API for freshness
+        return awards_data
+    except Exception as e:
+        print(f"Error in get_entity_awards: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 @router.put("/{uei}/primary", response_model=schemas.Entity)
 async def set_primary_entity(
@@ -168,58 +192,73 @@ async def get_primary_entity(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Entity).where(Entity.is_primary == True))
     return result.scalars().first()
 
-@router.post("/match-opportunity", response_model=List[dict])
-async def match_partners_to_opportunity(
-    opportunity_id: int,
+    return matches
+
+@router.get("/{uei}/contract-documents")
+async def get_contract_documents(
+    uei: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Find partners that match an opportunity based on NAICS code and past performance.
+    Retrieve SOW/PWS documents for an entity's awards.
+    1. Get awards with solicitation IDs.
+    2. Fetch opportunity details from SAM.gov.
+    3. Extract resource links (documents).
     """
-    from fedops_core.db.models import Opportunity
-    from sqlalchemy import func, desc
+    from fedops_sources.sam_opportunities.client import SamOpportunitiesClient
+    from sqlalchemy import desc
     
-    # 1. Get Opportunity
-    result = await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
-    opp = result.scalars().first()
-    if not opp:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
-    
-    # 2. Get NAICS
-    naics = opp.naics_code
-    if not naics:
-        # Fallback: Try to match by keywords? For now just return empty.
-        return [] 
-    
-    # 3. Find Entities that have awards with this NAICS
-    # We prioritize entities marked as PARTNER, but search all.
-    
+    # 1. Get awards for this entity that have a solicitation ID
+    # We limit to recent or significant awards to avoid too many API calls
     stmt = (
-        select(Entity, func.sum(EntityAward.total_obligation).label("total_obligation"), func.count(EntityAward.award_id).label("award_count"))
-        .join(EntityAward, Entity.uei == EntityAward.recipient_uei)
-        .where(EntityAward.naics_code == naics)
-        .group_by(Entity.uei)
-        .order_by(desc("total_obligation"))
+        select(EntityAward)
+        .where(EntityAward.recipient_uei == uei)
+        .where(EntityAward.solicitation_id.isnot(None))
+        .order_by(desc(EntityAward.total_obligation))
+        .limit(20) # Limit to top 20 awards
     )
+    result = await db.execute(stmt)
+    awards = result.scalars().all()
     
-    results = await db.execute(stmt)
-    matches = []
-    for row in results:
-        entity = row[0]
-        total_ob = row[1] or 0
-        count = row[2] or 0
+    sam_client = SamOpportunitiesClient()
+    documents = []
+    
+    for award in awards:
+        if not award.solicitation_id:
+            continue
+            
+        # Fetch opportunity
+        opp = await sam_client.get_opportunity_by_solicitation_id(award.solicitation_id)
         
-        # Serialize entity using Pydantic model
-        entity_data = schemas.Entity.model_validate(entity).model_dump()
+        if not opp:
+            continue
+            
+        # Extract documents
+        # SAM API structure: opp['resourceLinks'] or similar
+        # Note: The actual structure needs to be verified. 
+        # Usually it's in 'solicitation' -> 'resourceLinks' or top level 'resourceLinks'
         
-        matches.append({
-            "entity": entity_data,
-            "match_score": total_ob, 
-            "match_details": {
-                "total_obligation": total_ob,
-                "award_count": count,
-                "reason": f"Has {count} awards in NAICS {naics}"
-            }
-        })
+        # Let's assume a standard structure or try to find it
+        resource_links = opp.get("resourceLinks", [])
         
-    return matches
+        # Also check for 'attachments' if that's a field
+        
+        for link in resource_links:
+            # Check if it's likely an SOW/PWS
+            # We can check the 'name' or 'description' if available, or just the URL?
+            # Usually resourceLinks has 'url' and maybe 'name'
+            
+            # For now, we return all and let frontend filter, or filter here
+            # But we want to be specific about SOW/PWS if possible.
+            
+            # If we can't determine, we just return it with the award context
+            documents.append({
+                "award_id": award.award_id,
+                "solicitation_id": award.solicitation_id,
+                "title": opp.get("title"),
+                "document_url": link, # This might be a string or dict
+                "type": "Unknown" # Placeholder
+            })
+            
+    return documents
+

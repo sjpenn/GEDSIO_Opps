@@ -1,19 +1,22 @@
 from typing import Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from fedops_agents.base_agent import BaseAgent
 from fedops_core.db.models import Opportunity, CompanyProfile
 
 class CapabilityMappingAgent(BaseAgent):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__("CapabilityMappingAgent", db)
 
-    def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
-        self.log_activity(opportunity_id, "START_CAPABILITY_MAPPING", "IN_PROGRESS")
+    async def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
+        await self.log_activity(opportunity_id, "START_CAPABILITY_MAPPING", "IN_PROGRESS")
         
         try:
-            opp = self.db.query(Opportunity).filter(Opportunity.id == opportunity_id).first()
-            # Assuming single company profile for now, or pick primary
-            company = self.db.query(CompanyProfile).first()
+            result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+            opp = result.scalar_one_or_none()
+            
+            result = await self.db.execute(select(CompanyProfile))
+            company = result.scalars().first()
             
             if not opp or not company:
                 raise ValueError("Opportunity or Company Profile not found")
@@ -39,12 +42,12 @@ class CapabilityMappingAgent(BaseAgent):
             # Cap score at 100
             final_score = min(score, 100.0)
             
-            self.log_activity(opportunity_id, "END_CAPABILITY_MAPPING", "SUCCESS", {
+            await self.log_activity(opportunity_id, "END_CAPABILITY_MAPPING", "SUCCESS", {
                 "score": final_score,
                 "matches": matches
             })
             return {"status": "success", "internal_capacity_score": final_score, "matches": matches}
 
         except Exception as e:
-            self.log_activity(opportunity_id, "CAPABILITY_ERROR", "FAILURE", {"error": str(e)})
+            await self.log_activity(opportunity_id, "CAPABILITY_ERROR", "FAILURE", {"error": str(e)})
             raise e

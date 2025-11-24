@@ -86,6 +86,8 @@ export default function EntitySearchPage() {
   const [awards, setAwards] = useState<Award[]>([]);
   const [awardsLoading, setAwardsLoading] = useState(false);
   const [selectedAward, setSelectedAward] = useState<Award | null>(null);
+  const [solicitationDocs, setSolicitationDocs] = useState<any[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,6 +187,30 @@ export default function EntitySearchPage() {
     }
   };
 
+  const fetchSolicitationDocuments = async (uei: string) => {
+    setDocsLoading(true);
+    try {
+      const res = await fetch(`/api/v1/entities/${uei}/contract-documents`);
+      if (!res.ok) {
+        console.error('Failed to fetch solicitation documents:', res.statusText);
+        setSolicitationDocs([]);
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setSolicitationDocs(data);
+      } else {
+        console.error('Solicitation documents data is not an array:', data);
+        setSolicitationDocs([]);
+      }
+    } catch (err) {
+      console.error('Error fetching solicitation documents:', err);
+      setSolicitationDocs([]);
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
   // Prepare Chart Data
   const chartData = useMemo(() => {
     if (!Array.isArray(awards)) return [];
@@ -239,6 +265,7 @@ export default function EntitySearchPage() {
                   onClick={() => {
                     setSelectedEntity(entity);
                     fetchAwards(entity.uei);
+                    fetchSolicitationDocuments(entity.uei);
                   }}
                 >
                   <div className="flex justify-between items-start">
@@ -666,6 +693,64 @@ export default function EntitySearchPage() {
                                               )}
                                             </div>
                                           </div>
+
+                                          {/* Solicitation Documents */}
+                                          {award["Solicitation ID"] && (
+                                            <div>
+                                              <h5 className="font-semibold mb-3 text-sm">📄 Solicitation Documents</h5>
+                                              {docsLoading ? (
+                                                <div className="bg-card p-4 rounded border flex items-center justify-center">
+                                                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                                                  <span className="text-sm text-muted-foreground">Loading documents...</span>
+                                                </div>
+                                              ) : (
+                                                <div className="bg-card p-4 rounded border space-y-2">
+                                                  {solicitationDocs.filter(doc => doc.solicitation_id === award["Solicitation ID"]).length > 0 ? (
+                                                    solicitationDocs
+                                                      .filter(doc => doc.solicitation_id === award["Solicitation ID"])
+                                                      .map((doc, idx) => (
+                                                        <a
+                                                          key={idx}
+                                                          href={doc.document_url}
+                                                          target="_blank"
+                                                          rel="noreferrer"
+                                                          className="flex items-start justify-between p-3 bg-background border border-border rounded hover:border-primary/50 transition-colors group"
+                                                        >
+                                                          <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                              <span className="text-sm font-medium truncate group-hover:text-primary">
+                                                                {doc.document_filename}
+                                                              </span>
+                                                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                                                doc.document_type === 'SOW' ? 'bg-blue-100 text-blue-800' :
+                                                                doc.document_type === 'PWS' ? 'bg-purple-100 text-purple-800' :
+                                                                doc.document_type === 'RFP' ? 'bg-green-100 text-green-800' :
+                                                                doc.document_type === 'Amendment' ? 'bg-yellow-100 text-yellow-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                              }`}>
+                                                                {doc.document_type}
+                                                              </span>
+                                                            </div>
+                                                            {doc.opportunity_title && (
+                                                              <p className="text-xs text-muted-foreground truncate">
+                                                                {doc.opportunity_title}
+                                                              </p>
+                                                            )}
+                                                          </div>
+                                                          <span className="ml-2 text-muted-foreground group-hover:text-primary transition-transform group-hover:translate-x-1">
+                                                            ↗
+                                                          </span>
+                                                        </a>
+                                                      ))
+                                                  ) : (
+                                                    <p className="text-sm text-muted-foreground italic">
+                                                      No solicitation documents found for this award.
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
 
                                           {/* Additional Details */}
                                           {award["Sub-Award Count"] && (

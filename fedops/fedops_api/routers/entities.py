@@ -143,7 +143,8 @@ async def get_entity_awards(
                     description=award.get("Description"),
                     award_date=None,  # Parse date if needed
                     awarding_agency=award.get("Awarding Agency"),
-                    naics_code=award.get("NAICS Code")
+                    naics_code=award.get("NAICS Code"),
+                    solicitation_id=award.get("Solicitation ID")  # Store solicitation ID for document retrieval
                 )
                 db.add(db_award)
         
@@ -207,6 +208,12 @@ async def get_contract_documents(
     """
     from fedops_sources.sam_opportunities.client import SamOpportunitiesClient
     from sqlalchemy import desc
+    import httpx
+    import urllib.parse
+    import re
+    import logging
+    
+    logger = logging.getLogger(__name__)
     
     # 1. Get awards for this entity that have a solicitation ID
     # We limit to recent or significant awards to avoid too many API calls
@@ -227,38 +234,100 @@ async def get_contract_documents(
         if not award.solicitation_id:
             continue
             
-        # Fetch opportunity
-        opp = await sam_client.get_opportunity_by_solicitation_id(award.solicitation_id)
-        
-        if not opp:
+        try:
+            # Fetch opportunity from SAM.gov
+            opp = await sam_client.get_opportunity_by_solicitation_id(award.solicitation_id)
+            
+            if not opp:
+                logger.warning(f"No opportunity found for solicitation ID: {award.solicitation_id}")
+                continue
+                
+            # Extract resource links from the opportunity
+            resource_links = opp.get("resourceLinks", [])
+            
+            if not resource_links:
+                logger.info(f"No resource links found for solicitation ID: {award.solicitation_id}")
+                continue
+            
+            # Process each resource link to resolve filename
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                for link in resource_links:
+                    try:
+                        # Default filename from URL
+                        filename = link.split("/")[-1] if isinstance(link, str) else "document"
+                        url = link if isinstance(link, str) else link.get("url", link.get("href", ""))
+                        
+                        if not url:
+                            continue
+                        
+                        # Try to get real filename from headers (same logic as opportunities endpoint)
+                        try:
+                            response = await client.head(url)
+                            
+                            # Check for redirect with filename in query params (common for SAM.gov)
+                            if response.status_code in (301, 302, 303, 307, 308):
+                                location = response.headers.get("location")
+                                if location:
+                                    parsed = urllib.parse.urlparse(location)
+                                    params = urllib.parse.parse_qs(parsed.query)
+                                    content_disposition = params.get('response-content-disposition', [None])[0]
+                                    if content_disposition:
+                                        # Look for filename="name"
+                                        match = re.search(r'filename="?([^"]+)"?', content_disposition)
+                                        if match:
+                                            filename = match.group(1)
+                                        else:
+                                            # Try filename*=
+                                            match = re.search(r"filename\*=UTF-8''(.+)", content_disposition)
+                                            if match:
+                                                filename = urllib.parse.unquote(match.group(1))
+                            
+                            # If not a redirect, check Content-Disposition header directly
+                            elif response.status_code == 200:
+                                content_disposition = response.headers.get("content-disposition")
+                                if content_disposition:
+                                    match = re.search(r'filename="?([^"]+)"?', content_disposition)
+                                    if match:
+                                        filename = match.group(1)
+                                    else:
+                                        match = re.search(r"filename\*=UTF-8''(.+)", content_disposition)
+                                        if match:
+                                            filename = urllib.parse.unquote(match.group(1))
+                        except Exception as e:
+                            logger.warning(f"Error resolving filename for {url}: {e}")
+                        
+                        # Clean up filename (replace + with space)
+                        if filename:
+                            filename = filename.replace("+", " ")
+                        
+                        # Determine document type based on filename
+                        doc_type = "Other"
+                        filename_lower = filename.lower()
+                        if any(keyword in filename_lower for keyword in ["sow", "statement of work", "statement_of_work"]):
+                            doc_type = "SOW"
+                        elif any(keyword in filename_lower for keyword in ["pws", "performance work statement", "performance_work_statement"]):
+                            doc_type = "PWS"
+                        elif any(keyword in filename_lower for keyword in ["rfp", "request for proposal"]):
+                            doc_type = "RFP"
+                        elif any(keyword in filename_lower for keyword in ["amendment", "modification"]):
+                            doc_type = "Amendment"
+                        
+                        documents.append({
+                            "award_id": award.award_id,
+                            "solicitation_id": award.solicitation_id,
+                            "opportunity_title": opp.get("title"),
+                            "document_url": url,
+                            "document_filename": filename,
+                            "document_type": doc_type,
+                            "award_description": award.description,
+                            "award_amount": award.total_obligation
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing resource link {link}: {e}")
+                        continue
+        except Exception as e:
+            logger.error(f"Error fetching documents for solicitation {award.solicitation_id}: {e}")
             continue
-            
-        # Extract documents
-        # SAM API structure: opp['resourceLinks'] or similar
-        # Note: The actual structure needs to be verified. 
-        # Usually it's in 'solicitation' -> 'resourceLinks' or top level 'resourceLinks'
-        
-        # Let's assume a standard structure or try to find it
-        resource_links = opp.get("resourceLinks", [])
-        
-        # Also check for 'attachments' if that's a field
-        
-        for link in resource_links:
-            # Check if it's likely an SOW/PWS
-            # We can check the 'name' or 'description' if available, or just the URL?
-            # Usually resourceLinks has 'url' and maybe 'name'
-            
-            # For now, we return all and let frontend filter, or filter here
-            # But we want to be specific about SOW/PWS if possible.
-            
-            # If we can't determine, we just return it with the award context
-            documents.append({
-                "award_id": award.award_id,
-                "solicitation_id": award.solicitation_id,
-                "title": opp.get("title"),
-                "document_url": link, # This might be a string or dict
-                "type": "Unknown" # Placeholder
-            })
             
     return documents
 

@@ -42,6 +42,7 @@ class Entity(EntityBase):
     last_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    similarity_score: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -53,6 +54,7 @@ class EntityAwardBase(BaseModel):
     description: Optional[str] = None
     award_date: Optional[Any] = None # Date
     awarding_agency: Optional[str] = None
+    award_type: Optional[str] = "Prime"
 
 class EntityAward(EntityAwardBase):
     created_at: datetime

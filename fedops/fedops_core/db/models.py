@@ -87,6 +87,7 @@ class EntityAward(Base):
     awarding_agency = Column(String, nullable=True)
     naics_code = Column(String, index=True, nullable=True)
     solicitation_id = Column(String, index=True, nullable=True)
+    award_type = Column(String, default="Prime") # Prime or Sub
     
     created_at = Column(DateTime, default=datetime.utcnow)
 

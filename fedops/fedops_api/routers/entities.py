@@ -19,22 +19,41 @@ def get_sam_client():
 @router.get("/search", response_model=List[schemas.Entity])
 async def search_entities(
     q: str = Query(..., min_length=3, description="Legal Business Name to search"),
+    fuzzy: bool = Query(True, description="Enable fuzzy matching with multiple patterns"),
+    min_similarity: float = Query(0.5, ge=0.0, le=1.0, description="Minimum similarity score (0.0-1.0)"),
+    use_phonetic: bool = Query(True, description="Enable phonetic matching for sound-alike names"),
+    use_abbreviations: bool = Query(True, description="Enable abbreviation expansion/contraction"),
+    use_typos: bool = Query(True, description="Enable typo tolerance"),
+    bypass_cache: bool = Query(False, description="Skip cache and fetch fresh results"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Search for entities on SAM.gov and save them to DB"""
+    """Search for entities on SAM.gov with advanced fuzzy matching and save them to DB"""
     import logging
     logger = logging.getLogger(__name__)
     
     try:
         client = SamEntityClient()
-        data = await client.search_entities(q)
+        data = await client.search_entities(
+            q,
+            fuzzy=fuzzy,
+            min_similarity=min_similarity,
+            use_phonetic=use_phonetic,
+            use_abbreviations=use_abbreviations,
+            use_typos=use_typos,
+            bypass_cache=bypass_cache
+        )
         
         logger.info(f"SAM Search response type: {type(data)}")
         
-        # SAM API V3 structure: {'entityData': [...]}
+        # SAM API V3 structure: {'entityData': [...], 'searchMetadata': {...}}
         entities_data = data.get("entityData", []) if isinstance(data, dict) else data
+        search_metadata = data.get("searchMetadata", {}) if isinstance(data, dict) else {}
+        
         if not isinstance(entities_data, list):
             entities_data = []
+        
+        if search_metadata:
+            logger.info(f"Fuzzy search metadata: {search_metadata}")
 
         results = []
         for item in entities_data:
@@ -49,6 +68,10 @@ async def search_entities(
             name = reg.get("legalBusinessName")
             cage = reg.get("cageCode")
             
+            # Extract fuzzy match metadata
+            fuzzy_match = item.get("_fuzzy_match", {})
+            similarity_score = fuzzy_match.get("similarity_score", 1.0)
+            
             if not uei or not name:
                 continue
                 
@@ -62,6 +85,10 @@ async def search_entities(
                 existing.full_response = item
                 existing.last_synced_at = datetime.utcnow()
                 # Don't overwrite entity_type or notes if they exist
+                
+                # Add similarity score to the entity object for frontend display
+                # Note: This is not persisted to DB, just for the response
+                existing.similarity_score = similarity_score
                 results.append(existing)
             else:
                 new_entity = Entity(
@@ -73,6 +100,9 @@ async def search_entities(
                     last_synced_at=datetime.utcnow()
                 )
                 db.add(new_entity)
+                
+                # Add similarity score for response
+                new_entity.similarity_score = similarity_score
                 results.append(new_entity)
         
         await db.commit()
@@ -80,10 +110,16 @@ async def search_entities(
         for e in results:
             await db.refresh(e)
             
+        # Sort by similarity score (highest first) if fuzzy search was used
+        if fuzzy and hasattr(results[0] if results else None, 'similarity_score'):
+            results.sort(key=lambda e: getattr(e, 'similarity_score', 0), reverse=True)
+            
         return results
     except Exception as e:
         logger.error(f"Error in search_entities: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @router.post("/", response_model=schemas.Entity)
 async def save_entity(
@@ -125,13 +161,23 @@ async def get_entity_awards(
             return []
         
         # 2. Fetch from USASpending using entity name (not UEI)
-        awards_data = await usaspending.get_awards_by_name(entity.legal_business_name, limit=limit)
+        # Fetch Prime Awards
+        prime_awards = await usaspending.get_awards_by_name(entity.legal_business_name, limit=limit)
         
-        # 3. Cache/Update in DB (Simplified logic: just insert new ones)
-        for award in awards_data:
+        # Fetch Sub-Awards
+        sub_awards = await usaspending.get_subawards_by_name(entity.legal_business_name, limit=limit)
+        
+        all_awards = []
+        
+        # Process Prime Awards
+        for award in prime_awards:
             award_id = award.get("Award ID")
             if not award_id:
                 continue
+            
+            # Normalize for response
+            award["award_type"] = "Prime"
+            all_awards.append(award)
                 
             # Check if exists
             result = await db.execute(select(EntityAward).where(EntityAward.award_id == award_id))
@@ -141,17 +187,54 @@ async def get_entity_awards(
                     recipient_uei=uei,
                     total_obligation=award.get("Award Amount"),
                     description=award.get("Description"),
-                    award_date=None,  # Parse date if needed
+                    award_date=datetime.strptime(award.get("Start Date"), "%Y-%m-%d").date() if award.get("Start Date") else None,
                     awarding_agency=award.get("Awarding Agency"),
                     naics_code=award.get("NAICS Code"),
-                    solicitation_id=award.get("Solicitation ID")  # Store solicitation ID for document retrieval
+                    solicitation_id=award.get("Solicitation ID"),
+                    award_type="Prime"
+                )
+                db.add(db_award)
+
+        # Process Sub-Awards
+        for award in sub_awards:
+            sub_id = award.get("Sub-Award ID")
+            if not sub_id:
+                continue
+                
+            # Normalize keys to match Prime Award structure for frontend
+            normalized_award = {
+                "Award ID": sub_id,
+                "Recipient Name": award.get("Sub-Awardee Name"),
+                "Award Amount": award.get("Sub-Award Amount"),
+                "Description": award.get("Sub-Award Description"),
+                "Start Date": award.get("Sub-Award Date"),
+                "Awarding Agency": award.get("Awarding Agency"),
+                "Prime Award ID": award.get("Prime Award ID"),
+                "Prime Recipient Name": award.get("Prime Recipient Name"),
+                "award_type": "Sub"
+            }
+            all_awards.append(normalized_award)
+            
+            # Check if exists
+            # Note: Sub-Award IDs might clash with Prime IDs? Unlikely but possible.
+            # Usually Sub-Award IDs are distinct.
+            result = await db.execute(select(EntityAward).where(EntityAward.award_id == sub_id))
+            if not result.scalars().first():
+                db_award = EntityAward(
+                    award_id=sub_id,
+                    recipient_uei=uei,
+                    total_obligation=award.get("Sub-Award Amount"),
+                    description=award.get("Sub-Award Description"),
+                    award_date=datetime.strptime(award.get("Sub-Award Date"), "%Y-%m-%d").date() if award.get("Sub-Award Date") else None,
+                    awarding_agency=award.get("Awarding Agency"),
+                    award_type="Sub"
                 )
                 db.add(db_award)
         
         await db.commit()
         
-        # Return the data directly from API for freshness
-        return awards_data
+        # Return the merged data
+        return all_awards
     except Exception as e:
         print(f"Error in get_entity_awards: {e}")
         import traceback

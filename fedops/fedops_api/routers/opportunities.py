@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from typing import List, Optional
 from datetime import datetime
+import asyncio
 import httpx
 import logging
 import math
@@ -12,6 +13,7 @@ from fedops_core.db.models import Opportunity as OpportunityModel, OpportunityCo
 from fedops_core.schemas.opportunity import Opportunity as OpportunitySchema, OpportunityComment as OpportunityCommentSchema, OpportunityCommentCreate
 from fedops_core.schemas.pagination import PaginatedResponse
 from fedops_core.settings import settings
+from fedops_api.services.unified_search import UnifiedSearchService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -71,9 +73,9 @@ async def list_opportunities(
     logger.error(f"DEBUG: list_opportunities called with skip={skip}, limit={limit}, active={active}, keywords={keywords}")
     logger.info(f"list_opportunities called with skip={skip}, limit={limit}")
     
-    # If SAM.gov parameters are provided, fetch from external API
-    # We fetch if there is a date range OR if there are keywords (in which case we default to a wide date range)
-    should_fetch_sam = (postedFrom is not None) or (keywords is not None)
+    # Only fetch from SAM.gov if keywords are provided (explicit search)
+    # Don't fetch on every page load - use local DB for browsing
+    should_fetch_sam = (keywords is not None and keywords.strip() != "")
     
     if should_fetch_sam and settings.SAM_API_KEY:
         try:
@@ -148,7 +150,7 @@ async def list_opportunities(
                 opportunities_data = [o for o in opportunities_data if o.get("active", "Yes") == "Yes"]
             elif active == "no":
                 opportunities_data = [o for o in opportunities_data if o.get("active", "Yes") == "No"]
-            # If active is None (Both), keep all
+            # If active is None, empty string, or "all", keep all
             
             logger.info(f"Final filtered opportunities: {len(opportunities_data)}")
 
@@ -276,6 +278,17 @@ async def list_opportunities(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/search/unified")
+async def unified_search(
+    q: str = Query(..., min_length=3, description="Keyword to search"),
+    limit: int = 20
+):
+    """
+    Search for opportunities across SAM.gov (active/archived) and USASpending.gov (awards).
+    """
+    service = UnifiedSearchService()
+    return await service.search(q, limit)
 
 @router.get("/{id}", response_model=OpportunitySchema)
 async def get_opportunity(id: int, db: AsyncSession = Depends(get_db)):

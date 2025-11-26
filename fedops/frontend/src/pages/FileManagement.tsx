@@ -1,4 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { Loader2, FileText, Upload, RefreshCw, Download, Copy, Mail, File, CheckCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 
 interface StoredFile {
   id: number;
@@ -123,170 +130,200 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    // Could add toast here
+  };
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 p-1">
-        <h1 className="text-2xl font-bold">File Management</h1>
-        <div className="flex gap-2">
+    <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">File Management</h2>
+          <p className="text-muted-foreground">Upload, manage, and analyze documents with AI.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           {opportunityId && (
-            <button
+            <Button
+              variant="secondary"
               onClick={handleImportResources}
               disabled={uploading}
-              className="bg-secondary text-secondary-foreground px-4 py-2 rounded hover:bg-secondary/90 disabled:opacity-50 flex items-center gap-2"
+              className="gap-2"
             >
-              {uploading ? 'Importing...' : 'Import Resources'}
-            </button>
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Import Resources
+            </Button>
           )}
-          <label className="bg-primary text-primary-foreground px-4 py-2 rounded cursor-pointer hover:bg-primary/90 transition-colors flex items-center gap-2">
-            {uploading ? 'Uploading...' : 'Upload File'}
-            <input 
-              type="file" 
-              onChange={handleFileUpload} 
-              className="hidden" 
-              disabled={uploading}
-            />
-          </label>
-          <button 
+          <Button
+            variant="outline"
             onClick={handleBatchProcess}
-            className="bg-accent text-accent-foreground px-4 py-2 rounded hover:bg-accent/90"
+            className="gap-2"
           >
-            Batch Process All
-          </button>
+            <RefreshCw className="h-4 w-4" /> Batch Process
+          </Button>
+          <div className="relative">
+            <Button disabled={uploading} className="gap-2 cursor-pointer relative overflow-hidden">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Upload File
+              <input 
+                type="file" 
+                onChange={handleFileUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer" 
+                disabled={uploading}
+              />
+            </Button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 min-h-0">
         {/* File List */}
-        <div className="col-span-1 bg-card rounded-lg shadow border flex flex-col overflow-hidden">
-          <div className="p-4 border-b bg-muted/50">
-            <h2 className="font-semibold">Files ({files.length})</h2>
-          </div>
-          <div className="divide-y max-h-[600px] overflow-y-auto">
-            {files.map(file => (
-              <div 
-                key={file.id} 
-                className={`p-4 cursor-pointer hover:bg-muted/50 transition-colors ${selectedFile?.id === file.id ? 'bg-muted' : ''}`}
-                onClick={() => setSelectedFile(file)}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium truncate pr-2" title={file.filename}>{file.filename}</span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {(file.file_size / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">{new Date(file.created_at).toLocaleDateString()}</span>
-                  <div className="flex items-center gap-2">
-                    {file.content_summary && (
-                      <span className="text-green-600 text-xs font-medium px-2 py-0.5 bg-green-100 rounded-full">Processed</span>
+        <Card className="col-span-1 flex flex-col h-full max-h-[calc(100vh-200px)]">
+          <CardHeader className="pb-3 border-b">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <File className="h-5 w-5" /> Files
+              <Badge variant="secondary" className="ml-auto">{files.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="divide-y">
+                {files.map(file => (
+                  <div 
+                    key={file.id} 
+                    className={cn(
+                      "p-4 cursor-pointer hover:bg-muted/50 transition-all text-sm group",
+                      selectedFile?.id === file.id ? "bg-muted border-l-4 border-l-primary pl-[12px]" : "border-l-4 border-l-transparent"
                     )}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleProcessFile(file.id); }}
-                      disabled={processing === file.id}
-                      className="text-primary hover:underline text-xs"
-                    >
-                      {processing === file.id ? 'Processing...' : (file.content_summary ? 'Redo' : 'Process AI')}
-                    </button>
+                    onClick={() => setSelectedFile(file)}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-medium truncate pr-2 flex-1" title={file.filename}>{file.filename}</span>
+                      {file.content_summary && (
+                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
+                      <span>{(file.file_size / 1024).toFixed(1)} KB • {new Date(file.created_at).toLocaleDateString()}</span>
+                    </div>
                   </div>
-                </div>
+                ))}
+                {files.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                    <Upload className="h-8 w-8 opacity-20" />
+                    <p>No files uploaded yet.</p>
+                  </div>
+                )}
               </div>
-            ))}
-            {files.length === 0 && (
-              <div className="p-8 text-center text-muted-foreground">
-                No files uploaded yet.
-              </div>
-            )}
-          </div>
-        </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
 
         {/* File Details */}
-        <div className="col-span-2 bg-card rounded-lg shadow border min-h-[400px] overflow-y-auto h-full">
+        <Card className="col-span-2 flex flex-col h-full max-h-[calc(100vh-200px)]">
           {selectedFile ? (
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-xl font-bold mb-1">{selectedFile.filename}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Type: {selectedFile.file_type} | Size: {(selectedFile.file_size / 1024).toFixed(1)} KB
-                  </p>
+            <>
+              <CardHeader className="pb-4 border-b">
+                <div className="flex justify-between items-start gap-4">
+                  <div className="space-y-1">
+                    <CardTitle className="text-xl break-all">{selectedFile.filename}</CardTitle>
+                    <CardDescription className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">{selectedFile.file_type}</Badge>
+                      <span>{(selectedFile.file_size / 1024).toFixed(1)} KB</span>
+                    </CardDescription>
+                  </div>
+                  <Button 
+                    onClick={() => handleProcessFile(selectedFile.id)}
+                    disabled={processing === selectedFile.id}
+                    size="sm"
+                    className="gap-2 shrink-0"
+                  >
+                    {processing === selectedFile.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {processing === selectedFile.id ? 'Processing...' : (selectedFile.content_summary ? 'Regenerate Summary' : 'Generate Summary')}
+                  </Button>
                 </div>
-                <button 
-                  onClick={() => handleProcessFile(selectedFile.id)}
-                  disabled={processing === selectedFile.id}
-                  className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm"
-                >
-                  {processing === selectedFile.id ? 'Processing...' : (selectedFile.content_summary ? 'Regenerate AI Summary' : 'Generate AI Summary')}
-                </button>
-              </div>
-
-              {selectedFile.content_summary ? (
-                <div className="space-y-6">
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="text-lg font-semibold text-primary">Shipley Summary</h3>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            if (selectedFile.content_summary) {
-                              navigator.clipboard.writeText(selectedFile.content_summary);
-                              // Optional: You could add a toast notification here
-                              const btn = document.activeElement as HTMLButtonElement;
-                              const originalText = btn.innerHTML;
-                              btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                              setTimeout(() => {
-                                btn.innerHTML = originalText;
-                              }, 2000);
-                            }
-                          }}
-                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                          title="Copy to clipboard"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                          </svg>
-                        </button>
-                        <a
-                          href={`mailto:?subject=Summary of ${selectedFile.filename}&body=${encodeURIComponent(selectedFile.content_summary || '')}`}
-                          className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
-                          title="Send via email"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect width="20" height="16" x="2" y="4" rx="2"></rect>
-                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
-                          </svg>
-                        </a>
+              </CardHeader>
+              
+              <CardContent className="flex-1 overflow-hidden p-0">
+                <ScrollArea className="h-full p-6">
+                  {selectedFile.content_summary ? (
+                    <div className="space-y-6">
+                      <div>
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-lg font-semibold flex items-center gap-2 text-primary">
+                            <FileText className="h-5 w-5" /> Shipley Summary
+                          </h3>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => selectedFile.content_summary && copyToClipboard(selectedFile.content_summary)}
+                              title="Copy to clipboard"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              asChild
+                              title="Send via email"
+                            >
+                              <a href={`mailto:?subject=Summary of ${selectedFile.filename}&body=${encodeURIComponent(selectedFile.content_summary || '')}`}>
+                                <Mail className="h-4 w-4" />
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="bg-muted/30 p-6 rounded-lg whitespace-pre-wrap text-sm leading-relaxed border shadow-sm font-sans">
+                          {selectedFile.content_summary}
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      <div>
+                        <details className="group">
+                          <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground flex items-center gap-2 select-none">
+                            <div className="bg-muted p-1 rounded group-open:rotate-90 transition-transform">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                            </div>
+                            View Raw Parsed Content
+                          </summary>
+                          <div className="mt-4 p-4 bg-black/90 text-white rounded-lg text-xs font-mono whitespace-pre-wrap max-h-[400px] overflow-y-auto shadow-inner">
+                            {selectedFile.parsed_content || "No content parsed."}
+                          </div>
+                        </details>
                       </div>
                     </div>
-                    <div className="bg-muted/30 p-4 rounded-lg whitespace-pre-wrap text-sm leading-relaxed border">
-                      {selectedFile.content_summary}
-                    </div>
-                  </div>
-                  
-                  <div className="border-t pt-4">
-                    <details>
-                      <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
-                        View Raw Parsed Content
-                      </summary>
-                      <div className="mt-2 p-4 bg-muted rounded text-xs font-mono whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-                        {selectedFile.parsed_content || "No content parsed."}
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground bg-muted/5 rounded-lg border-2 border-dashed m-4">
+                      <div className="bg-muted/20 p-4 rounded-full mb-4">
+                        <FileText className="h-12 w-12 opacity-20" />
                       </div>
-                    </details>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-[300px] text-muted-foreground bg-muted/10 rounded-lg border-2 border-dashed">
-                  <p className="mb-2">No summary generated yet.</p>
-                  <p className="text-sm">Click "Generate AI Summary" to analyze this file.</p>
-                </div>
-              )}
-            </div>
+                      <h3 className="text-lg font-semibold mb-2">No Summary Available</h3>
+                      <p className="text-sm max-w-xs text-center mb-6">
+                        Click "Generate Summary" to analyze this file using AI.
+                      </p>
+                      <Button 
+                        onClick={() => handleProcessFile(selectedFile.id)}
+                        disabled={processing === selectedFile.id}
+                        variant="secondary"
+                      >
+                        Generate AI Summary
+                      </Button>
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <p>Select a file to view details</p>
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-muted/5 m-6 rounded-lg border-2 border-dashed">
+              <FileText className="h-16 w-16 opacity-10 mb-4" />
+              <p className="text-lg font-medium">Select a file to view details</p>
+              <p className="text-sm opacity-70">Or upload a new file to get started</p>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

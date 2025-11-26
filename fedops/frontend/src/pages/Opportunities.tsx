@@ -2,6 +2,16 @@ import { useEffect, useState } from 'react'
 import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
 import { AgentControlPanel } from '@/components/AgentControlPanel'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import { Search, Filter, ExternalLink, FileText, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -199,537 +209,541 @@ export default function OpportunitiesPage() {
   const currentPage = (searchParams.skip / searchParams.limit) + 1;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold tracking-tight">Opportunities</h2>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Opportunities</h2>
+          <p className="text-muted-foreground">Search and manage federal opportunities.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Filters Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
-          <div className="p-4 bg-card rounded-lg border border-border shadow-sm">
-            <h3 className="font-semibold mb-4">Filters</h3>
+        <Card className="lg:col-span-1 h-fit">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filters
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <form onSubmit={handleSearch} className="space-y-4">
-              <div>
-                <label htmlFor="keywords" className="block text-sm font-medium mb-1">Keywords</label>
-                <input 
-                  id="keywords"
-                  type="text" 
-                  placeholder="Search keywords..."
-                  value={searchParams.keywords}
-                  onChange={e => setSearchParams(prev => ({ ...prev, keywords: e.target.value }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
-                />
+              <div className="space-y-2">
+                <Label htmlFor="keywords">Keywords</Label>
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    id="keywords"
+                    placeholder="Search keywords..."
+                    value={searchParams.keywords}
+                    onChange={e => setSearchParams(prev => ({ ...prev, keywords: e.target.value }))}
+                    className="pl-8"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="naics" className="block text-sm font-medium mb-1">NAICS Code</label>
-                <input 
+              <div className="space-y-2">
+                <Label htmlFor="naics">NAICS Code</Label>
+                <Input 
                   id="naics"
-                  type="text" 
                   placeholder="e.g. 541511"
                   value={searchParams.naics}
                   onChange={e => setSearchParams(prev => ({ ...prev, naics: e.target.value }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
                 />
               </div>
 
-              <div>
-                <label htmlFor="setAside" className="block text-sm font-medium mb-1">Set Aside</label>
-                <input 
+              <div className="space-y-2">
+                <Label htmlFor="setAside">Set Aside</Label>
+                <Input 
                   id="setAside"
-                  type="text" 
                   placeholder="e.g. Sba"
                   value={searchParams.setAside}
                   onChange={e => setSearchParams(prev => ({ ...prev, setAside: e.target.value }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
                 />
               </div>
 
-              <div>
-                <label htmlFor="active" className="block text-sm font-medium mb-1">Status</label>
-                <select
-                  id="active"
+              <div className="space-y-2">
+                <Label htmlFor="active">Status</Label>
+                <Select
                   value={searchParams.active}
-                  onChange={e => setSearchParams(prev => ({ ...prev, active: e.target.value }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
+                  onValueChange={value => setSearchParams(prev => ({ ...prev, active: value }))}
                 >
-                  <option value="yes">Active Only</option>
-                  <option value="no">Inactive Only</option>
-                  <option value="">Both (Active & Inactive)</option>
-                </select>
+                  <SelectTrigger id="active">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Active Only</SelectItem>
+                    <SelectItem value="no">Inactive Only</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label htmlFor="posted-from" className="block text-sm font-medium mb-1">Posted From</label>
-                  <input 
+                <div className="space-y-2">
+                  <Label htmlFor="posted-from">Posted From</Label>
+                  <Input 
                     id="posted-from"
-                    type="text" 
                     placeholder="MM/DD/YYYY"
                     value={searchParams.postedFrom}
                     onChange={e => setSearchParams(prev => ({ ...prev, postedFrom: e.target.value }))}
-                    className="w-full p-2 rounded border border-input bg-background text-sm"
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="posted-to" className="block text-sm font-medium mb-1">Posted To</label>
-                  <input 
+                <div className="space-y-2">
+                  <Label htmlFor="posted-to">Posted To</Label>
+                  <Input 
                     id="posted-to"
-                    type="text" 
                     placeholder="MM/DD/YYYY"
                     value={searchParams.postedTo}
                     onChange={e => setSearchParams(prev => ({ ...prev, postedTo: e.target.value }))}
-                    className="w-full p-2 rounded border border-input bg-background text-sm"
                   />
                 </div>
               </div>
               
-              <button 
+              <Button 
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => setSearchParams(prev => ({ ...prev, postedFrom: '', postedTo: '' }))}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
+                className="w-full text-xs"
               >
                 Clear Dates
-              </button>
+              </Button>
 
-              <div>
-                <label htmlFor="limit" className="block text-sm font-medium mb-1">Items per page</label>
-                <select
-                  id="limit"
-                  value={searchParams.limit}
-                  onChange={e => setSearchParams(prev => ({ ...prev, limit: parseInt(e.target.value), skip: 0 }))}
-                  className="w-full p-2 rounded border border-input bg-background text-sm"
+              <div className="space-y-2">
+                <Label htmlFor="limit">Items per page</Label>
+                <Select
+                  value={searchParams.limit.toString()}
+                  onValueChange={value => setSearchParams(prev => ({ ...prev, limit: parseInt(value), skip: 0 }))}
                 >
-                  <option value="10">10</option>
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                </select>
+                  <SelectTrigger id="limit">
+                    <SelectValue placeholder="10" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <button type="submit" className="w-full bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 transition-colors">
+              <Button type="submit" className="w-full">
                 Apply Filters
-              </button>
+              </Button>
             </form>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Results List */}
         <div className="lg:col-span-3 space-y-4">
           {loading && (
-            <div className="text-center py-12 px-4">
-              <div className="max-w-md mx-auto space-y-6">
-                {/* Animated spinner */}
-                <div className="relative w-20 h-20 mx-auto">
-                  <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
-                  <div className="absolute inset-0 border-4 border-transparent border-t-primary rounded-full animate-spin"></div>
-                  <div className="absolute inset-2 border-4 border-transparent border-t-primary/60 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
-                </div>
-                
-                {/* Loading text */}
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">Searching Opportunities...</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {searchParams.keywords ? (
-                      <>Searching for "<span className="font-medium text-foreground">{searchParams.keywords}</span>" across 12 years of data</>
-                    ) : (
-                      <>Fetching opportunities from SAM.gov</>
-                    )}
-                  </p>
-                </div>
-                
-                {/* Progress indicators */}
-                <div className="bg-muted/30 rounded-lg p-4 space-y-3 border border-border">
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                    <span className="text-muted-foreground">Querying SAM.gov API...</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                    <span className="text-muted-foreground">Processing results...</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <div className="w-2 h-2 bg-primary/40 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                    <span className="text-muted-foreground">Deduplicating records...</span>
-                  </div>
-                </div>
-                
-                {/* Helpful tip */}
-                <p className="text-xs text-muted-foreground italic">
-                  💡 Tip: Date cycling searches may take 10-30 seconds for comprehensive results
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              <div className="text-center space-y-2">
+                <h3 className="text-lg font-semibold">Searching Opportunities...</h3>
+                <p className="text-muted-foreground text-sm max-w-md">
+                  {searchParams.keywords ? `Searching for "${searchParams.keywords}"` : 'Fetching latest opportunities'}
                 </p>
               </div>
             </div>
           )}
-          {error && <div className="text-center text-destructive py-8">Error: {error}</div>}
+          
+          {error && (
+            <Card className="border-destructive/50 bg-destructive/10">
+              <CardContent className="pt-6 text-center text-destructive">
+                Error: {error}
+              </CardContent>
+            </Card>
+          )}
           
           {!loading && !error && opportunities.length === 0 && (
-             <div className="text-center py-8 text-muted-foreground">No opportunities found. Try adjusting your filters.</div>
+             <Card className="border-dashed">
+               <CardContent className="py-12 text-center text-muted-foreground">
+                 <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                 <p>No opportunities found. Try adjusting your filters.</p>
+               </CardContent>
+             </Card>
           )}
 
           <div className="grid gap-4">
             {opportunities.map(opp => (
-              <div key={opp.id} className="group p-6 rounded-lg border border-border bg-card text-card-foreground shadow-sm hover:shadow-md transition-all">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="space-y-1">
-                    <button 
-                      onClick={() => setSelectedOpp(opp)}
-                      className="text-lg font-semibold hover:text-primary text-left line-clamp-1"
-                    >
-                      {opp.title}
-                    </button>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-mono bg-secondary/50 px-1.5 py-0.5 rounded">{opp.solicitation_number}</span>
-                      <span>•</span>
-                      <span>{opp.department}</span>
-                      {opp.sub_tier && <span>/ {opp.sub_tier}</span>}
+              <Card key={opp.id} className="group hover:shadow-md transition-all duration-200 border-l-4 border-l-primary/0 hover:border-l-primary">
+                <CardContent className="p-6">
+                  <div className="flex justify-between items-start mb-3 gap-4">
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {opp.solicitation_number}
+                        </Badge>
+                        <Badge variant={opp.active === 'Yes' ? 'default' : 'secondary'} className={cn("text-xs", opp.active === 'Yes' ? "bg-green-600 hover:bg-green-700" : "")}>
+                          {opp.active === 'Yes' ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </div>
+                      <h3 
+                        onClick={() => setSelectedOpp(opp)}
+                        className="text-lg font-semibold hover:text-primary cursor-pointer line-clamp-1 transition-colors"
+                      >
+                        {opp.title}
+                      </h3>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">{opp.department}</span>
+                        {opp.sub_tier && <span>• {opp.sub_tier}</span>}
+                      </div>
                     </div>
                   </div>
-                  <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
-                    opp.active === 'Yes' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'
-                  }`}>
-                    {opp.active === 'Yes' ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4 bg-muted/30 p-3 rounded-md">
-                  <div>
-                    <span className="block text-xs font-medium uppercase opacity-70">Type</span>
-                    <span className="text-foreground">{opp.type}</span>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4 bg-muted/30 p-3 rounded-md">
+                    <div>
+                      <span className="block text-xs font-medium uppercase opacity-70">Type</span>
+                      <span className="text-foreground font-medium">{opp.type}</span>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-medium uppercase opacity-70">Posted</span>
+                      <span className="text-foreground font-medium">{new Date(opp.posted_date).toLocaleDateString()}</span>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-medium uppercase opacity-70">Deadline</span>
+                      <span className={cn("font-medium", opp.response_deadline && new Date(opp.response_deadline) < new Date() ? "text-destructive" : "text-foreground")}>
+                        {opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-medium uppercase opacity-70">Set Aside</span>
+                      <span className="text-foreground font-medium truncate" title={opp.type_of_set_aside_description}>{opp.type_of_set_aside || 'None'}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="block text-xs font-medium uppercase opacity-70">Posted</span>
-                    <span className="text-foreground">{new Date(opp.posted_date).toLocaleDateString()}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-medium uppercase opacity-70">Deadline</span>
-                    <span className="text-foreground">{opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-medium uppercase opacity-70">Set Aside</span>
-                    <span className="text-foreground truncate" title={opp.type_of_set_aside_description}>{opp.type_of_set_aside || 'None'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-xs font-medium uppercase opacity-70">NAICS</span>
-                    <span className="text-foreground">{opp.naics_code || 'N/A'}</span>
-                  </div>
-                </div>
 
-                <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
-                  {stripHtml(opp.description || '')}
-                </p>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                    {stripHtml(opp.description || '')}
+                  </p>
 
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => setSelectedOpp(opp)}
-                    className="text-sm font-medium text-primary hover:underline"
-                  >
-                    View Details →
-                  </button>
-                </div>
-              </div>
+                  <div className="flex justify-end">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setSelectedOpp(opp)}
+                      className="text-primary hover:text-primary hover:bg-primary/10"
+                    >
+                      View Details <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
           {/* Pagination */}
           {!loading && opportunities.length > 0 && (
-            <div className="flex justify-center items-center gap-4 mt-8 pt-4 border-t border-border">
-              <button
+            <div className="flex justify-center items-center gap-4 mt-8 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setSearchParams(prev => ({ ...prev, skip: Math.max(0, prev.skip - prev.limit) }))}
                 disabled={currentPage === 1 || loading}
-                className="px-4 py-2 rounded border border-input bg-background hover:bg-accent disabled:opacity-50 text-sm"
               >
-                Previous
-              </button>
-              <span className="text-sm font-medium">
+                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+              </Button>
+              <span className="text-sm font-medium text-muted-foreground">
                 Page {currentPage} of {totalPages}
               </span>
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setSearchParams(prev => ({ ...prev, skip: prev.skip + prev.limit }))}
                 disabled={currentPage >= totalPages || loading}
-                className="px-4 py-2 rounded border border-input bg-background hover:bg-accent disabled:opacity-50 text-sm"
               >
-                Next
-              </button>
+                Next <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Details Modal */}
-      {selectedOpp && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-background rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
-            <div className="p-6 border-b border-border flex justify-between items-start sticky top-0 bg-background z-10">
-              <div>
-                <h2 className="text-2xl font-bold pr-8">{selectedOpp.title}</h2>
-                <div className="flex gap-2 mt-2">
-                   <span className="text-xs font-mono bg-secondary px-2 py-1 rounded">
-                    {selectedOpp.solicitation_number}
-                  </span>
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-medium">
-                    {selectedOpp.type}
-                  </span>
-                </div>
-              </div>
-              <button 
-                onClick={() => setSelectedOpp(null)}
-                className="text-muted-foreground hover:text-foreground p-2 hover:bg-accent rounded-full transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-8">
-              {/* Actions Bar */}
-              <div className="flex gap-4 mb-6">
-                <button
-                  onClick={() => setShowFileManager(true)}
-                  className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
-                >
-                  <span>📂</span> Manage Files & AI Analysis
-                </button>
-                <button
-                  onClick={handleFindPartners}
-                  disabled={loadingPartners}
-                  className="bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-medium hover:bg-secondary/90 transition-colors flex items-center gap-2"
-                >
-                  <span>🤝</span> {loadingPartners ? 'Searching...' : 'Find Partners'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-1">
-                  <h3 className="text-sm font-medium text-muted-foreground">Department</h3>
-                  <p className="font-medium">{selectedOpp.department}</p>
-                  {selectedOpp.sub_tier && <p className="text-sm text-muted-foreground">{selectedOpp.sub_tier}</p>}
-                  {selectedOpp.office && <p className="text-sm text-muted-foreground">{selectedOpp.office}</p>}
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-medium text-muted-foreground">Key Dates</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <span>Posted:</span>
-                    <span className="font-medium">{new Date(selectedOpp.posted_date).toLocaleDateString()}</span>
-                    <span>Due:</span>
-                    <span className="font-medium text-destructive">
-                      {selectedOpp.response_deadline ? new Date(selectedOpp.response_deadline).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-medium text-muted-foreground">Details</h3>
-                  <div className="text-sm space-y-1">
-                    <p><span className="opacity-70">NAICS:</span> {selectedOpp.naics_code}</p>
-                    <p><span className="opacity-70">Set Aside:</span> {selectedOpp.type_of_set_aside || 'None'}</p>
-                    <p><span className="opacity-70">Notice ID:</span> {selectedOpp.notice_id}</p>
+      {/* Details Dialog */}
+      <Dialog open={!!selectedOpp} onOpenChange={(open) => !open && setSelectedOpp(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col p-0 gap-0">
+          {selectedOpp && (
+            <>
+              <div className="p-6 border-b sticky top-0 bg-background z-10 flex justify-between items-start">
+                <div className="space-y-1 pr-8">
+                  <DialogTitle className="text-2xl font-bold leading-tight">{selectedOpp.title}</DialogTitle>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                     <Badge variant="secondary" className="font-mono">
+                      {selectedOpp.solicitation_number}
+                    </Badge>
+                    <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
+                      {selectedOpp.type}
+                    </Badge>
                   </div>
                 </div>
               </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Description</h3>
-                <div className="bg-muted/30 p-4 rounded-lg text-sm leading-relaxed whitespace-pre-wrap border border-border">
-                  {selectedOpp.description?.startsWith('http') ? (
-                    <a href={selectedOpp.description} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-2">
-                      View Full Description on SAM.gov ↗
-                    </a>
-                  ) : (
-                    selectedOpp.description
-                  )}
+              
+              <div className="p-6 space-y-8 overflow-y-auto">
+                {/* Actions Bar */}
+                <div className="flex flex-wrap gap-3">
+                  <Button onClick={() => setShowFileManager(true)} className="gap-2">
+                    <FileText className="h-4 w-4" /> Manage Files & AI
+                  </Button>
+                  <Button 
+                    variant="secondary" 
+                    onClick={handleFindPartners}
+                    disabled={loadingPartners}
+                    className="gap-2"
+                  >
+                    {loadingPartners ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
+                    {loadingPartners ? 'Searching...' : 'Find Partners'}
+                  </Button>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {selectedOpp.point_of_contact && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Points of Contact</h3>
-                    <div className="space-y-3">
-                      {selectedOpp.point_of_contact.map((poc: any, i: number) => (
-                        <div key={i} className="p-3 bg-card border border-border rounded-lg text-sm">
-                          <p className="font-medium">{poc.fullName}</p>
-                          {poc.title && <p className="text-muted-foreground">{poc.title}</p>}
-                          {poc.email && <p className="text-primary hover:underline mt-1">{poc.email}</p>}
-                          {poc.phone && <p className="text-muted-foreground">{poc.phone}</p>}
-                        </div>
-                      ))}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-muted/30 p-4 rounded-lg border">
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-semibold uppercase text-muted-foreground">Department</h3>
+                    <p className="font-medium text-sm">{selectedOpp.department}</p>
+                    {selectedOpp.sub_tier && <p className="text-xs text-muted-foreground">{selectedOpp.sub_tier}</p>}
+                    {selectedOpp.office && <p className="text-xs text-muted-foreground">{selectedOpp.office}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-semibold uppercase text-muted-foreground">Key Dates</h3>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-sm">
+                      <span className="text-muted-foreground">Posted:</span>
+                      <span className="font-medium">{new Date(selectedOpp.posted_date).toLocaleDateString()}</span>
+                      <span className="text-muted-foreground">Due:</span>
+                      <span className="font-medium text-destructive">
+                        {selectedOpp.response_deadline ? new Date(selectedOpp.response_deadline).toLocaleDateString() : 'N/A'}
+                      </span>
                     </div>
                   </div>
-                )}
-
-                {(selectedOpp.links || selectedOpp.resource_links) && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Resources & Links</h3>
-                    <div className="flex flex-col gap-2">
-                      {selectedOpp.ui_link && (
-                        <a href={selectedOpp.ui_link} target="_blank" rel="noreferrer" className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-primary hover:bg-primary/10 transition-colors flex items-center justify-between group">
-                          <span className="font-medium">View on SAM.gov</span>
-                          <span className="group-hover:translate-x-1 transition-transform">→</span>
-                        </a>
-                      )}
-                      {loadingResources ? (
-                        <div className="text-sm text-muted-foreground animate-pulse">Loading resources...</div>
-                      ) : (
-                        resourceFiles.length > 0 ? (
-                          resourceFiles.map((file, i) => (
-                            <a key={`res-${i}`} href={file.url} target="_blank" rel="noreferrer" className="p-3 bg-card border border-border rounded-lg hover:border-primary/50 transition-colors text-sm flex flex-col">
-                              <span className="font-medium truncate" title={file.filename}>{file.filename}</span>
-                              <span className="text-xs text-muted-foreground truncate">{file.url}</span>
-                            </a>
-                          ))
-                        ) : (
-                          selectedOpp.resource_links?.map((link: string, i: number) => (
-                            <a key={`res-${i}`} href={link} target="_blank" rel="noreferrer" className="p-3 bg-card border border-border rounded-lg hover:border-primary/50 transition-colors text-sm flex flex-col">
-                              <span className="font-medium truncate" title={getFilenameFromUrl(link)}>{getFilenameFromUrl(link)}</span>
-                              <span className="text-xs text-muted-foreground truncate">{link}</span>
-                            </a>
-                          ))
-                        )
-                      )}
-                      {selectedOpp.links?.map((link: any, i: number) => (
-                        <a key={i} href={link.href} target="_blank" rel="noreferrer" className="p-3 bg-card border border-border rounded-lg hover:border-primary/50 transition-colors text-sm flex flex-col">
-                          <span className="font-medium">{link.rel}</span>
-                          <span className="text-xs text-muted-foreground truncate">{link.href}</span>
-                        </a>
-                      ))}
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-semibold uppercase text-muted-foreground">Details</h3>
+                    <div className="space-y-1 text-sm">
+                      <p><span className="text-muted-foreground">NAICS:</span> {selectedOpp.naics_code}</p>
+                      <p><span className="text-muted-foreground">Set Aside:</span> {selectedOpp.type_of_set_aside || 'None'}</p>
+                      <p><span className="text-muted-foreground">Notice ID:</span> {selectedOpp.notice_id}</p>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* Agentic Analysis Panel */}
-              <div className="border-t border-border pt-6 mt-6">
-                <AgentControlPanel opportunityId={selectedOpp.id} />
-              </div>
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Description</h3>
+                  <div className="bg-card p-4 rounded-lg text-sm leading-relaxed whitespace-pre-wrap border shadow-sm">
+                    {selectedOpp.description?.startsWith('http') ? (
+                      <a href={selectedOpp.description} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-2">
+                        View Full Description on SAM.gov <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      selectedOpp.description
+                    )}
+                  </div>
+                </div>
 
-              {/* Comments Section */}
-              <div className="border-t border-border pt-6 mt-6">
-                <h3 className="text-lg font-semibold mb-4">Team Comments</h3>
-                
-                <div className="space-y-4 mb-6">
-                  {comments.map(comment => (
-                    <div key={comment.id} className="bg-muted/30 p-4 rounded-lg border border-border group relative">
-                      <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
-                      <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
-                        <span>{new Date(comment.created_at).toLocaleString()}</span>
-                        <button 
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:underline"
-                        >
-                          Delete
-                        </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {selectedOpp.point_of_contact && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3">Points of Contact</h3>
+                      <div className="space-y-3">
+                        {selectedOpp.point_of_contact.map((poc: any, i: number) => (
+                          <Card key={i} className="bg-card">
+                            <CardContent className="p-3 text-sm">
+                              <p className="font-medium">{poc.fullName}</p>
+                              {poc.title && <p className="text-muted-foreground text-xs">{poc.title}</p>}
+                              {poc.email && <a href={`mailto:${poc.email}`} className="text-primary hover:underline mt-1 block text-xs">{poc.email}</a>}
+                              {poc.phone && <p className="text-muted-foreground text-xs">{poc.phone}</p>}
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                  {comments.length === 0 && (
-                    <p className="text-sm text-muted-foreground italic">No comments yet.</p>
+                  )}
+
+                  {(selectedOpp.links || selectedOpp.resource_links) && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3">Resources & Links</h3>
+                      <div className="flex flex-col gap-2">
+                        {selectedOpp.ui_link && (
+                          <a href={selectedOpp.ui_link} target="_blank" rel="noreferrer">
+                            <Button variant="outline" className="w-full justify-between group">
+                              View on SAM.gov
+                              <ExternalLink className="h-4 w-4 opacity-50 group-hover:opacity-100 transition-opacity" />
+                            </Button>
+                          </a>
+                        )}
+                        {loadingResources ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground p-2">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Loading resources...
+                          </div>
+                        ) : (
+                          resourceFiles.length > 0 ? (
+                            resourceFiles.map((file, i) => (
+                              <a key={`res-${i}`} href={file.url} target="_blank" rel="noreferrer" className="block">
+                                <Card className="hover:bg-accent transition-colors">
+                                  <CardContent className="p-3 flex items-center gap-3">
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <div className="overflow-hidden">
+                                      <p className="text-sm font-medium truncate" title={file.filename}>{file.filename}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{file.url}</p>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </a>
+                            ))
+                          ) : (
+                            selectedOpp.resource_links?.map((link: string, i: number) => (
+                              <a key={`res-${i}`} href={link} target="_blank" rel="noreferrer" className="block">
+                                <Card className="hover:bg-accent transition-colors">
+                                  <CardContent className="p-3 flex items-center gap-3">
+                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                                    <div className="overflow-hidden">
+                                      <p className="text-sm font-medium truncate" title={getFilenameFromUrl(link)}>{getFilenameFromUrl(link)}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{link}</p>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </a>
+                            ))
+                          )
+                        )}
+                        {selectedOpp.links?.map((link: any, i: number) => (
+                          <a key={i} href={link.href} target="_blank" rel="noreferrer" className="block">
+                            <Card className="hover:bg-accent transition-colors">
+                              <CardContent className="p-3">
+                                <p className="text-sm font-medium">{link.rel}</p>
+                                <p className="text-xs text-muted-foreground truncate">{link.href}</p>
+                              </CardContent>
+                            </Card>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                <div className="flex gap-2">
-                  <textarea
-                    value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    placeholder="Add a comment..."
-                    className="flex-1 min-h-[80px] p-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <button
-                    onClick={handleAddComment}
-                    disabled={!newComment.trim()}
-                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed h-fit"
-                  >
-                    Add Note
-                  </button>
+                {/* Agentic Analysis Panel */}
+                <div className="border-t pt-6">
+                  <AgentControlPanel opportunityId={selectedOpp.id} />
+                </div>
+
+                {/* Comments Section */}
+                <div className="border-t pt-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" /> Team Comments
+                  </h3>
+                  
+                  <div className="space-y-4 mb-6">
+                    {comments.map(comment => (
+                      <div key={comment.id} className="bg-muted/30 p-4 rounded-lg border group relative">
+                        <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
+                        <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
+                          <span>{new Date(comment.created_at).toLocaleString()}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => handleDeleteComment(comment.id)}
+                            className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {comments.length === 0 && (
+                      <p className="text-sm text-muted-foreground italic">No comments yet.</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 items-start">
+                    <Textarea
+                      value={newComment}
+                      onChange={e => setNewComment(e.target.value)}
+                      placeholder="Add a comment..."
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleAddComment}
+                      disabled={!newComment.trim()}
+                    >
+                      Add Note
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="p-6 border-t border-border bg-muted/10">
-               <details className="text-xs">
-                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View Raw Data</summary>
-                <pre className="mt-2 p-4 bg-black/90 text-white rounded overflow-x-auto">
-                  {JSON.stringify(selectedOpp.full_response, null, 2)}
-                </pre>
-              </details>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Partner Matches Modal */}
-      {showPartnerMatches && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-200">
-          <div className="bg-background rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
-            <div className="p-6 border-b border-border flex justify-between items-start sticky top-0 bg-background z-10">
-              <div>
-                <h2 className="text-2xl font-bold">Partner Matches</h2>
-                <p className="text-sm text-muted-foreground">Based on NAICS: {selectedOpp?.naics_code}</p>
+              
+              <div className="p-4 border-t bg-muted/10">
+                 <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View Raw Data</summary>
+                  <pre className="mt-2 p-4 bg-black/90 text-white rounded overflow-x-auto">
+                    {JSON.stringify(selectedOpp.full_response, null, 2)}
+                  </pre>
+                </details>
               </div>
-              <button 
-                onClick={() => setShowPartnerMatches(false)}
-                className="text-muted-foreground hover:text-foreground p-2 hover:bg-accent rounded-full transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-               {partnerMatches.length === 0 ? (
-                   <div className="text-center py-8 text-muted-foreground">
-                       <p>No matches found based on NAICS code.</p>
-                       <p className="text-sm mt-2">Try adding more entities with relevant awards to your database.</p>
-                   </div>
-               ) : (
-                   partnerMatches.map((match, i) => (
-                       <div key={i} className="p-4 border rounded hover:bg-accent/10 transition-colors">
-                           <div className="flex justify-between items-start mb-2">
-                               <div>
-                                   <h3 className="font-bold text-lg">{match.entity.legal_business_name}</h3>
-                                   <p className="text-xs font-mono text-muted-foreground">UEI: {match.entity.uei}</p>
-                               </div>
-                               <div className="text-right">
-                                   <div className="text-sm font-medium text-green-600">
-                                       ${match.match_details.total_obligation.toLocaleString()}
-                                   </div>
-                                   <div className="text-xs text-muted-foreground">Total Obligation</div>
-                               </div>
-                           </div>
-                           <div className="bg-secondary/20 p-2 rounded text-sm">
-                               <p><strong>Match Reason:</strong> {match.match_details.reason}</p>
-                           </div>
-                           <div className="mt-3 flex gap-2">
-                               <button className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">View Profile</button>
-                               {match.entity.entity_type === 'PARTNER' && <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded border border-green-200">Existing Partner</span>}
-                           </div>
-                       </div>
-                   ))
-               )}
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* File Manager Modal */}
-      {showFileManager && selectedOpp && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-200">
-          <div className="bg-background rounded-xl shadow-2xl max-w-6xl w-full h-[90vh] flex flex-col">
-            <div className="p-4 border-b border-border flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold">Files & AI Analysis</h2>
-                <p className="text-sm text-muted-foreground">For: {selectedOpp.title}</p>
-              </div>
-              <button 
-                onClick={() => setShowFileManager(false)}
-                className="text-muted-foreground hover:text-foreground p-2 hover:bg-accent rounded-full transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <FileManagementPage opportunityId={selectedOpp.id} />
+      {/* Partner Matches Dialog */}
+      <Dialog open={showPartnerMatches} onOpenChange={setShowPartnerMatches}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Partner Matches</DialogTitle>
+            <DialogDescription>Based on NAICS: {selectedOpp?.naics_code}</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+             {partnerMatches.length === 0 ? (
+                 <div className="text-center py-8 text-muted-foreground">
+                     <p>No matches found based on NAICS code.</p>
+                     <p className="text-sm mt-2">Try adding more entities with relevant awards to your database.</p>
+                 </div>
+             ) : (
+                 partnerMatches.map((match, i) => (
+                     <Card key={i} className="hover:bg-accent/5 transition-colors">
+                         <CardContent className="p-4">
+                             <div className="flex justify-between items-start mb-2">
+                                 <div>
+                                     <h3 className="font-bold text-lg">{match.entity.legal_business_name}</h3>
+                                     <p className="text-xs font-mono text-muted-foreground">UEI: {match.entity.uei}</p>
+                                 </div>
+                                 <div className="text-right">
+                                     <div className="text-sm font-medium text-green-600">
+                                         ${match.match_details.total_obligation.toLocaleString()}
+                                     </div>
+                                     <div className="text-xs text-muted-foreground">Total Obligation</div>
+                                 </div>
+                             </div>
+                             <div className="bg-secondary/20 p-2 rounded text-sm mb-3">
+                                 <p><strong>Match Reason:</strong> {match.match_details.reason}</p>
+                             </div>
+                             <div className="flex gap-2">
+                                 <Button size="sm" variant="outline" className="h-7 text-xs">View Profile</Button>
+                                 {match.entity.entity_type === 'PARTNER' && (
+                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                                     Existing Partner
+                                   </Badge>
+                                 )}
+                             </div>
+                         </CardContent>
+                     </Card>
+                 ))
+             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* File Manager Dialog */}
+      <Dialog open={showFileManager} onOpenChange={setShowFileManager}>
+        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0 gap-0">
+          <div className="p-4 border-b flex justify-between items-center">
+            <div>
+              <DialogTitle>Files & AI Analysis</DialogTitle>
+              <DialogDescription>For: {selectedOpp?.title}</DialogDescription>
             </div>
           </div>
-        </div>
-      )}
+          <div className="flex-1 overflow-hidden p-4">
+             {selectedOpp && <FileManagementPage opportunityId={selectedOpp.id} />}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

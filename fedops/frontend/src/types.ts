@@ -30,6 +30,20 @@ export interface Opportunity {
   full_response: any
 }
 
+export interface UnifiedOpportunity {
+  source: 'SAM.gov' | 'USASpending'
+  id: string
+  title: string
+  description: string
+  status: string
+  date: string
+  amount?: number
+  recipient?: string
+  agency: string
+  type: string
+  raw: any
+}
+
 export interface OpportunityComment {
   id: number
   opportunity_id: number

@@ -5,6 +5,50 @@ from datetime import datetime, timedelta
 class USASpendingClient:
     BASE_URL = "https://api.usaspending.gov/api/v2"
 
+    async def search_awards_by_keyword(self, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fetch awards by keyword search"""
+        endpoint = "/search/spending_by_award/"
+        url = f"{self.BASE_URL}{endpoint}"
+        
+        # Set time period to past 5 years
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=5*365)
+        
+        payload = {
+            "filters": {
+                "keywords": [keyword],
+                "award_type_codes": ["A", "B", "C", "D"],  # Contracts
+                "time_period": [
+                    {
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d")
+                    }
+                ]
+            },
+            "fields": [
+                "Award ID", 
+                "Recipient Name", 
+                "Start Date", 
+                "End Date", 
+                "Award Amount", 
+                "Description", 
+                "Awarding Agency", 
+                "Awarding Sub Agency", 
+                "Contract Award Type"
+            ],
+            "limit": limit
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                return data.get("results", [])
+            except Exception as e:
+                print(f"Error searching USASpending awards: {e}")
+                return []
+
     async def get_awards_by_name(self, recipient_name: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Fetch awards by recipient company name (not UEI - recipient_id filter doesn't work)"""
         endpoint = "/search/spending_by_award/"
@@ -109,4 +153,54 @@ class USASpendingClient:
                 return []
             except Exception as e:
                 print(f"Unexpected error fetching awards for {recipient_name}: {e}")
+                return []
+
+    async def get_subawards_by_name(self, recipient_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch sub-awards where the entity is the sub-awardee"""
+        endpoint = "/search/spending_by_award/"
+        url = f"{self.BASE_URL}{endpoint}"
+        
+        # Set time period to past 5 years
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=5*365)
+        
+        payload = {
+            "filters": {
+                "recipient_search_text": [recipient_name],
+                "award_type_codes": ["A", "B", "C", "D"],
+                "time_period": [
+                    {
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d")
+                    }
+                ]
+            },
+            "subawards": True,
+            "fields": [
+                "Sub-Award ID", 
+                "Sub-Awardee Name", 
+                "Sub-Award Date", 
+                "Sub-Award Amount", 
+                "Prime Recipient Name",
+                "Prime Award ID",
+                "Sub-Award Description",
+                "Awarding Agency",
+                "Awarding Sub Agency"
+            ],
+            "limit": limit,
+            "page": 1
+        }
+
+        print(f"[USASpending] Fetching sub-awards for: {recipient_name}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("results", [])
+                print(f"[USASpending] Found {len(results)} sub-awards for {recipient_name}")
+                return results
+            except Exception as e:
+                print(f"Error fetching sub-awards for {recipient_name}: {e}")
                 return []

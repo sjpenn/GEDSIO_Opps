@@ -1,5 +1,6 @@
 import httpx
 from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
 from fedops_core.settings import settings
 
 class SamOpportunitiesClient:
@@ -7,6 +8,42 @@ class SamOpportunitiesClient:
 
     def __init__(self):
         self.api_key = settings.SAM_API_KEY
+
+    async def search_opportunities(self, keyword: str, limit: int = 10, days_back: int = 365) -> List[Dict[str, Any]]:
+        """
+        Search opportunities by keyword (title).
+        SAM.gov limits date ranges to 1 year, so we default to the last year.
+        """
+        if not self.api_key:
+            print("Warning: SAM_API_KEY not set")
+            return []
+
+        # SAM.gov requires specific date format MM/DD/YYYY
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_back)
+        
+        # Ensure range is not > 1 year (safety check)
+        if days_back > 365:
+            start_date = end_date - timedelta(days=365)
+
+        params = {
+            "api_key": self.api_key,
+            "title": keyword,
+            "limit": limit,
+            "postedFrom": start_date.strftime("%m/%d/%Y"),
+            "postedTo": end_date.strftime("%m/%d/%Y"),
+            "active": "yes"
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(self.BASE_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+                return data.get("opportunitiesData", [])
+            except Exception as e:
+                print(f"Error searching SAM opportunities: {e}")
+                return []
 
     async def get_opportunity_by_solicitation_id(self, solicitation_id: str) -> Optional[Dict[str, Any]]:
         if not self.api_key:

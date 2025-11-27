@@ -54,12 +54,41 @@ class CompanyProfile(Base):
     id = Column(Integer, primary_key=True, index=True)
     uei = Column(String, unique=True, index=True, nullable=False)
     company_name = Column(String, nullable=False)
+    entity_uei = Column(String, ForeignKey("entities.uei"), nullable=True, index=True)  # Link to SAM.gov entity
     target_naics = Column(JSONB, default=[])
     target_keywords = Column(JSONB, default=[])
     target_set_asides = Column(JSONB, default=[])
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CompanyProfileDocument(Base):
+    __tablename__ = "company_profile_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_uei = Column(String, ForeignKey("company_profiles.uei"), nullable=False, index=True)
+    document_type = Column(String, nullable=False, index=True)  # SOW, Capability, PastPerformance, Other
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CompanyProfileLink(Base):
+    __tablename__ = "company_profile_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_uei = Column(String, ForeignKey("company_profiles.uei"), nullable=False, index=True)
+    link_type = Column(String, nullable=False, index=True)  # SOW, PWS, Capability, Other
+    title = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class Entity(Base):
     __tablename__ = "entities"

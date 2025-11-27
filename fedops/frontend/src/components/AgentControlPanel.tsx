@@ -1,10 +1,11 @@
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, CheckCircle, XCircle, Play, FileText, Edit2, Save, X, Activity } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Play, FileText, Edit2, Save, X, Activity, Clock, ExternalLink } from 'lucide-react';
 import { cn } from "@/lib/utils"
 
 interface AgentControlPanelProps {
@@ -62,20 +63,34 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [editContent, setEditContent] = useState("");
 
   const fetchData = async () => {
+    console.log('Fetching agent data for opportunity:', opportunityId);
     try {
       const scoreRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/score`);
       if (scoreRes.ok) {
-        setScore(await scoreRes.json());
+        const scoreData = await scoreRes.json();
+        console.log('Score data received:', scoreData);
+        console.log('Setting score state with:', {
+          weighted_score: scoreData.weighted_score,
+          go_no_go_decision: scoreData.go_no_go_decision
+        });
+        setScore(scoreData);
+        console.log('Score state updated');
+      } else {
+        console.log('Score not found (404 is normal if analysis not run yet)');
+        setScore(null);
       }
       
       const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
       if (logsRes.ok) {
-        setLogs(await logsRes.json());
+        const logsData = await logsRes.json();
+        console.log('Logs data received:', logsData.length, 'entries');
+        setLogs(logsData);
       }
       
       const propRes = await fetch(`${API_URL}/api/v1/proposals/${opportunityId}`);
       if (propRes.ok) {
         const propData = await propRes.json();
+        console.log('Proposal data received');
         setProposal(propData);
         if (propData.volumes && propData.volumes.length > 0 && !activeVolumeId) {
             setActiveVolumeId(propData.volumes[0].id);
@@ -102,7 +117,10 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         console.error("Analysis failed:", response.status, errorData);
         alert(`Analysis failed: ${response.status} - ${errorData}`);
       } else {
+        // Give the backend a moment to commit all changes
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchData();
+        alert('Analysis completed successfully! Scroll up to see the results card above.');
       }
     } catch (error) {
       console.error("Analysis failed", error);
@@ -180,10 +198,21 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
           <Activity className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Agentic Analysis</h3>
         </div>
-        <Button onClick={handleAnalyze} disabled={loading} className="gap-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          {score ? 'Re-Analyze Opportunity' : 'Start Analysis'}
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => window.open(`/analysis/${opportunityId}`, '_blank')}
+            variant="outline"
+            disabled={!score}
+            className="gap-2"
+          >
+            <ExternalLink className="h-4 w-4" />
+            View Full Analysis
+          </Button>
+          <Button onClick={handleAnalyze} disabled={loading} className="gap-2">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            {score ? 'Re-Analyze Opportunity' : 'Start Analysis'}
+          </Button>
+        </div>
       </div>
 
       {score && (
@@ -317,7 +346,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
                   <div className="mt-0.5">
                     {log.status === 'SUCCESS' ? <CheckCircle className="h-4 w-4 text-green-500" /> : 
                      log.status === 'FAILURE' ? <XCircle className="h-4 w-4 text-red-500" /> :
-                     <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+                     loading ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> : 
+                     <Clock className="h-4 w-4 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 space-y-1">
                     <div className="flex justify-between">

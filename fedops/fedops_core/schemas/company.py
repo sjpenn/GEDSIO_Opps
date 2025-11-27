@@ -5,6 +5,7 @@ from datetime import datetime
 class CompanyProfileBase(BaseModel):
     uei: str
     company_name: str
+    entity_uei: Optional[str] = None
     target_naics: List[str] = []
     target_keywords: List[str] = []
     target_set_asides: List[str] = []
@@ -14,11 +15,51 @@ class CompanyProfileCreate(CompanyProfileBase):
 
 class CompanyProfileUpdate(BaseModel):
     company_name: Optional[str] = None
+    entity_uei: Optional[str] = None
     target_naics: Optional[List[str]] = None
     target_keywords: Optional[List[str]] = None
     target_set_asides: Optional[List[str]] = None
 
 class CompanyProfile(CompanyProfileBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Company Profile Document Schemas
+class CompanyProfileDocumentBase(BaseModel):
+    company_uei: str
+    document_type: str  # SOW, Capability, PastPerformance, Other
+    title: str
+    description: Optional[str] = None
+
+class CompanyProfileDocumentCreate(CompanyProfileDocumentBase):
+    pass
+
+class CompanyProfileDocument(CompanyProfileDocumentBase):
+    id: int
+    file_path: str
+    file_size: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Company Profile Link Schemas
+class CompanyProfileLinkBase(BaseModel):
+    company_uei: str
+    link_type: str  # SOW, PWS, Capability, Other
+    title: str
+    url: str
+    description: Optional[str] = None
+
+class CompanyProfileLinkCreate(CompanyProfileLinkBase):
+    pass
+
+class CompanyProfileLink(CompanyProfileLinkBase):
     id: int
     created_at: datetime
     updated_at: datetime

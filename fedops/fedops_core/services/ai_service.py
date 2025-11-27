@@ -47,3 +47,40 @@ class AIService:
             ]
         )
         return response.choices[0].message.content
+
+    async def analyze_opportunity(self, prompt: str) -> dict:
+        """
+        Analyzes an opportunity using AI and returns structured JSON.
+        Expects the LLM to return a JSON object.
+        """
+        import json
+        import re
+        
+        if self.provider == "gemini":
+            response_text = await self._call_gemini(prompt)
+        elif self.provider == "openai" or self.provider == "openrouter":
+            response_text = await self._call_openai_compatible(prompt)
+        else:
+            raise ValueError("Invalid LLM Provider Configuration")
+        
+        # Try to extract JSON from the response
+        try:
+            # First, try to parse the entire response as JSON
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # If that fails, try to find JSON in the response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+            
+            # If all else fails, return a default structure
+            return {
+                "summary": "AI analysis failed to return valid JSON",
+                "score": 50,
+                "insights": ["Unable to parse AI response"],
+                "error": "JSON parsing failed",
+                "raw_response": response_text[:500]
+            }

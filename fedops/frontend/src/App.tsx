@@ -3,6 +3,7 @@ import CompanyProfilePage from './pages/CompanyProfile';
 import EntitySearchPage from './pages/EntitySearch';
 import OpportunitiesPage from './pages/Opportunities';
 import FileManagementPage from './pages/FileManagement';
+import AnalysisViewer from './pages/AnalysisViewer';
 import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
@@ -37,6 +38,9 @@ function App() {
               <PageTransition>
                 <FileManagementPage />
               </PageTransition>
+            } />
+            <Route path="/analysis/:opportunityId" element={
+              <AnalysisViewer />
             } />
           </Routes>
         </Layout>

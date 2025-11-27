@@ -620,7 +620,7 @@ export default function OpportunitiesPage() {
 
                 {/* Agentic Analysis Panel */}
                 <div className="border-t pt-6">
-                  <AgentControlPanel opportunityId={selectedOpp.id} />
+                  <AgentControlPanel key={selectedOpp.id} opportunityId={selectedOpp.id} />
                 </div>
 
                 {/* Comments Section */}

@@ -218,3 +218,278 @@ def determine_document_type(filename: str, content_snippet: str = "") -> Documen
         return DocumentType.SOW
 
     return DocumentType.RFP  # Default to Master/RFP if unknown
+
+# ============================================================================
+# OPPORTUNITY ANALYSIS PROMPTS
+# ============================================================================
+
+FINANCIAL_ANALYSIS_PROMPT = """
+You are a federal government contracting financial analyst. Analyze this opportunity from a financial perspective.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- NAICS Code: {naics_code}
+- Set-Aside: {set_aside}
+- Description: {description}
+
+**Analysis Required:**
+1. Estimated contract value and profitability potential
+2. Cost considerations and pricing strategy recommendations
+3. Financial risks and opportunities
+4. ROI assessment and financial viability
+5. Overall financial recommendation
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "2-3 sentence executive summary of financial viability",
+  "score": <number 0-100>,
+  "insights": ["insight 1", "insight 2", "insight 3"],
+  "risks": ["financial risk 1", "financial risk 2"],
+  "opportunities": ["financial opportunity 1", "financial opportunity 2"],
+  "recommendation": "Clear GO/NO-GO/REVIEW recommendation with brief justification"
+}}
+"""
+
+STRATEGIC_ANALYSIS_PROMPT = """
+You are a federal government contracting strategist. Analyze this opportunity for strategic alignment.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- NAICS Code: {naics_code}
+- Set-Aside: {set_aside}
+- Description: {description}
+
+**Company Profile:**
+- NAICS Codes: {company_naics}
+- Keywords: {company_keywords}
+- Capabilities: {company_capabilities}
+
+**Analysis Required:**
+1. Strategic fit with company capabilities
+2. Alignment with company growth objectives
+3. Market positioning and competitive advantage
+4. Long-term strategic value
+5. Capability gaps and development opportunities
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "2-3 sentence executive summary of strategic alignment",
+  "score": <number 0-100>,
+  "insights": ["strategic insight 1", "strategic insight 2", "strategic insight 3"],
+  "capability_matches": ["match 1", "match 2", "match 3"],
+  "gaps": ["capability gap 1", "capability gap 2"],
+  "recommendation": "Clear strategic recommendation with justification"
+}}
+"""
+
+RISK_ANALYSIS_PROMPT = """
+You are a federal government contracting risk analyst. Analyze this opportunity for risks and compliance.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- NAICS Code: {naics_code}
+- Set-Aside: {set_aside}
+- Description: {description}
+- Place of Performance: {place_of_performance}
+
+**Analysis Required:**
+1. Contract execution risks
+2. Compliance and regulatory requirements
+3. Technical and operational risks
+4. Schedule and delivery risks
+5. Risk mitigation strategies
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "2-3 sentence executive summary of risk assessment",
+  "risk_score": <number 0-100, where 0 is low risk and 100 is high risk>,
+  "high_risks": ["high risk 1", "high risk 2"],
+  "medium_risks": ["medium risk 1", "medium risk 2"],
+  "compliance_requirements": ["requirement 1", "requirement 2"],
+  "mitigation_strategies": ["strategy 1", "strategy 2"],
+  "recommendation": "Risk-based GO/NO-GO/REVIEW recommendation"
+}}
+"""
+
+CAPACITY_ANALYSIS_PROMPT = """
+You are a federal government contracting capacity planner. Analyze this opportunity for internal capacity.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- NAICS Code: {naics_code}
+- Description: {description}
+
+**Company Profile:**
+- NAICS Codes: {company_naics}
+- Keywords: {company_keywords}
+- Capabilities: {company_capabilities}
+
+**Analysis Required:**
+1. Team capacity and resource availability
+2. Required skills and expertise
+3. Staffing requirements and gaps
+4. Subcontracting needs
+5. Capacity to deliver successfully
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "2-3 sentence executive summary of capacity assessment",
+  "score": <number 0-100>,
+  "insights": ["capacity insight 1", "capacity insight 2"],
+  "required_skills": ["skill 1", "skill 2", "skill 3"],
+  "available_resources": ["resource 1", "resource 2"],
+  "gaps": ["capacity gap 1", "capacity gap 2"],
+  "staffing_recommendation": "Staffing strategy recommendation",
+  "recommendation": "Capacity-based GO/NO-GO/REVIEW recommendation"
+}}
+"""
+
+SOLICITATION_SUMMARY_PROMPT = """
+You are a federal government contracting analyst. Provide a comprehensive summary of this solicitation.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- NAICS Code: {naics_code}
+- Set-Aside: {set_aside}
+- Description: {description}
+- Response Deadline: {response_deadline}
+
+**Analysis Required:**
+1. Comprehensive summary of the solicitation (Scope, Objectives, Background)
+2. Key dates and milestones (Questions due, Proposal due, Award date, etc.)
+3. Key personnel requirements (Roles, Qualifications, Key vs Non-Key)
+4. Agency goals and mission objectives
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "Detailed 3-5 paragraph summary of the solicitation scope and objectives",
+  "key_dates": [
+    {{"event": "Questions Due", "date": "YYYY-MM-DD or Description"}},
+    {{"event": "Proposal Due", "date": "YYYY-MM-DD or Description"}}
+  ],
+  "key_personnel": [
+    {{"role": "Program Manager", "requirements": "PMP, 10+ years exp", "is_key": true}},
+    {{"role": "Technical Lead", "requirements": "Master's Degree", "is_key": true}}
+  ],
+  "agency_goals": ["Goal 1", "Goal 2"]
+}}
+"""
+
+SECURITY_ANALYSIS_PROMPT = """
+You are a federal government security officer. Analyze this opportunity for all security and cybersecurity requirements.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- Description: {description}
+- Place of Performance: {place_of_performance}
+
+**Analysis Required:**
+1. Facility Clearance (FCL) requirements (None, Secret, Top Secret)
+2. Personnel Clearance (PCL) requirements
+3. Cybersecurity requirements (CMMC Level, NIST 800-171, ATO)
+4. Other security requirements (Physical security, supply chain, etc.)
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "2-3 sentence summary of security posture",
+  "facility_clearance": "Required level (e.g., Top Secret) or 'None'",
+  "personnel_clearance": "Required level (e.g., Secret for all staff) or 'None'",
+  "cybersecurity_requirements": ["CMMC Level 2", "NIST 800-171 Compliant"],
+  "other_requirements": ["US Citizenship Required", "On-site work only"]
+}}
+"""
+
+EXECUTIVE_OVERVIEW_PROMPT = """
+You are a Capture Manager providing an executive overview for a Bid/No-Bid decision.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- Description: {description}
+
+**Analysis Context:**
+- Financial Score: {financial_score}
+- Strategic Score: {strategic_score}
+- Risk Score: {risk_score}
+- Capacity Score: {capacity_score}
+
+**Analysis Required:**
+1. Executive Summary (BLUF - Bottom Line Up Front)
+2. Alignment with Agency Mission
+3. Critical Success Factors (What is needed to win?)
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "executive_summary": "Concise 1-paragraph executive summary highlighting the most important factors for a decision.",
+  "mission_alignment": "How this opportunity aligns with the agency's broader mission.",
+  "critical_success_factors": ["Factor 1", "Factor 2", "Factor 3"]
+}}
+"""
+
+PERSONNEL_ANALYSIS_PROMPT = """
+You are a federal government staffing specialist. Analyze this opportunity to identify all personnel and staffing requirements.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- Description: {description}
+
+**Analysis Required:**
+1. Key Personnel (Roles, specific qualifications, years of experience, key vs non-key)
+2. Labor Categories (LCATs) mentioned or implied
+2. Labor Categories (LCATs) mentioned or implied
+3. General Staffing Requirements (Clearances, certifications, location, etc.)
+4. Estimated Full-Time Equivalents (FTEs) based on scope (Estimate if not explicitly stated)
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "High-level summary of staffing needs (e.g., 'Requires a team of 5-7 senior developers with TS/SCI')",
+  "key_personnel": [
+    {{"role": "Project Manager", "qualifications": "PMP, 10+ years exp", "responsibilities": "Overall contract management"}},
+    {{"role": "Senior Architect", "qualifications": "AWS Pro Cert, Masters", "responsibilities": "Technical leadership"}}
+  ],
+  "labor_categories": [
+    {{"title": "Software Engineer II", "requirements": "BS CS, 5 years exp"}},
+    {{"title": "Data Analyst", "requirements": "SQL, Python, 3 years exp"}}
+  ],
+  "staffing_requirements": ["Top Secret Clearance", "On-site at Quantico", "IAT Level II Certifications"],
+  "fte_estimate": <number, e.g. 12.5>
+}}
+"""
+
+PAST_PERFORMANCE_PROMPT = """
+You are a federal government contracting proposal manager. Analyze this opportunity to identify all past performance requirements.
+
+**Opportunity Details:**
+- Title: {title}
+- Department: {department}
+- Description: {description}
+
+**Analysis Required:**
+1. Specific past performance requirements (number of projects, recency, value)
+2. Relevance criteria (what makes a project "relevant" for this opp)
+3. Evaluation factors (how past performance is scored)
+
+**Output Format (JSON):**
+Return ONLY a valid JSON object with this structure:
+{{
+  "summary": "Summary of past performance requirements",
+  "requirements": ["3 projects within last 5 years", "Value > $5M each", "Must demonstrate agile development"],
+  "relevance_criteria": ["Similar size, scope, and complexity", "Experience with agency tech stack"],
+  "evaluation_factors": ["Relevance", "Quality of performance (CPARS)", "Recency"]
+}}
+"""

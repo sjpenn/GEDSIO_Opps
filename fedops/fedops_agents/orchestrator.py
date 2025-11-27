@@ -9,6 +9,8 @@ from fedops_agents.document_analysis_agent import DocumentAnalysisAgent
 from fedops_agents.compliance_agent import ComplianceAgent
 from fedops_agents.capability_agent import CapabilityMappingAgent
 from fedops_agents.financial_agent import FinancialAnalysisAgent
+from fedops_core.services.ai_service import AIService
+from fedops_core.prompts import EXECUTIVE_OVERVIEW_PROMPT
 
 class OrchestratorAgent(BaseAgent):
     def __init__(self, db: AsyncSession):
@@ -24,12 +26,12 @@ class OrchestratorAgent(BaseAgent):
 
             # 2. Document Analysis (Sequential)
             doc_agent = DocumentAnalysisAgent(self.db)
-            await doc_agent.execute(opportunity_id)
+            doc_results = await doc_agent.execute(opportunity_id)
 
             # 3. Concurrent Analysis
             await self.log_activity(opportunity_id, "CONCURRENT_ANALYSIS", "IN_PROGRESS")
             
-            # Compliance
+            # Compliance & Security
             comp_agent = ComplianceAgent(self.db)
             comp_results = await comp_agent.execute(opportunity_id)
             
@@ -41,14 +43,42 @@ class OrchestratorAgent(BaseAgent):
             fin_agent = FinancialAnalysisAgent(self.db)
             fin_results = await fin_agent.execute(opportunity_id)
 
-            # 4. Score Calculation
+            # 4. Executive Overview Generation
+            result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+            opp = result.scalar_one_or_none()
+            
+            ai_service = AIService()
+            overview_prompt = EXECUTIVE_OVERVIEW_PROMPT.format(
+                title=opp.title or "N/A",
+                department=opp.department or "N/A",
+                description=opp.description or "No description available",
+                financial_score=fin_results.get("financial_viability_score", 0.0),
+                strategic_score=cap_results.get("strategic_alignment_score", 0.0),
+                risk_score=comp_results.get("risk_score", 0.0),
+                capacity_score=cap_results.get("internal_capacity_score", 0.0)
+            )
+            
+            executive_overview = await ai_service.analyze_opportunity(overview_prompt)
+
+            # 5. Score Calculation & Data Aggregation
             score_data = {
                 "contract_risk_score": comp_results.get("risk_score", 0.0),
                 "internal_capacity_score": cap_results.get("internal_capacity_score", 0.0),
                 "financial_viability_score": fin_results.get("financial_viability_score", 0.0),
-                # Strategic alignment and data integrity are placeholders for now
-                "strategic_alignment_score": 50.0, 
-                "data_integrity_score": 100.0
+                "strategic_alignment_score": cap_results.get("strategic_alignment_score", 50.0),
+                "data_integrity_score": 100.0,  # Placeholder
+                # AI-generated details
+                "financial_details": fin_results.get("details"),
+                "strategic_details": cap_results.get("strategic_details"),
+                "risk_details": comp_results.get("details"),
+                "capacity_details": cap_results.get("capacity_details"),
+                "capacity_details": cap_results.get("capacity_details"),
+                "personnel_details": cap_results.get("personnel_details"),
+                "past_performance_details": cap_results.get("past_performance_details"),
+                # New Analysis Details
+                "solicitation_details": doc_results.get("solicitation_details"),
+                "security_details": comp_results.get("security_details"),
+                "executive_overview": executive_overview
             }
             
             final_score = await self.calculate_score(opportunity_id, score_data)
@@ -69,21 +99,12 @@ class OrchestratorAgent(BaseAgent):
             self.db.add(score_entry)
         
         # Weights
-        # Strategic Alignment: 30%
-        # Financial Viability: 25%
-        # Contract Risk: 20%
-        # Internal Capacity: 15%
-        # Data Integrity: 10%
-        
         w_strategic = 0.30
         w_financial = 0.25
         w_risk = 0.20
         w_capacity = 0.15
         w_data = 0.10
         
-        # Normalize risk: Lower risk is better. If risk score is 0-100 where 100 is high risk, 
-        # we need to invert it for the weighted score (where higher is better).
-        # Assuming risk_score is 0 (low) to 100 (high).
         risk_contribution = (100.0 - scores["contract_risk_score"]) * w_risk
         
         weighted_score = (
@@ -108,6 +129,21 @@ class OrchestratorAgent(BaseAgent):
             score_entry.go_no_go_decision = "REVIEW"
         else:
             score_entry.go_no_go_decision = "NO_GO"
+        
+        # Store AI-generated details
+        from datetime import datetime
+        score_entry.details = {
+            "financial": scores.get("financial_details"),
+            "strategic": scores.get("strategic_details"),
+            "risk": scores.get("risk_details"),
+            "capacity": scores.get("capacity_details"),
+            "personnel": scores.get("personnel_details"),
+            "past_performance": scores.get("past_performance_details"),
+            "solicitation": scores.get("solicitation_details"),
+            "security": scores.get("security_details"),
+            "executive_overview": scores.get("executive_overview"),
+            "generated_at": datetime.utcnow().isoformat()
+        }
             
         await self.db.commit()
         

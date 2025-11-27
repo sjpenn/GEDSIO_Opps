@@ -35,10 +35,16 @@ class SamEntityClient:
                 response = await client.get(self.BASE_URL, params=params)
                 response.raise_for_status()
                 data = response.json()
-                # SAM API structure is a bit deep, usually data['entityData'] or similar
-                # We might need to adjust based on actual response
-                if data and isinstance(data, list) and len(data) > 0:
-                     return data[0] # Assuming list of matches
+                # SAM API returns a wrapper with "entityData" list
+                if isinstance(data, dict) and "entityData" in data:
+                    entity_list = data["entityData"]
+                    if isinstance(entity_list, list) and len(entity_list) > 0:
+                        return entity_list[0]
+                
+                # Fallback if structure is different (e.g. direct list)
+                if isinstance(data, list) and len(data) > 0:
+                     return data[0]
+                
                 return data
             except httpx.HTTPStatusError as e:
                 print(f"Error fetching entity {uei}: {e}")
@@ -168,7 +174,16 @@ class SamEntityClient:
                 # Convert DB entities to API format for fuzzy matching
                 for db_entity in db_entities:
                     if db_entity.full_response:
-                        all_local_entities.append(db_entity.full_response)
+                        # Handle case where full_response is the root wrapper
+                        if isinstance(db_entity.full_response, dict) and "entityData" in db_entity.full_response:
+                            data_list = db_entity.full_response["entityData"]
+                            if isinstance(data_list, list) and len(data_list) > 0:
+                                all_local_entities.append(data_list[0])
+                            else:
+                                # Fallback or skip if empty
+                                continue
+                        else:
+                            all_local_entities.append(db_entity.full_response)
                     else:
                         # Create minimal entity structure
                         all_local_entities.append({

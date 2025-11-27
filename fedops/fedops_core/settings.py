@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # LLM_MODEL: str = "gpt-4o-mini" # default model
 
     LLM_PROVIDER: str = "gemini"
-    LLM_MODEL: str = "gemini-3.0"
+    LLM_MODEL: str = "gemini-2.5-flash"
     
     class Config:
         env_file = ".env"

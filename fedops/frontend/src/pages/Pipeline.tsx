@@ -100,7 +100,7 @@ export default function PipelinePage() {
                       <Card 
                         key={item.pipeline.id} 
                         className="cursor-pointer hover:shadow-md transition-all border-l-4 border-l-primary/0 hover:border-l-primary"
-                        onClick={() => navigate(`/opportunities`)} // Ideally open a pipeline detail view
+                        onClick={() => navigate(`/analysis/${item.opportunity.id}`)}
                       >
                         <CardContent className="p-4 space-y-3">
                           <div>

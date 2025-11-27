@@ -175,7 +175,6 @@ class OpportunityScore(Base):
     details = Column(JSONB, nullable=True) # Breakdown of scoring factors
     
     created_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Proposal(Base):
@@ -226,3 +225,48 @@ class OpportunityPipeline(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class ProposalRequirement(Base):
+    __tablename__ = "proposal_requirements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proposal_id = Column(Integer, ForeignKey("proposals.id"), nullable=False, index=True)
+    requirement_text = Column(Text, nullable=False)
+    requirement_type = Column(String, nullable=False)  # TECHNICAL, MANAGEMENT, PAST_PERFORMANCE, PRICING, CERTIFICATION, OTHER
+    source_document_id = Column(Integer, ForeignKey("stored_files.id"), nullable=True)
+    source_section = Column(String, nullable=True)
+    source_location = Column(JSON, nullable=True)  # {page, paragraph, start_char, end_char}
+    priority = Column(String, nullable=False, default="IMPORTANT")  # MANDATORY, IMPORTANT, OPTIONAL
+    compliance_status = Column(String, nullable=False, default="NOT_STARTED")  # NOT_STARTED, IN_PROGRESS, COMPLETE, REVIEWED
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class RequirementResponse(Base):
+    __tablename__ = "requirement_responses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requirement_id = Column(Integer, ForeignKey("proposal_requirements.id"), nullable=False, index=True)
+    response_text = Column(Text, nullable=True)
+    proposal_section_ref = Column(String, nullable=True)
+    assigned_to = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT")  # DRAFT, REVIEW, APPROVED
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DocumentArtifact(Base):
+    __tablename__ = "document_artifacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proposal_id = Column(Integer, ForeignKey("proposals.id"), nullable=False, index=True)
+    artifact_type = Column(String, nullable=False)  # FORM, CERTIFICATION, PAST_PERFORMANCE, PRICING_SHEET, OTHER
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    source_section = Column(String, nullable=True)
+    required = Column(Boolean, nullable=False, default=True)
+    status = Column(String, nullable=False, default="NOT_STARTED")  # NOT_STARTED, IN_PROGRESS, COMPLETE
+    file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

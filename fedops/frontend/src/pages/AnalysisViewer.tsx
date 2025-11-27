@@ -125,7 +125,8 @@ export default function AnalysisViewer() {
         method: 'POST'
       });
       if (res.ok) {
-        alert("Proposal draft generated successfully! You can view it in the Opportunities page.");
+        // Open workspace in new tab
+        window.open(`/proposal-workspace/${opportunityId}`, '_blank');
       } else {
         alert("Failed to generate proposal. Ensure decision is GO.");
       }

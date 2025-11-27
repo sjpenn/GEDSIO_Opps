@@ -4,6 +4,7 @@ import EntitySearchPage from './pages/EntitySearch';
 import OpportunitiesPage from './pages/Opportunities';
 import FileManagementPage from './pages/FileManagement';
 import AnalysisViewer from './pages/AnalysisViewer';
+import ProposalWorkspace from './pages/ProposalWorkspace';
 import PipelinePage from './pages/Pipeline';
 import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
@@ -47,6 +48,9 @@ function App() {
             } />
             <Route path="/analysis/:opportunityId" element={
               <AnalysisViewer />
+            } />
+            <Route path="/proposal-workspace/:opportunityId" element={
+              <ProposalWorkspace />
             } />
           </Routes>
         </Layout>

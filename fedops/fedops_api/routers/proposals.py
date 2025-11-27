@@ -147,6 +147,15 @@ async def generate_proposal(opportunity_id: int, db: AsyncSession = Depends(get_
     
     await db.commit()
     
+    # Trigger requirement extraction in background
+    try:
+        from fedops_core.services.requirement_extraction_service import RequirementExtractionService
+        extraction_service = RequirementExtractionService(db)
+        await extraction_service.extract_requirements_from_proposal(proposal.id)
+    except Exception as e:
+        print(f"Warning: Requirement extraction failed: {e}")
+        # Don't fail the whole request if extraction fails
+    
     # Return full proposal with volumes
     return await get_proposal(opportunity_id, db)
 
@@ -216,3 +225,98 @@ async def update_proposal_block(proposal_id: int, volume_id: int, block_id: str,
     await db.commit()
     
     return {"status": "success", "blocks": volume.blocks}
+
+
+# ============================================================================
+# AI-Powered Content Generation Endpoints
+# ============================================================================
+
+@router.post("/{proposal_id}/generate-requirements-matrix")
+async def generate_requirements_matrix(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Generate a comprehensive requirements compliance matrix using AI.
+    """
+    from fedops_core.services.proposal_content_generator import ProposalContentGenerator
+    
+    generator = ProposalContentGenerator(db)
+    result = await generator.generate_requirements_matrix(proposal_id)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Generation failed"))
+    
+    return result
+
+
+@router.post("/{proposal_id}/generate-sow-decomposition")
+async def generate_sow_decomposition(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Generate structured SOW/PWS decomposition and analysis using AI.
+    """
+    from fedops_core.services.proposal_content_generator import ProposalContentGenerator
+    
+    generator = ProposalContentGenerator(db)
+    result = await generator.generate_sow_decomposition(proposal_id)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Generation failed"))
+    
+    return result
+
+
+@router.post("/{proposal_id}/generate-past-performance")
+async def generate_past_performance(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Generate past performance volume with relevant case studies using AI.
+    """
+    from fedops_core.services.proposal_content_generator import ProposalContentGenerator
+    
+    generator = ProposalContentGenerator(db)
+    result = await generator.generate_past_performance_volume(proposal_id)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Generation failed"))
+    
+    return result
+
+
+@router.post("/{proposal_id}/generate-ppqs")
+async def generate_ppqs(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Generate Past Performance Questionnaire (PPQ) responses using AI.
+    """
+    from fedops_core.services.proposal_content_generator import ProposalContentGenerator
+    
+    generator = ProposalContentGenerator(db)
+    result = await generator.generate_ppqs(proposal_id)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Generation failed"))
+    
+    return result
+
+
+@router.post("/{proposal_id}/generate-all-content")
+async def generate_all_content(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Generate all AI-powered content at once: requirements matrix, SOW decomposition,
+    past performance volume, and PPQs.
+    """
+    from fedops_core.services.proposal_content_generator import ProposalContentGenerator
+    
+    generator = ProposalContentGenerator(db)
+    
+    results = {
+        "requirements_matrix": await generator.generate_requirements_matrix(proposal_id),
+        "sow_decomposition": await generator.generate_sow_decomposition(proposal_id),
+        "past_performance": await generator.generate_past_performance_volume(proposal_id),
+        "ppqs": await generator.generate_ppqs(proposal_id)
+    }
+    
+    # Check if any failed
+    failed = [key for key, result in results.items() if result.get("status") == "error"]
+    
+    return {
+        "status": "partial" if failed else "success",
+        "failed_items": failed,
+        "results": results
+    }

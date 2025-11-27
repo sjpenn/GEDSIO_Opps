@@ -143,6 +143,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         if (data.proposal.volumes && data.proposal.volumes.length > 0) {
             setActiveVolumeId(data.proposal.volumes[0].id);
         }
+        // Open workspace in new tab
+        window.open(`/proposal-workspace/${opportunityId}`, '_blank');
       } else {
         alert("Failed to generate proposal. Ensure decision is GO.");
       }

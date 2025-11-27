@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fedops_core.settings import settings
-from fedops_api.routers import opportunities, entities, files, company, agents, proposals
+from fedops_api.routers import opportunities, entities, files, company, agents, proposals, requirements
 from fedops_core.routers import pipeline
 from fedops_core.db.engine import engine, Base
 from starlette.middleware.cors import CORSMiddleware
@@ -28,6 +28,7 @@ app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 app.include_router(company.router, prefix="/api/v1/company", tags=["company"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
 app.include_router(proposals.router, prefix="/api/v1") # Proposals router already has /proposals prefix
+app.include_router(requirements.router, prefix="/api/v1") # Requirements router already has /requirements prefix
 app.include_router(pipeline.router)
 
 @app.on_event("startup")

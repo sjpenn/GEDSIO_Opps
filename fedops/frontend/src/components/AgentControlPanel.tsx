@@ -61,6 +61,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [activeVolumeId, setActiveVolumeId] = useState<number | null>(null);
   const [editingBlock, setEditingBlock] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   const fetchData = async () => {
     console.log('Fetching agent data for opportunity:', opportunityId);
@@ -131,6 +132,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   };
 
   const handleGenerateProposal = async () => {
+    setGenerating(true);
     try {
       const res = await fetch(`${API_URL}/api/v1/proposals/generate/${opportunityId}`, {
         method: 'POST'
@@ -146,6 +148,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
       }
     } catch (error) {
       console.error("Proposal generation failed", error);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -254,8 +258,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
             </div>
             
             {score.go_no_go_decision === 'GO' && (
-               <Button onClick={handleGenerateProposal} variant="secondary" className="w-full gap-2">
-                 <FileText className="h-4 w-4" />
+               <Button onClick={handleGenerateProposal} disabled={generating} variant="secondary" className="w-full gap-2">
+                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                  {proposal ? 'Regenerate Proposal Draft' : 'Generate Proposal Draft'}
                </Button>
             )}

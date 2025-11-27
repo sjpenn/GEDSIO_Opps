@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, ExternalLink, FileText, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { Search, Filter, ExternalLink, FileText, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function OpportunitiesPage() {
@@ -196,6 +196,23 @@ export default function OpportunitiesPage() {
       console.error(err);
     } finally {
       setLoadingPartners(false);
+    }
+  };
+
+  const handleWatchOpportunity = async () => {
+    if (!selectedOpp) return;
+    try {
+      const res = await fetch(`/api/v1/pipeline/${selectedOpp.id}/watch`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        alert("Opportunity added to pipeline!");
+      } else {
+        const data = await res.json();
+        alert(data.message || "Failed to watch opportunity");
+      }
+    } catch (err) {
+      console.error("Failed to watch opportunity", err);
     }
   };
 
@@ -493,6 +510,13 @@ export default function OpportunitiesPage() {
                   >
                     {loadingPartners ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
                     {loadingPartners ? 'Searching...' : 'Find Partners'}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleWatchOpportunity}
+                    className="gap-2"
+                  >
+                    <Eye className="h-4 w-4" /> Watch Opportunity
                   </Button>
                 </div>
 

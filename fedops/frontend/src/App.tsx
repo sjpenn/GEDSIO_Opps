@@ -4,6 +4,7 @@ import EntitySearchPage from './pages/EntitySearch';
 import OpportunitiesPage from './pages/Opportunities';
 import FileManagementPage from './pages/FileManagement';
 import AnalysisViewer from './pages/AnalysisViewer';
+import PipelinePage from './pages/Pipeline';
 import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
@@ -37,6 +38,11 @@ function App() {
             <Route path="/files" element={
               <PageTransition>
                 <FileManagementPage />
+              </PageTransition>
+            } />
+            <Route path="/pipeline" element={
+              <PageTransition>
+                <PipelinePage />
               </PageTransition>
             } />
             <Route path="/analysis/:opportunityId" element={

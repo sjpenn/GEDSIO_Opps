@@ -205,3 +205,24 @@ class ProposalVolume(Base):
     
     proposal = relationship("Proposal", back_populates="volumes")
 
+
+class OpportunityPipeline(Base):
+    __tablename__ = "opportunity_pipelines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, unique=True, index=True)
+    
+    status = Column(String, default="WATCHING") # WATCHING, GO, NO_GO, SUBMITTED, AWARDED
+    stage = Column(String, default="QUALIFICATION") # QUALIFICATION, PROPOSAL_DEV, REVIEW, SUBMISSION
+    
+    questions_due_date = Column(DateTime, nullable=True)
+    proposal_due_date = Column(DateTime, nullable=True)
+    
+    submission_instructions = Column(Text, nullable=True)
+    required_artifacts = Column(JSONB, default=[]) # List of required docs
+    
+    notes = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

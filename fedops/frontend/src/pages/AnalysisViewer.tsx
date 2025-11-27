@@ -25,7 +25,8 @@ import {
   Calendar,
   Briefcase,
   History,
-  ExternalLink
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 
@@ -78,6 +79,7 @@ export default function AnalysisViewer() {
   const [data, setData] = useState<AnalysisData | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [error, setError] = useState<string | null>(null);
+  const [generatingProposal, setGeneratingProposal] = useState(false);
 
   useEffect(() => {
     fetchAnalysisData();
@@ -96,6 +98,44 @@ export default function AnalysisViewer() {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateProposal = async () => {
+    if (!opportunityId) return;
+    setGeneratingProposal(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/proposals/generate/${opportunityId}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        alert("Proposal draft generated successfully! You can view it in the Opportunities page.");
+      } else {
+        alert("Failed to generate proposal. Ensure decision is GO.");
+      }
+    } catch (error) {
+      console.error("Proposal generation failed", error);
+      alert("An error occurred while generating the proposal.");
+    } finally {
+      setGeneratingProposal(false);
+    }
+  };
+
+  const handleAddToPipeline = async () => {
+    if (!opportunityId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/v1/pipeline/${opportunityId}/watch`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        alert("Opportunity added to pipeline!");
+      } else {
+        const data = await res.json();
+        alert(data.message || "Failed to add to pipeline");
+      }
+    } catch (err) {
+      console.error("Failed to add to pipeline", err);
+      alert("An error occurred while adding to pipeline.");
     }
   };
 
@@ -129,7 +169,7 @@ export default function AnalysisViewer() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <p className="text-muted-foreground">Loading analysis data...</p>
@@ -140,7 +180,7 @@ export default function AnalysisViewer() {
 
   if (error || !data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="max-w-md">
           <CardHeader>
             <CardTitle className="text-red-600">Error</CardTitle>
@@ -160,9 +200,9 @@ export default function AnalysisViewer() {
   const { opportunity, score, logs } = data;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-white border-b shadow-sm sticky top-0 z-10">
+      <div className="bg-card border-b shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -192,6 +232,16 @@ export default function AnalysisViewer() {
                 <Badge className={cn("text-lg px-4 py-2", getDecisionColor(score.go_no_go_decision))}>
                   {score.go_no_go_decision}
                 </Badge>
+                <Button onClick={handleAddToPipeline} variant="outline" className="gap-2">
+                  <Eye className="h-4 w-4" />
+                  Add to Pipeline
+                </Button>
+                {score.go_no_go_decision === 'GO' && (
+                  <Button onClick={handleGenerateProposal} disabled={generatingProposal} variant="default" className="gap-2">
+                    {generatingProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Generate Proposal Draft
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -199,7 +249,7 @@ export default function AnalysisViewer() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="bg-white border-b">
+      <div className="bg-card border-b">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto">
             {tabs.map((tab) => {

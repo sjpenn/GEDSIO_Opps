@@ -80,9 +80,11 @@ export default function AnalysisViewer() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [error, setError] = useState<string | null>(null);
   const [generatingProposal, setGeneratingProposal] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<any>(null);
 
   useEffect(() => {
     fetchAnalysisData();
+    fetchPipelineStatus();
   }, [opportunityId]);
 
   const fetchAnalysisData = async () => {
@@ -98,6 +100,20 @@ export default function AnalysisViewer() {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPipelineStatus = async () => {
+    if (!opportunityId) return;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/pipeline/${opportunityId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPipelineStatus(data);
+      }
+    } catch (err) {
+      // Not in pipeline, ignore error
+      setPipelineStatus(null);
     }
   };
 
@@ -129,6 +145,8 @@ export default function AnalysisViewer() {
       });
       if (res.ok) {
         alert("Opportunity added to pipeline!");
+        // Refresh pipeline status to update badge
+        await fetchPipelineStatus();
       } else {
         const data = await res.json();
         alert(data.message || "Failed to add to pipeline");
@@ -232,6 +250,12 @@ export default function AnalysisViewer() {
                 <Badge className={cn("text-lg px-4 py-2", getDecisionColor(score.go_no_go_decision))}>
                   {score.go_no_go_decision}
                 </Badge>
+                {pipelineStatus && (
+                  <Badge variant="secondary" className="bg-blue-600 hover:bg-blue-700 text-white gap-1">
+                    <Eye className="h-4 w-4" />
+                    In Pipeline
+                  </Badge>
+                )}
                 <Button onClick={handleAddToPipeline} variant="outline" className="gap-2">
                   <Eye className="h-4 w-4" />
                   Add to Pipeline

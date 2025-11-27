@@ -26,6 +26,7 @@ export default function OpportunitiesPage() {
   const [partnerMatches, setPartnerMatches] = useState<any[]>([])
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [showPartnerMatches, setShowPartnerMatches] = useState(false)
+  const [pipelineItems, setPipelineItems] = useState<any[]>([])
   
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
@@ -72,6 +73,22 @@ export default function OpportunitiesPage() {
   });
   const [total, setTotal] = useState(0);
 
+  const fetchPipelineData = async () => {
+    try {
+      const response = await fetch('/api/v1/pipeline/');
+      if (response.ok) {
+        const data = await response.json();
+        setPipelineItems(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch pipeline data', err);
+    }
+  };
+
+  const isInPipeline = (opportunityId: number) => {
+    return pipelineItems.find(item => item.pipeline?.opportunity_id === opportunityId);
+  };
+
   const fetchOpportunities = async () => {
     try {
       setLoading(true);
@@ -104,6 +121,7 @@ export default function OpportunitiesPage() {
 
   useEffect(() => {
     fetchOpportunities();
+    fetchPipelineData();
   }, [searchParams.skip]); // Only auto-fetch on pagination change
 
   const fetchComments = async (oppId: number) => {
@@ -207,6 +225,8 @@ export default function OpportunitiesPage() {
       });
       if (res.ok) {
         alert("Opportunity added to pipeline!");
+        // Refresh pipeline data to update badges
+        await fetchPipelineData();
       } else {
         const data = await res.json();
         alert(data.message || "Failed to watch opportunity");
@@ -396,6 +416,12 @@ export default function OpportunitiesPage() {
                         <Badge variant={opp.active === 'Yes' ? 'default' : 'secondary'} className={cn("text-xs", opp.active === 'Yes' ? "bg-green-600 hover:bg-green-700" : "")}>
                           {opp.active === 'Yes' ? 'Active' : 'Inactive'}
                         </Badge>
+                        {isInPipeline(opp.id) && (
+                          <Badge variant="secondary" className="text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1">
+                            <Eye className="h-3 w-3" />
+                            In Pipeline
+                          </Badge>
+                        )}
                       </div>
                       <h3 
                         onClick={() => setSelectedOpp(opp)}
@@ -492,6 +518,12 @@ export default function OpportunitiesPage() {
                     <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
                       {selectedOpp.type}
                     </Badge>
+                    {isInPipeline(selectedOpp.id) && (
+                      <Badge variant="secondary" className="bg-blue-600 hover:bg-blue-700 text-white gap-1">
+                        <Eye className="h-3 w-3" />
+                        In Pipeline
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>

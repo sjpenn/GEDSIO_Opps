@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
@@ -27,14 +28,16 @@ class PipelineItemUpdate(BaseModel):
     required_artifacts: Optional[List[str]] = None
 
 @router.post("/{opportunity_id}/watch")
-def watch_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
+async def watch_opportunity(opportunity_id: int, db: AsyncSession = Depends(get_db)):
     # Check if opportunity exists
-    opp = db.query(Opportunity).filter(Opportunity.id == opportunity_id).first()
+    result = await db.execute(select(Opportunity).filter(Opportunity.id == opportunity_id))
+    opp = result.scalar_one_or_none()
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
         
     # Check if already watching
-    existing = db.query(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id).first()
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    existing = result.scalar_one_or_none()
     if existing:
         return {"message": "Already watching this opportunity", "id": existing.id}
         
@@ -44,33 +47,37 @@ def watch_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
         stage="QUALIFICATION"
     )
     db.add(pipeline_item)
-    db.commit()
-    db.refresh(pipeline_item)
+    await db.commit()
+    await db.refresh(pipeline_item)
     return pipeline_item
 
 @router.get("/")
-def get_pipeline(db: Session = Depends(get_db)):
-    items = db.query(OpportunityPipeline).all()
+async def get_pipeline(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OpportunityPipeline))
+    items = result.scalars().all()
     # Enrich with opportunity details
-    result = []
+    enriched_result = []
     for item in items:
-        opp = db.query(Opportunity).filter(Opportunity.id == item.opportunity_id).first()
-        result.append({
+        opp_result = await db.execute(select(Opportunity).filter(Opportunity.id == item.opportunity_id))
+        opp = opp_result.scalar_one_or_none()
+        enriched_result.append({
             "pipeline": item,
             "opportunity": opp
         })
-    return result
+    return enriched_result
 
 @router.get("/{opportunity_id}")
-def get_pipeline_item(opportunity_id: int, db: Session = Depends(get_db)):
-    item = db.query(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id).first()
+async def get_pipeline_item(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Pipeline item not found")
     return item
 
 @router.put("/{opportunity_id}")
-def update_pipeline_item(opportunity_id: int, update_data: PipelineItemUpdate, db: Session = Depends(get_db)):
-    item = db.query(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id).first()
+async def update_pipeline_item(opportunity_id: int, update_data: PipelineItemUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Pipeline item not found")
         
@@ -89,16 +96,17 @@ def update_pipeline_item(opportunity_id: int, update_data: PipelineItemUpdate, d
     if update_data.required_artifacts is not None:
         item.required_artifacts = update_data.required_artifacts
         
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return item
 
 @router.delete("/{opportunity_id}")
-def unwatch_opportunity(opportunity_id: int, db: Session = Depends(get_db)):
-    item = db.query(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id).first()
+async def unwatch_opportunity(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Pipeline item not found")
         
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     return {"message": "Stopped watching opportunity"}

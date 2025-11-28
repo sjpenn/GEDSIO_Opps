@@ -158,8 +158,16 @@ Generate the complete requirements compliance matrix now:
         # Combine document content
         sow_content = ""
         for doc in documents:
-            if doc.parsed_content:
-                sow_content += f"\n\n=== {doc.filename} ===\n{doc.parsed_content[:10000]}"
+            content = doc.parsed_content
+            if not content and doc.file_path and os.path.exists(doc.file_path):
+                try:
+                    with open(doc.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                except Exception as e:
+                    print(f"Error reading file {doc.filename}: {e}")
+            
+            if content:
+                sow_content += f"\n\n=== {doc.filename} ===\n{content[:20000]}"
         
         if not sow_content:
             return {"status": "error", "message": "No SOW/PWS documents found"}
@@ -342,6 +350,37 @@ Generate the complete past performance volume now:
             
             # Count case studies in response
             case_studies_count = volume_content.count("### Case Study")
+            
+            # Save to database
+            # Check if volume exists
+            result = await self.db.execute(
+                select(ProposalVolume).where(
+                    ProposalVolume.proposal_id == proposal_id,
+                    ProposalVolume.title.ilike("%Past Performance%")
+                )
+            )
+            volume = result.scalar_one_or_none()
+            
+            if not volume:
+                volume = ProposalVolume(
+                    proposal_id=proposal_id,
+                    title="Volume III: Past Performance",
+                    order=3,
+                    blocks=[]
+                )
+                self.db.add(volume)
+            
+            # Update volume content
+            import uuid
+            volume.blocks = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "Past Performance Volume",
+                    "content": volume_content,
+                    "order": 1
+                }
+            ]
+            await self.db.commit()
             
             return {
                 "status": "success",

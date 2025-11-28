@@ -51,7 +51,7 @@ interface Proposal {
   version: number;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [loading, setLoading] = useState(false);
@@ -107,6 +107,27 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunityId]);
 
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      const pollLogs = async () => {
+        try {
+          const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
+          if (logsRes.ok) {
+            const logsData = await logsRes.json();
+            setLogs(logsData);
+          }
+        } catch (e) {
+          console.error("Error polling logs", e);
+        }
+      };
+      
+      pollLogs();
+      interval = setInterval(pollLogs, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [loading, opportunityId]);
+
   const handleAnalyze = async () => {
     setLoading(true);
     try {
@@ -146,7 +167,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         // Open workspace in new tab
         window.open(`/proposal-workspace/${opportunityId}`, '_blank');
       } else {
-        alert("Failed to generate proposal. Ensure decision is GO.");
+        const errorText = await res.text();
+        alert(`Failed to generate proposal: ${errorText}`);
       }
     } catch (error) {
       console.error("Proposal generation failed", error);
@@ -259,12 +281,10 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
               </div>
             </div>
             
-            {score.go_no_go_decision === 'GO' && (
-               <Button onClick={handleGenerateProposal} disabled={generating} variant="secondary" className="w-full gap-2">
-                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                 {proposal ? 'Regenerate Proposal Draft' : 'Generate Proposal Draft'}
-               </Button>
-            )}
+            <Button onClick={handleGenerateProposal} disabled={generating} variant="secondary" className="w-full gap-2">
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              {proposal ? 'Regenerate Proposal Draft' : 'Generate Proposal Draft'}
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -366,7 +386,14 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
               ))}
               {logs.length === 0 && (
                 <div className="text-muted-foreground text-center py-8 text-sm italic">
-                  No activity logs recorded yet.
+                  {loading ? (
+                    <div className="flex flex-col items-center gap-2">
+                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                       <span>Initializing analysis agents... this may take 2-3 minutes.</span>
+                    </div>
+                  ) : (
+                    "No activity logs recorded yet."
+                  )}
                 </div>
               )}
             </div>

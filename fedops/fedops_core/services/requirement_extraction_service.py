@@ -16,7 +16,11 @@ from fedops_core.db.models import StoredFile, ProposalRequirement, DocumentArtif
 from fedops_core.settings import settings
 
 # Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+if settings.GOOGLE_API_KEY:
+    genai.configure(api_key=settings.GOOGLE_API_KEY)
+else:
+    print("Warning: GOOGLE_API_KEY not found in settings")
+
 
 
 class RequirementExtractionService:
@@ -34,7 +38,11 @@ class RequirementExtractionService:
             {
                 "requirements_count": int,
                 "artifacts_count": int,
-                "status": "success" | "partial" | "failed"
+                "status": "success" | "partial" | "failed",
+                "files_found": int,
+                "files_with_content": int,
+                "files_processed": int,
+                "message": str (optional)
             }
         """
         # Get proposal and associated opportunity
@@ -51,40 +59,95 @@ class RequirementExtractionService:
         )
         files = result.scalars().all()
         
+        files_found = len(files)
+        files_with_content = sum(1 for f in files if f.parsed_content or f.file_path)
+        
         if not files:
-            return {"status": "success", "requirements_count": 0, "artifacts_count": 0, "message": "No documents to process"}
+            return {
+                "status": "success", 
+                "requirements_count": 0, 
+                "artifacts_count": 0, 
+                "files_found": 0,
+                "files_with_content": 0,
+                "files_processed": 0,
+                "message": "No documents found for this opportunity. Documents may need to be uploaded or imported from SAM.gov."
+            }
+        
+        if files_with_content == 0:
+            return {
+                "status": "failed",
+                "requirements_count": 0,
+                "artifacts_count": 0,
+                "files_found": files_found,
+                "files_with_content": 0,
+                "files_processed": 0,
+                "message": f"Found {files_found} document(s) but none have parseable content. Files may need to be processed first."
+            }
         
         total_requirements = 0
         total_artifacts = 0
+        files_processed = 0
+        
+        # Debug logging
+        with open('extraction_debug.log', 'a') as log_file:
+            log_file.write(f"\n=== Starting extraction for proposal {proposal_id} ===\n")
+            log_file.write(f"Found {files_found} files, {files_with_content} with content\n")
         
         for file in files:
+            # Skip files without content
+            if not file.parsed_content and not file.file_path:
+                with open('extraction_debug.log', 'a') as log_file:
+                    log_file.write(f"Skipping {file.filename}: no content or file path\n")
+                continue
+                
             # Extract requirements from each document
             req_count, art_count = await self._extract_from_document(file, proposal_id)
+            with open('extraction_debug.log', 'a') as log_file:
+                log_file.write(f"File {file.filename}: {req_count} requirements, {art_count} artifacts\n")
             total_requirements += req_count
             total_artifacts += art_count
+            files_processed += 1
         
         await self.db.commit()
         
         return {
             "status": "success",
             "requirements_count": total_requirements,
-            "artifacts_count": total_artifacts
+            "artifacts_count": total_artifacts,
+            "files_found": files_found,
+            "files_with_content": files_with_content,
+            "files_processed": files_processed
         }
     
     async def _extract_from_document(self, file: StoredFile, proposal_id: int) -> Tuple[int, int]:
         """Extract requirements and artifacts from a single document"""
         
         # Read document content
-        if not file.parsed_content:
+        content = None
+        if file.parsed_content:
+            content = file.parsed_content
+            with open('extraction_debug.log', 'a') as log_file:
+                log_file.write(f"Using parsed_content for {file.filename} ({len(content)} chars)\n")
+        elif file.file_path:
             # If no parsed content, try to read from file
             try:
                 with open(file.file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
+                with open('extraction_debug.log', 'a') as log_file:
+                    log_file.write(f"Read content from file_path for {file.filename} ({len(content)} chars)\n")
             except Exception as e:
                 print(f"Error reading file {file.filename}: {e}")
+                with open('extraction_debug.log', 'a') as log_file:
+                    log_file.write(f"Error reading file {file.filename}: {e}\n")
                 return 0, 0
-        else:
-            content = file.parsed_content
+        
+        if not content or len(content.strip()) == 0:
+            with open('extraction_debug.log', 'a') as log_file:
+                log_file.write(f"No content available for {file.filename}\n")
+            return 0, 0
+            
+        with open('extraction_debug.log', 'a') as log_file:
+            log_file.write(f"Content length for {file.filename}: {len(content)}\n")
         
         # Use AI to extract requirements
         requirements = await self._ai_extract_requirements(content, file.filename)
@@ -138,7 +201,7 @@ Extract ALL requirements from this document. For each requirement, identify:
 Focus on:
 - Technical specifications and performance requirements
 - Management and staffing requirements
-- Past performance requirements
+- Past performance requirements (Look for "Section L" instructions and "Section M" evaluation criteria related to recent relevant experience)
 - Pricing and cost requirements
 - Certifications and compliance requirements
 - Deliverables and milestones
@@ -166,11 +229,18 @@ Document content:
             if json_match:
                 import json
                 requirements = json.loads(json_match.group())
+                with open('extraction_debug.log', 'a') as log_file:
+                    log_file.write(f"Successfully extracted {len(requirements)} requirements from {filename}\n")
                 return requirements
             else:
+                with open('extraction_debug.log', 'a') as log_file:
+                    log_file.write(f"No JSON array found in AI response for {filename}\n")
+                    log_file.write(f"AI Response: {text[:500]}\n")
                 return []
         except Exception as e:
             print(f"Error extracting requirements with AI: {e}")
+            with open('extraction_debug.log', 'a') as log_file:
+                log_file.write(f"Exception during AI extraction for {filename}: {e}\n")
             return []
     
     async def _ai_extract_artifacts(self, content: str, filename: str) -> List[Dict]:

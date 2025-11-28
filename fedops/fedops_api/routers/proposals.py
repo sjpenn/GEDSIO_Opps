@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 import uuid
 
-from fedops_core.db.engine import get_db
+from fedops_core.db.engine import get_db, AsyncSessionLocal
 from fedops_core.db.models import Opportunity, OpportunityScore, Proposal, ProposalVolume
 from pydantic import BaseModel
 
@@ -16,17 +16,63 @@ router = APIRouter(
 class BlockUpdate(BaseModel):
     content: str
 
+async def process_proposal_assets(opportunity_id: int, proposal_id: int):
+    """
+    Background task to import documents and extract requirements.
+    """
+    print(f"Starting background processing for proposal {proposal_id} (Opportunity {opportunity_id})")
+    async with AsyncSessionLocal() as db:
+        # Import documents from SAM.gov if not already imported
+        try:
+            from fedops_core.services.file_service import FileService
+            from fedops_core.db.models import StoredFile
+            
+            file_service = FileService(db)
+            
+            # Check if documents already exist
+            result = await db.execute(
+                select(StoredFile).where(StoredFile.opportunity_id == opportunity_id)
+            )
+            existing_files = result.scalars().all()
+            
+            if not existing_files:
+                # Import documents from SAM.gov
+                print(f"No documents found for opportunity {opportunity_id}, importing from SAM.gov...")
+                imported_files = await file_service.import_opportunity_resources(opportunity_id)
+                print(f"Imported {len(imported_files)} documents for opportunity {opportunity_id}")
+                
+                # Process each imported file to extract content
+                for file in imported_files:
+                    try:
+                        print(f"Processing file: {file.filename}")
+                        await file_service.process_file(file.id)
+                    except Exception as e:
+                        print(f"Warning: Failed to process file {file.filename}: {e}")
+            else:
+                print(f"Using {len(existing_files)} existing documents for opportunity {opportunity_id}")
+        except Exception as e:
+            print(f"Warning: Document import failed: {e}")
+            # Continue anyway - extraction will show helpful error if no docs
+        
+        # Trigger requirement extraction
+        try:
+            from fedops_core.services.requirement_extraction_service import RequirementExtractionService
+            extraction_service = RequirementExtractionService(db)
+            result = await extraction_service.extract_requirements_from_proposal(proposal_id)
+            print(f"Requirements extraction completed: {result.get('requirements_count', 0)} requirements, {result.get('artifacts_count', 0)} artifacts")
+        except Exception as e:
+            print(f"Warning: Requirement extraction failed: {e}")
+
 @router.post("/generate/{opportunity_id}")
-async def generate_proposal(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+async def generate_proposal(opportunity_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """
     Generates a proposal draft based on the analysis from the agentic pipeline.
-    Requires a 'GO' decision.
     """
-    # 1. Check Decision
-    result = await db.execute(select(OpportunityScore).where(OpportunityScore.opportunity_id == opportunity_id))
-    score_entry = result.scalar_one_or_none()
-    if not score_entry or score_entry.go_no_go_decision != "GO":
-        raise HTTPException(status_code=400, detail="Cannot generate proposal: Decision is not GO or analysis incomplete.")
+    # 1. Check Decision - REMOVED to allow proposal generation for all opportunities
+    # result = await db.execute(select(OpportunityScore).where(OpportunityScore.opportunity_id == opportunity_id))
+    # score_entry = result.scalar_one_or_none()
+    # if not score_entry or score_entry.go_no_go_decision != "GO":
+    #     raise HTTPException(status_code=400, detail="Cannot generate proposal: Decision is not GO or analysis incomplete.")
 
     # 2. Gather Data
     result = await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
@@ -147,16 +193,10 @@ async def generate_proposal(opportunity_id: int, db: AsyncSession = Depends(get_
     
     await db.commit()
     
-    # Trigger requirement extraction in background
-    try:
-        from fedops_core.services.requirement_extraction_service import RequirementExtractionService
-        extraction_service = RequirementExtractionService(db)
-        await extraction_service.extract_requirements_from_proposal(proposal.id)
-    except Exception as e:
-        print(f"Warning: Requirement extraction failed: {e}")
-        # Don't fail the whole request if extraction fails
+    # 5. Trigger Background Processing (Documents & Requirements)
+    background_tasks.add_task(process_proposal_assets, opportunity_id, proposal.id)
     
-    # Return full proposal with volumes
+    # Return full proposal with volumes immediately
     return await get_proposal(opportunity_id, db)
 
 @router.get("/{opportunity_id}")
@@ -320,3 +360,18 @@ async def generate_all_content(proposal_id: int, db: AsyncSession = Depends(get_
         "failed_items": failed,
         "results": results
     }
+
+@router.post("/{proposal_id}/extract-requirements")
+async def extract_requirements(proposal_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Trigger AI extraction of requirements from all associated documents.
+    """
+    from fedops_core.services.requirement_extraction_service import RequirementExtractionService
+    
+    service = RequirementExtractionService(db)
+    result = await service.extract_requirements_from_proposal(proposal_id)
+    
+    if result["status"] == "failed":
+        raise HTTPException(status_code=400, detail=result.get("error", "Extraction failed"))
+    
+    return result

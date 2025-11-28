@@ -68,26 +68,31 @@ class FileService:
         db_file.parsed_content = content
 
         # 2. Generate Summary (Shipley)
-        doc_type = determine_document_type(db_file.filename, content)
-        response_text = await self.ai_service.generate_shipley_summary(content, doc_type)
-        
-        import json
-        import re
-
         try:
-            # Clean response if it's wrapped in markdown code blocks
-            cleaned_text = re.sub(r'^```json\s*|\s*```$', '', response_text.strip(), flags=re.MULTILINE)
-            data = json.loads(cleaned_text)
+            doc_type = determine_document_type(db_file.filename, content)
+            response_text = await self.ai_service.generate_shipley_summary(content, doc_type)
             
-            summary = data.get("markdown_report", "No report generated.")
-            structured_data = data.get("structured_data", {})
-            
-            db_file.content_summary = summary
-            db_file.analysis_json = structured_data
-        except json.JSONDecodeError:
-            # Fallback if response is not valid JSON (e.g. raw text)
-            db_file.content_summary = response_text
-            db_file.analysis_json = {"error": "Failed to parse structured data", "raw_response": response_text}
+            import json
+            import re
+
+            try:
+                # Clean response if it's wrapped in markdown code blocks
+                cleaned_text = re.sub(r'^```json\s*|\s*```$', '', response_text.strip(), flags=re.MULTILINE)
+                data = json.loads(cleaned_text)
+                
+                summary = data.get("markdown_report", "No report generated.")
+                structured_data = data.get("structured_data", {})
+                
+                db_file.content_summary = summary
+                db_file.analysis_json = structured_data
+            except json.JSONDecodeError:
+                # Fallback if response is not valid JSON (e.g. raw text)
+                db_file.content_summary = response_text
+                db_file.analysis_json = {"error": "Failed to parse structured data", "raw_response": response_text}
+        except Exception as e:
+            print(f"Warning: AI summary generation failed for {db_file.filename}: {e}")
+            db_file.content_summary = "AI Summary generation failed."
+            db_file.analysis_json = {"error": str(e)}
         
         await self.db.commit()
         await self.db.refresh(db_file)
@@ -110,7 +115,7 @@ class FileService:
             resources = [{"url": link, "filename": link.split('/')[-1]} for link in opportunity.resource_links]
             
         import httpx
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             for res in resources:
                 url = res.get("url")
                 filename = res.get("filename") or "unknown_file"
@@ -121,11 +126,22 @@ class FileService:
                     StoredFile.filename == filename
                 )
                 existing = await self.db.execute(stmt)
-                if existing.scalar_one_or_none():
-                    continue
+                existing_file = existing.scalar_one_or_none()
+                
+                # If file exists and has parsed content, skip
+                if existing_file:
+                    if existing_file.parsed_content:
+                        print(f"File {filename} already imported and processed, skipping")
+                        continue
+                    else:
+                        # File exists but not processed, we'll process it below
+                        print(f"File {filename} exists but not processed, will process it")
+                        imported_files.append(existing_file)
+                        continue
                     
                 try:
                     # Download file
+                    print(f"Downloading {filename} from {url}")
                     response = await client.get(url)
                     if response.status_code == 200:
                         file_path = os.path.join(settings.UPLOAD_DIR, filename)
@@ -143,11 +159,34 @@ class FileService:
                             opportunity_id=opportunity_id
                         )
                         self.db.add(db_file)
+                        await self.db.flush()  # Flush to get the ID
                         imported_files.append(db_file)
+                        print(f"Successfully downloaded {filename}")
+                    else:
+                        print(f"Failed to download {url}: HTTP {response.status_code}")
                 except Exception as e:
                     print(f"Failed to download {url}: {e}")
                     
         await self.db.commit()
+        
+        # Now process all imported files to populate parsed_content
+        processed_count = 0
+        for db_file in imported_files:
+            try:
+                # Refresh to ensure we have the latest data
+                await self.db.refresh(db_file)
+                
+                # Only process if not already processed
+                if not db_file.parsed_content:
+                    print(f"Processing file: {db_file.filename}")
+                    await self.process_file(db_file.id)
+                    processed_count += 1
+                    print(f"Successfully processed {db_file.filename}")
+            except Exception as e:
+                print(f"Warning: Failed to process file {db_file.filename}: {e}")
+                # Continue processing other files even if one fails
+                
+        print(f"Import complete: {len(imported_files)} files imported, {processed_count} files processed")
         return imported_files
 
     def _parse_file_content(self, file_path: str, file_type: str) -> str:

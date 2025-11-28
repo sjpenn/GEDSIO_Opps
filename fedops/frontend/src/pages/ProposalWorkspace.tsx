@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface Requirement {
   id: number;
@@ -459,6 +459,8 @@ function RequirementsTab({
 }) {
   const [filter, setFilter] = useState<string>('ALL');
   const [generating, setGenerating] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionMessage, setExtractionMessage] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
   
   const filteredRequirements = filter === 'ALL' 
     ? requirements 
@@ -466,8 +468,43 @@ function RequirementsTab({
 
   const [matrixContent, setMatrixContent] = useState<string>('');
 
+  // Calculate counts for each requirement type
+  const requirementCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      ALL: requirements.length,
+      TECHNICAL: 0,
+      MANAGEMENT: 0,
+      PAST_PERFORMANCE: 0,
+      PRICING: 0,
+      CERTIFICATION: 0,
+      OTHER: 0,
+    };
+    
+    requirements.forEach(req => {
+      const type = req.requirement_type;
+      if (counts[type] !== undefined) {
+        counts[type]++;
+      } else {
+        counts.OTHER++;
+      }
+    });
+    
+    return counts;
+  }, [requirements]);
+
+  const requirementTypes = [
+    { key: 'ALL', label: 'All', color: 'bg-slate-100 text-slate-700 border-slate-300' },
+    { key: 'TECHNICAL', label: 'Technical', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+    { key: 'MANAGEMENT', label: 'Management', color: 'bg-purple-100 text-purple-700 border-purple-300' },
+    { key: 'PAST_PERFORMANCE', label: 'Past Performance', color: 'bg-green-100 text-green-700 border-green-300' },
+    { key: 'PRICING', label: 'Pricing', color: 'bg-orange-100 text-orange-700 border-orange-300' },
+    { key: 'CERTIFICATION', label: 'Certification', color: 'bg-red-100 text-red-700 border-red-300' },
+    { key: 'OTHER', label: 'Other', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  ];
+
   const handleGenerateMatrix = async () => {
     setGenerating(true);
+    setExtractionMessage(null);
     try {
       const res = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/generate-requirements-matrix`, {
         method: 'POST'
@@ -475,15 +512,68 @@ function RequirementsTab({
       if (res.ok) {
         const data = await res.json();
         setMatrixContent(data.content);
-        // alert("Requirements Matrix generated successfully!");
+        setExtractionMessage({type: 'success', text: 'Requirements matrix generated successfully!'});
       } else {
-        alert("Failed to generate matrix.");
+        const errorData = await res.json().catch(() => ({}));
+        setExtractionMessage({type: 'error', text: `Failed to generate matrix: ${errorData.detail || errorData.message || 'Unknown error'}`});
       }
     } catch (error) {
       console.error("Generation failed:", error);
-      alert("An error occurred during generation.");
+      setExtractionMessage({type: 'error', text: 'An error occurred during generation.'});
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleExtractRequirements = async () => {
+    setExtracting(true);
+    setExtractionMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/extract-requirements`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.requirements_count > 0) {
+          setExtractionMessage({
+            type: 'success', 
+            text: `Requirements extraction completed! Found ${data.requirements_count} requirements and ${data.artifacts_count} artifacts from ${data.files_processed} document(s). Reloading page...`
+          });
+          // Reload page to show new requirements
+          setTimeout(() => window.location.reload(), 2000);
+        } else {
+          // Use detailed diagnostics from backend
+          let errorText = 'Extraction completed but found 0 requirements.\n\n';
+          
+          if (data.files_found === 0) {
+            errorText += '• No documents are available for this opportunity\n';
+            errorText += '• Documents may need to be uploaded or imported from SAM.gov\n';
+            errorText += '• Check the File Management page to upload documents';
+          } else if (data.files_with_content === 0) {
+            errorText += `• Found ${data.files_found} document(s) but none have parseable content\n`;
+            errorText += '• Documents may need to be processed to extract text\n';
+            errorText += '• Try re-importing documents from SAM.gov or re-uploading files';
+          } else {
+            errorText += `• Found ${data.files_found} document(s), ${data.files_with_content} with content\n`;
+            errorText += '• AI extraction may have failed to identify requirements\n';
+            errorText += '• Documents may not contain standard requirement language\n';
+            errorText += '• Check extraction_debug.log for details';
+          }
+          
+          setExtractionMessage({
+            type: 'error',
+            text: errorText
+          });
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        setExtractionMessage({type: 'error', text: `Failed to start extraction: ${errorData.detail || errorData.message || 'Unknown error'}`});
+      }
+    } catch (error) {
+      console.error("Extraction failed:", error);
+      setExtractionMessage({type: 'error', text: 'An error occurred during extraction.'});
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -526,37 +616,83 @@ function RequirementsTab({
                 disabled={generating} 
                 variant="secondary"
                 size="sm"
-                className="mr-2 gap-2"
+                className="gap-2"
               >
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-500" />}
                 Generate Matrix
               </Button>
-              <div className="h-6 w-px bg-border mx-1" />
-              <Button
-                variant={filter === 'ALL' ? 'default' : 'outline'}
+              <Button 
+                onClick={handleExtractRequirements} 
+                disabled={extracting} 
+                variant="outline"
                 size="sm"
-                onClick={() => setFilter('ALL')}
+                className="gap-2"
               >
-                All ({requirements.length})
-              </Button>
-              <Button
-                variant={filter === 'TECHNICAL' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('TECHNICAL')}
-              >
-                Technical
-              </Button>
-              <Button
-                variant={filter === 'MANAGEMENT' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('MANAGEMENT')}
-              >
-                Management
+                {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCode className="h-4 w-4" />}
+                Re-extract
               </Button>
             </div>
           </div>
+          
+          {/* Requirement Type Filters */}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {requirementTypes.map((type) => {
+              const count = requirementCounts[type.key] || 0;
+              const isActive = filter === type.key;
+              
+              return (
+                <button
+                  key={type.key}
+                  onClick={() => setFilter(type.key)}
+                  className={cn(
+                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                    "border hover:shadow-sm",
+                    isActive 
+                      ? cn(type.color, "shadow-sm ring-2 ring-offset-1", 
+                          type.key === 'ALL' ? 'ring-slate-400' :
+                          type.key === 'TECHNICAL' ? 'ring-blue-400' :
+                          type.key === 'MANAGEMENT' ? 'ring-purple-400' :
+                          type.key === 'PAST_PERFORMANCE' ? 'ring-green-400' :
+                          type.key === 'PRICING' ? 'ring-orange-400' :
+                          type.key === 'CERTIFICATION' ? 'ring-red-400' :
+                          'ring-gray-400'
+                        )
+                      : "bg-background border-border text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <span>{type.label}</span>
+                  <Badge 
+                    variant="secondary" 
+                    className={cn(
+                      "ml-1 px-1.5 py-0 text-xs font-semibold",
+                      isActive ? "bg-white/40" : "bg-muted"
+                    )}
+                  >
+                    {count}
+                  </Badge>
+                </button>
+              );
+            })}
+          </div>
         </CardHeader>
         <CardContent>
+          {extractionMessage && (
+            <Card className={cn(
+              "mb-4 border-l-4",
+              extractionMessage.type === 'success' && "border-l-green-500 bg-green-50 dark:bg-green-950",
+              extractionMessage.type === 'error' && "border-l-red-500 bg-red-50 dark:bg-red-950",
+              extractionMessage.type === 'info' && "border-l-blue-500 bg-blue-50 dark:bg-blue-950"
+            )}>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  {extractionMessage.type === 'success' && <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />}
+                  {extractionMessage.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />}
+                  {extractionMessage.type === 'info' && <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />}
+                  <p className="text-sm whitespace-pre-line">{extractionMessage.text}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <div className="space-y-3">
             {filteredRequirements.map((req) => (
               <Card 

@@ -118,9 +118,10 @@ async def list_opportunities(
             if keywords:
                 base_params["title"] = keywords
             if naics:
-                base_params["ncode"] = naics
+                # Split comma-separated string into list for API
+                base_params["ncode"] = [n.strip() for n in naics.split(",") if n.strip()]
             if setAside:
-                base_params["setAside"] = setAside
+                base_params["setAside"] = [s.strip() for s in setAside.split(",") if s.strip()]
 
             # Execute parallel requests
             # Limit concurrency to avoid rate limits (e.g., 5 at a time)
@@ -138,14 +139,14 @@ async def list_opportunities(
             # Deduplicate by noticeId
             unique_opps = {}
             for opp in all_opportunities_data:
+                # Use noticeId as key
                 nid = opp.get("noticeId")
                 if nid and nid not in unique_opps:
                     unique_opps[nid] = opp
             
             opportunities_data = list(unique_opps.values())
-            logger.info(f"Total unique opportunities: {len(opportunities_data)}")
-
-            # Filter locally by active status if requested
+            
+            # Apply local filtering for active status if needed (API might not handle it perfectly across years)
             if active == "yes":
                 opportunities_data = [o for o in opportunities_data if o.get("active", "Yes") == "Yes"]
             elif active == "no":
@@ -231,10 +232,16 @@ async def list_opportunities(
         query = select(OpportunityModel)
         
         if naics:
-            query = query.where(OpportunityModel.naics_code.ilike(f"%{naics}%"))
+            naics_list = [n.strip() for n in naics.split(",") if n.strip()]
+            if naics_list:
+                conditions = [OpportunityModel.naics_code.ilike(f"%{n}%") for n in naics_list]
+                query = query.where(or_(*conditions))
         
         if setAside:
-            query = query.where(OpportunityModel.type_of_set_aside.ilike(f"%{setAside}%"))
+            set_aside_list = [s.strip() for s in setAside.split(",") if s.strip()]
+            if set_aside_list:
+                conditions = [OpportunityModel.type_of_set_aside.ilike(f"%{s}%") for s in set_aside_list]
+                query = query.where(or_(*conditions))
             
         if keywords:
             search_term = f"%{keywords}%"

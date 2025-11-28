@@ -10,8 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, ExternalLink, FileText, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye } from "lucide-react"
+import { Search, Filter, Calendar, Building2, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink } from "lucide-react"
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils"
+
+interface CompanyProfile {
+  uei: string;
+  company_name: string;
+  target_naics: string[];
+  target_keywords: string[];
+  target_set_asides: string[];
+}
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
@@ -66,12 +75,15 @@ export default function OpportunitiesPage() {
     naics: '',
     setAside: '',
     active: 'yes',
+    type: '',
     postedFrom: thirtyDaysAgo.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
     postedTo: today.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
     limit: 10,
     skip: 0
   });
   const [total, setTotal] = useState(0);
+  const [profile, setProfile] = useState<CompanyProfile | null>(null);
+  const [useProfileFilters, setUseProfileFilters] = useState(false);
 
   const fetchPipelineData = async () => {
     try {
@@ -99,6 +111,7 @@ export default function OpportunitiesPage() {
       if (searchParams.naics) queryParams.append('naics', searchParams.naics);
       if (searchParams.setAside) queryParams.append('setAside', searchParams.setAside);
       if (searchParams.active) queryParams.append('active', searchParams.active);
+      if (searchParams.type) queryParams.append('ptype', searchParams.type);
       if (searchParams.postedFrom) queryParams.append('postedFrom', searchParams.postedFrom);
       if (searchParams.postedTo) queryParams.append('postedTo', searchParams.postedTo);
       queryParams.append('limit', searchParams.limit.toString());
@@ -119,10 +132,70 @@ export default function OpportunitiesPage() {
     }
   };
 
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/v1/company/');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const companyProfile = data[0];
+          setProfile(companyProfile);
+          // Default to using profile filters if profile exists
+          setUseProfileFilters(true);
+          applyProfileFilters(companyProfile);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch company profile', err);
+    }
+  };
+
+  const applyProfileFilters = (companyProfile: CompanyProfile) => {
+    setSearchParams(prev => ({
+      ...prev,
+      naics: companyProfile.target_naics.join(','),
+      // keywords: companyProfile.target_keywords.join(' '), // Exclude keywords for now as they contain business types
+      setAside: companyProfile.target_set_asides.join(','),
+      skip: 0 // Reset pagination
+    }));
+  };
+
+  const handleProfileFilterToggle = (checked: boolean) => {
+    setUseProfileFilters(checked);
+    if (checked && profile) {
+      applyProfileFilters(profile);
+    } else {
+      // Clear profile-specific filters but keep others
+      setSearchParams(prev => ({
+        ...prev,
+        naics: '',
+        keywords: '',
+        setAside: '',
+        skip: 0
+      }));
+    }
+  };
+
+  useEffect(() => {
+    fetchPipelineData();
+    fetchProfile();
+    // fetchOpportunities is called by the useEffect below when searchParams change
+    // or we can call it here if we want to ensure it runs once.
+    // However, fetchProfile updates searchParams, which triggers the other useEffect.
+    // But wait, the other useEffect depends on [searchParams.skip].
+    // If we only update keywords/naics, it WON'T trigger fetchOpportunities automatically
+    // unless we add searchParams to the dependency array (which might cause loops)
+    // or call fetchOpportunities explicitly.
+    
+    // Actually, the existing useEffect only watches [searchParams.skip].
+    // We need to trigger a fetch when filters change.
+    // Let's modify the useEffect dependency or call fetchOpportunities manually.
+  }, []);
+
+  // Update useEffect to watch for filter changes too, or add a manual trigger
   useEffect(() => {
     fetchOpportunities();
-    fetchPipelineData();
-  }, [searchParams.skip]); // Only auto-fetch on pagination change
+  }, [searchParams.skip, searchParams.keywords, searchParams.naics, searchParams.setAside, searchParams.active, searchParams.type, searchParams.postedFrom, searchParams.postedTo]);
 
   const fetchComments = async (oppId: number) => {
     try {
@@ -257,14 +330,36 @@ export default function OpportunitiesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Filters Sidebar */}
         <Card className="lg:col-span-1 h-fit">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filters
-            </CardTitle>
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Filter className="h-5 w-5" />
+                Filters
+              </CardTitle>
+              {profile && (
+                <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                  <a href="/company-profile" title="Edit Company Profile">
+                    <User className="h-4 w-4" />
+                  </a>
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSearch} className="space-y-4">
+              {profile && (
+                <div className="flex items-center space-x-2 bg-muted/50 p-3 rounded-md mb-4">
+                  <Switch
+                    id="use-profile"
+                    checked={useProfileFilters}
+                    onCheckedChange={handleProfileFilterToggle}
+                  />
+                  <Label htmlFor="use-profile" className="text-sm font-medium cursor-pointer">
+                    Use {profile.company_name} Profile
+                  </Label>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="keywords">Keywords</Label>
                 <div className="relative">
@@ -312,6 +407,30 @@ export default function OpportunitiesPage() {
                     <SelectItem value="yes">Active Only</SelectItem>
                     <SelectItem value="no">Inactive Only</SelectItem>
                     <SelectItem value="all">All Statuses</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="type">Type</Label>
+                <Select
+                  value={searchParams.type || "all"}
+                  onValueChange={value => setSearchParams(prev => ({ ...prev, type: value === "all" ? "" : value }))}
+                >
+                  <SelectTrigger id="type">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="s">Solicitation</SelectItem>
+                    <SelectItem value="p">Presolicitation</SelectItem>
+                    <SelectItem value="a">Award Notice</SelectItem>
+                    <SelectItem value="r">Sources Sought</SelectItem>
+                    <SelectItem value="g">Sale of Surplus Property</SelectItem>
+                    <SelectItem value="k">Combined Synopsis/Solicitation</SelectItem>
+                    <SelectItem value="i">Intent to Bundle</SelectItem>
+                    <SelectItem value="o">Solicitation for Offers</SelectItem>
+                    <SelectItem value="u">Justification</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -403,21 +522,23 @@ export default function OpportunitiesPage() {
              </Card>
           )}
 
-          <div className="grid gap-4">
+          <div className="grid gap-4 min-w-0">
             {opportunities.map(opp => (
-              <Card key={opp.id} className="group hover:shadow-md transition-all duration-200 border-l-4 border-l-primary/0 hover:border-l-primary">
+              <Card key={opp.id} className="group hover:shadow-md transition-all duration-200 border-l-4 border-l-primary/0 hover:border-l-primary w-full max-w-full overflow-hidden">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start mb-3 gap-4">
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="font-mono text-xs">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded whitespace-nowrap">
                           {opp.solicitation_number}
-                        </Badge>
-                        <Badge variant={opp.active === 'Yes' ? 'default' : 'secondary'} className={cn("text-xs", opp.active === 'Yes' ? "bg-green-600 hover:bg-green-700" : "")}>
-                          {opp.active === 'Yes' ? 'Active' : 'Inactive'}
-                        </Badge>
+                        </span>
+                        {opp.active ? (
+                          <Badge variant="default" className="bg-green-600 hover:bg-green-700 h-5 text-[10px] px-1.5 whitespace-nowrap">Active</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="h-5 text-[10px] px-1.5 whitespace-nowrap">Archived</Badge>
+                        )}
                         {isInPipeline(opp.id) && (
-                          <Badge variant="secondary" className="text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1">
+                          <Badge variant="secondary" className="text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1 whitespace-nowrap">
                             <Eye className="h-3 w-3" />
                             In Pipeline
                           </Badge>
@@ -425,39 +546,49 @@ export default function OpportunitiesPage() {
                       </div>
                       <h3 
                         onClick={() => setSelectedOpp(opp)}
-                        className="text-lg font-semibold hover:text-primary cursor-pointer line-clamp-1 transition-colors"
+                        className="font-semibold text-lg leading-tight group-hover:text-primary transition-colors break-words cursor-pointer"
                       >
                         {opp.title}
                       </h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">{opp.department}</span>
-                        {opp.sub_tier && <span>• {opp.sub_tier}</span>}
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
+                        <span className="font-medium text-foreground truncate" title={opp.department}>{opp.department}</span>
+                        {opp.sub_tier && <span className="truncate" title={opp.sub_tier}>• {opp.sub_tier}</span>}
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4 bg-muted/30 p-3 rounded-md">
-                    <div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm text-muted-foreground mb-4 bg-muted/30 p-3 rounded-md">
+                    <div className="min-w-0">
                       <span className="block text-xs font-medium uppercase opacity-70">Type</span>
-                      <span className="text-foreground font-medium">{opp.type}</span>
+                      <span className="text-foreground font-medium truncate block" title={opp.type}>{opp.type}</span>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <span className="block text-xs font-medium uppercase opacity-70">Posted</span>
-                      <span className="text-foreground font-medium">{new Date(opp.posted_date).toLocaleDateString()}</span>
+                      <span className="text-foreground font-medium truncate block">{new Date(opp.posted_date).toLocaleDateString()}</span>
                     </div>
-                    <div>
-                      <span className="block text-xs font-medium uppercase opacity-70">Deadline</span>
-                      <span className={cn("font-medium", opp.response_deadline && new Date(opp.response_deadline) < new Date() ? "text-destructive" : "text-foreground")}>
+                    <div className="min-w-0">
+                      <span className="block text-xs font-medium uppercase opacity-70">Due Date</span>
+                      <span className={cn("font-medium truncate block", opp.response_deadline && new Date(opp.response_deadline) < new Date() ? "text-destructive" : "text-foreground")}>
                         {opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'N/A'}
                       </span>
                     </div>
-                    <div>
+                    <div className="min-w-0">
+                      <span className="block text-xs font-medium uppercase opacity-70">Place</span>
+                      <span className="text-foreground font-medium truncate block" title={`${opp.place_of_performance?.city?.name || ''}, ${opp.place_of_performance?.state?.name || ''}`}>
+                        {opp.place_of_performance?.city?.name ? `${opp.place_of_performance.city.name}, ${opp.place_of_performance.state?.code || ''}` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block text-xs font-medium uppercase opacity-70">NAICS</span>
+                      <span className="text-foreground font-medium truncate block" title={opp.naics_code}>{opp.naics_code || 'N/A'}</span>
+                    </div>
+                    <div className="min-w-0">
                       <span className="block text-xs font-medium uppercase opacity-70">Set Aside</span>
-                      <span className="text-foreground font-medium truncate" title={opp.type_of_set_aside_description}>{opp.type_of_set_aside || 'None'}</span>
+                      <span className="text-foreground font-medium truncate block" title={opp.type_of_set_aside_description}>{opp.type_of_set_aside || 'None'}</span>
                     </div>
                   </div>
 
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-4 break-words">
                     {stripHtml(opp.description || '')}
                   </p>
 

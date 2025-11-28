@@ -78,7 +78,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
           </Button>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 md:p-8">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8">
           <div className="max-w-7xl mx-auto w-full">
             {children}
           </div>

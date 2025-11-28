@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface AnalysisData {
   opportunity: {
@@ -128,7 +128,8 @@ export default function AnalysisViewer() {
         // Open workspace in new tab
         window.open(`/proposal-workspace/${opportunityId}`, '_blank');
       } else {
-        alert("Failed to generate proposal. Ensure decision is GO.");
+        const errorText = await res.text();
+        alert(`Failed to generate proposal: ${errorText}`);
       }
     } catch (error) {
       console.error("Proposal generation failed", error);
@@ -261,12 +262,10 @@ export default function AnalysisViewer() {
                   <Eye className="h-4 w-4" />
                   Add to Pipeline
                 </Button>
-                {score.go_no_go_decision === 'GO' && (
-                  <Button onClick={handleGenerateProposal} disabled={generatingProposal} variant="default" className="gap-2">
-                    {generatingProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                    Generate Proposal Draft
-                  </Button>
-                )}
+                <Button onClick={handleGenerateProposal} disabled={generatingProposal} variant="default" className="gap-2">
+                  {generatingProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  Generate Proposal Draft
+                </Button>
               </div>
             )}
           </div>

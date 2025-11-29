@@ -108,7 +108,7 @@ Generate the complete requirements compliance matrix now:
 """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             matrix_content = response.text.strip()
             
             return {
@@ -225,7 +225,7 @@ Generate the complete SOW decomposition now:
 """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             decomposition = response.text.strip()
             
             return {
@@ -345,7 +345,7 @@ Generate the complete past performance volume now:
 """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             volume_content = response.text.strip()
             
             # Count case studies in response
@@ -482,7 +482,7 @@ Generate complete PPQ responses now:
 """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             ppq_content = response.text.strip()
             
             return {
@@ -496,6 +496,72 @@ Generate complete PPQ responses now:
                 "message": f"Failed to generate PPQs: {str(e)}"
             }
     
+    async def generate_section_content(self, proposal_id: int, section_title: str, prompt_instructions: Optional[str] = None) -> Dict:
+        """
+        Generate content for a specific proposal section.
+        
+        Returns:
+            {
+                "status": "success",
+                "content": "Markdown formatted content"
+            }
+        """
+        # Get proposal and opportunity
+        result = await self.db.execute(
+            select(Proposal).where(Proposal.id == proposal_id)
+        )
+        proposal = result.scalar_one_or_none()
+        if not proposal:
+            return {"status": "error", "message": "Proposal not found"}
+        
+        result = await self.db.execute(
+            select(Opportunity).where(Opportunity.id == proposal.opportunity_id)
+        )
+        opportunity = result.scalar_one_or_none()
+        
+        context = self._build_opportunity_context(opportunity)
+        company_context = await self._get_company_context(opportunity)
+        
+        custom_instructions = prompt_instructions or "Provide a comprehensive response addressing the requirements for this section."
+        
+        prompt = f"""
+You are a professional proposal writer for government contracts.
+
+OPPORTUNITY CONTEXT:
+{context}
+
+COMPANY CONTEXT:
+{company_context}
+
+TASK: Write the content for the proposal section titled "{section_title}".
+
+INSTRUCTIONS:
+{custom_instructions}
+
+OUTPUT FORMAT:
+Write the content in Markdown format. Do not include the section title as a header (it will be added by the system).
+Focus on being compliant, compelling, and concise.
+Use professional government contracting language.
+Highlight our strengths and relevant experience.
+
+Generate the section content now:
+"""
+        
+        try:
+            response = await self.model.generate_content_async(prompt)
+            content = response.text.strip()
+            
+            return {
+                "status": "success",
+                "content": content,
+                "generated_at": "now"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to generate section content: {str(e)}"
+            }
+
     def _build_opportunity_context(self, opportunity: Optional[Opportunity]) -> str:
         """Build formatted context string from opportunity details"""
         if not opportunity:

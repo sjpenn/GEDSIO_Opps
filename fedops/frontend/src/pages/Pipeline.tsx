@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, ArrowRight, Calendar, FileText, CheckCircle, AlertCircle, Clock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Loader2, Calendar, CheckCircle, Target, FileText } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import { cn } from "@/lib/utils";
+import { ShipleyPhaseBadge } from '@/components/ShipleyPhaseIndicator';
 
 interface PipelineItem {
   pipeline: {
@@ -25,6 +26,12 @@ interface PipelineItem {
     department: string;
     response_deadline: string;
   };
+  proposal: {
+    id: number;
+    shipley_phase: string;
+    capture_manager_id: string | null;
+    bid_decision_score: number | null;
+  } | null;
 }
 
 const STAGES = {
@@ -99,8 +106,7 @@ export default function PipelinePage() {
                     return (
                       <Card 
                         key={item.pipeline.id} 
-                        className="cursor-pointer hover:shadow-md transition-all border-l-4 border-l-primary/0 hover:border-l-primary"
-                        onClick={() => navigate(`/analysis/${item.opportunity.id}`)}
+                        className="transition-all border-l-4 border-l-primary/20"
                       >
                         <CardContent className="p-4 space-y-3">
                           <div>
@@ -120,12 +126,61 @@ export default function PipelinePage() {
                             <p className="text-xs text-muted-foreground mt-1">{item.opportunity.department}</p>
                           </div>
                           
+                          {/* Shipley Phase Indicator */}
+                          {item.proposal && item.proposal.shipley_phase && (
+                            <div className="flex items-center gap-2">
+                              <Target className="h-3 w-3 text-blue-600" />
+                              <ShipleyPhaseBadge currentPhase={item.proposal.shipley_phase} />
+                            </div>
+                          )}
+                          
                           <div className="pt-2 border-t flex justify-between items-center text-xs text-muted-foreground">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               {new Date(item.pipeline.proposal_due_date || item.opportunity.response_deadline).toLocaleDateString()}
                             </div>
                             {item.pipeline.status === 'GO' && <CheckCircle className="h-3 w-3 text-green-500" />}
+                          </div>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex gap-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="flex-1 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/analysis/${item.opportunity.id}`);
+                              }}
+                            >
+                              View Analysis
+                            </Button>
+                            {(!item.proposal || item.proposal.shipley_phase === 'PHASE_1_LONG_TERM_POSITIONING' || item.proposal.shipley_phase === 'PHASE_2_OPPORTUNITY_ASSESSMENT') && (
+                              <Button 
+                                size="sm" 
+                                className="flex-1 text-xs bg-blue-600 hover:bg-blue-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/bid-decision/${item.opportunity.id}`);
+                                }}
+                              >
+                                <Target className="h-3 w-3 mr-1" />
+                                Bid Decision
+                              </Button>
+                            )}
+                            {item.proposal && item.proposal.id && (
+                              <Button 
+                                asChild
+                                size="sm" 
+                                variant="default"
+                                className="flex-1 text-xs"
+                              >
+                                <Link to={`/proposal-workspace/${item.opportunity.id}`}>
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  Open Proposal
+                                </Link>
+                              </Button>
+                            )}
                           </div>
                         </CardContent>
                       </Card>

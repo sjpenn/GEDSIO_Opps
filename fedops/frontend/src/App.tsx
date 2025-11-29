@@ -6,6 +6,7 @@ import FileManagementPage from './pages/FileManagement';
 import AnalysisViewer from './pages/AnalysisViewer';
 import ProposalWorkspace from './pages/ProposalWorkspace';
 import PipelinePage from './pages/Pipeline';
+import BidDecisionPage from './pages/BidDecision';
 import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
@@ -48,6 +49,11 @@ function App() {
             } />
             <Route path="/analysis/:opportunityId" element={
               <AnalysisViewer />
+            } />
+            <Route path="/bid-decision/:opportunityId" element={
+              <PageTransition>
+                <BidDecisionPage />
+              </PageTransition>
             } />
             <Route path="/proposal-workspace/:opportunityId" element={
               <ProposalWorkspace />

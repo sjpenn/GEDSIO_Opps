@@ -1,11 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import CapturePlanningTab from '@/components/CapturePlanningTab';
+import ProposalEditor from '@/components/ProposalEditor';
+import ReviewsTab from '@/components/ReviewsTab';
+import SubmissionTab from '@/components/SubmissionTab';
 import {
   ArrowLeft,
   FileText,
@@ -20,7 +28,14 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Target,
+  ShieldCheck,
+  Send,
+  GripVertical,
+  Plus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -86,7 +101,7 @@ interface WorkspaceData {
   documents: Document[];
 }
 
-type TabType = 'overview' | 'specification' | 'requirements' | 'sow' | 'past-performance' | 'pricing' | 'artifacts';
+type TabType = 'overview' | 'capture' | 'development' | 'specification' | 'requirements' | 'sow' | 'past-performance' | 'pricing' | 'artifacts' | 'reviews' | 'submission';
 
 export default function ProposalWorkspace() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
@@ -104,15 +119,22 @@ export default function ProposalWorkspace() {
   const fetchWorkspaceData = async () => {
     try {
       setLoading(true);
-      // First get the proposal for this opportunity
-      const proposalRes = await fetch(`${API_URL}/api/v1/proposals/${opportunityId}`);
-      if (!proposalRes.ok) {
-        throw new Error('Proposal not found. Please generate a proposal first.');
+      // Get the proposal for this opportunity from pipeline
+      const pipelineRes = await fetch(`${API_URL}/api/v1/pipeline/`);
+      if (!pipelineRes.ok) {
+        throw new Error('Failed to load pipeline data');
       }
-      const proposalData = await proposalRes.json();
+      const pipelineData = await pipelineRes.json();
+      const pipelineItem = pipelineData.find((p: any) => p.opportunity.id === parseInt(opportunityId || '0'));
+      
+      if (!pipelineItem || !pipelineItem.proposal) {
+        throw new Error('Proposal not found. Please make a Pursuit Decision first.');
+      }
+      
+      const proposalId = pipelineItem.proposal.id;
       
       // Then get workspace data
-      const workspaceRes = await fetch(`${API_URL}/api/v1/requirements/proposals/${proposalData.id}/workspace`);
+      const workspaceRes = await fetch(`${API_URL}/api/v1/requirements/proposals/${proposalId}/workspace`);
       if (!workspaceRes.ok) {
         throw new Error('Failed to load workspace data');
       }
@@ -127,12 +149,16 @@ export default function ProposalWorkspace() {
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Opportunity Overview', icon: AlertCircle },
+    { id: 'capture' as TabType, label: 'Capture Planning', icon: Target },
+    { id: 'development' as TabType, label: 'Proposal Development', icon: FileText },
     { id: 'specification' as TabType, label: 'Proposal Specification', icon: FileText },
     { id: 'requirements' as TabType, label: 'Requirements Matrix', icon: CheckSquare },
     { id: 'sow' as TabType, label: 'SOW/PWS Decomposition', icon: FileCode },
     { id: 'past-performance' as TabType, label: 'Past Performance', icon: History },
     { id: 'pricing' as TabType, label: 'Pricing Requirements', icon: DollarSign },
     { id: 'artifacts' as TabType, label: 'Required Artifacts', icon: Package },
+    { id: 'reviews' as TabType, label: 'Reviews', icon: ShieldCheck },
+    { id: 'submission' as TabType, label: 'Submission', icon: Send },
   ];
 
   if (loading) {
@@ -239,7 +265,9 @@ export default function ProposalWorkspace() {
         <div className="flex-1 overflow-auto">
           <div className="p-8">
             {activeTab === 'overview' && <OpportunityOverviewTab opportunity={workspaceData.opportunity} />}
-            {activeTab === 'specification' && <SpecificationTab proposal={workspaceData.proposal} />}
+            {activeTab === 'capture' && <CapturePlanningTab proposalId={workspaceData.proposal.id} />}
+            {activeTab === 'development' && <ProposalEditor proposalId={workspaceData.proposal.id} />}
+            {activeTab === 'specification' && <SpecificationTab proposal={workspaceData.proposal} proposalId={workspaceData.proposal.id} />}
             {activeTab === 'requirements' && (
               <RequirementsTab 
                 proposalId={workspaceData.proposal.id}
@@ -258,7 +286,9 @@ export default function ProposalWorkspace() {
             {activeTab === 'pricing' && (
               <PricingTab requirements={workspaceData.requirements.filter(r => r.requirement_type === 'PRICING')} />
             )}
-            {activeTab === 'artifacts' && <ArtifactsTab artifacts={workspaceData.artifacts} />}
+            {activeTab === 'artifacts' && <ArtifactsTab artifacts={workspaceData.artifacts} proposalId={workspaceData.proposal.id} />}
+            {activeTab === 'reviews' && <ReviewsTab proposalId={workspaceData.proposal.id} />}
+            {activeTab === 'submission' && <SubmissionTab proposalId={workspaceData.proposal.id} />}
           </div>
         </div>
       </div>
@@ -411,32 +441,143 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
 }
 
 // Specification Tab Component
-function SpecificationTab({ proposal }: { proposal: WorkspaceData['proposal'] }) {
+function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['proposal'], proposalId: number }) {
+  const [volumes, setVolumes] = useState(proposal.volumes);
+  const [editingSection, setEditingSection] = useState<{volumeId: number, blockId: string} | null>(null);
+  const [sectionTitle, setSectionTitle] = useState('');
+  const [addingTo, setAddingTo] = useState<number | null>(null);
+  const [newSectionTitle, setNewSectionTitle] = useState('');
+  
+  useEffect(() => {
+    setVolumes(proposal.volumes);
+  }, [proposal.volumes]);
+
+  const handleReorder = async (volumeId: number, newBlocks: any[]) => {
+    try {
+      const blockOrders = newBlocks.map((block, index) => ({
+        id: block.id,
+        order: index
+      }));
+      
+      const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ block_orders: blockOrders })
+      });
+      
+      if (res.ok) {
+        // Update local state
+        setVolumes(prev => prev.map(v => 
+          v.id === volumeId ? { ...v, blocks: newBlocks } : v
+        ));
+      }
+    } catch (error) {
+      console.error('Reorder failed:', error);
+    }
+  };
+  
+  const handleRename = async (volumeId: number, blockId: string) => {
+    if (!sectionTitle.trim()) return;
+    
+    try {
+      const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections/${blockId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: sectionTitle })
+      });
+      
+      if (res.ok) {
+        // Update local state
+        setVolumes(prev => prev.map(v => 
+          v.id === volumeId 
+            ? { ...v, blocks: v.blocks.map(b => b.id === blockId ? { ...b, title: sectionTitle } : b) }
+            : v
+        ));
+        setEditingSection(null);
+        setSectionTitle('');
+      }
+    } catch (error) {
+      console.error('Rename failed:', error);
+    }
+  };
+  
+  const handleDelete = async (volumeId: number, blockId: string) => {
+    if (!confirm('Delete this section?')) return;
+    
+    try {
+      const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections/${blockId}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        // Update local state
+        setVolumes(prev => prev.map(v => 
+          v.id === volumeId 
+            ? { ...v, blocks: v.blocks.filter(b => b.id !== blockId) }
+            : v
+        ));
+      }
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+  };
+  
+  const handleAddSection = async (volumeId: number) => {
+    if (!newSectionTitle.trim()) return;
+    
+    try {
+      const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: newSectionTitle,
+          content: ''
+        })
+      });
+      
+      if (res.ok) {
+        const newBlock = await res.json();
+        // Update local state
+        setVolumes(prev => prev.map(v => 
+          v.id === volumeId 
+            ? { ...v, blocks: [...v.blocks, newBlock] }
+            : v
+        ));
+        setNewSectionTitle('');
+        setAddingTo(null);
+      }
+    } catch (error) {
+      console.error('Add section failed:', error);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <Card>
         <CardHeader>
           <CardTitle>Proposal Volumes</CardTitle>
-          <CardDescription>Structured proposal document outline</CardDescription>
+          <CardDescription>Structured proposal document outline - drag sections to reorder</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {proposal.volumes.map((volume) => (
-              <Card key={volume.id} className="border-l-4 border-l-primary">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{volume.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {volume.blocks.map((block: any) => (
-                      <div key={block.id} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <FileText className="h-4 w-4" />
-                        <span>{block.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+            {volumes.map((volume) => (
+              <VolumeCard 
+                key={volume.id}
+                volume={volume}
+                proposalId={proposalId}
+                onReorder={handleReorder}
+                onRename={handleRename}
+                onDelete={handleDelete}
+                onAddSection={handleAddSection}
+                editingSection={editingSection}
+                setEditingSection={setEditingSection}
+                sectionTitle={sectionTitle}
+                setSectionTitle={setSectionTitle}
+                addingTo={addingTo}
+                setAddingTo={setAddingTo}
+                newSectionTitle={newSectionTitle}
+                setNewSectionTitle={setNewSectionTitle}
+              />
             ))}
           </div>
         </CardContent>
@@ -444,6 +585,199 @@ function SpecificationTab({ proposal }: { proposal: WorkspaceData['proposal'] })
     </div>
   );
 }
+
+// Volume Card Component with Drag and Drop
+function VolumeCard({
+  volume,
+  proposalId,
+  onReorder,
+  onRename,
+  onDelete,
+  onAddSection,
+  editingSection,
+  setEditingSection,
+  sectionTitle,
+  setSectionTitle,
+  addingTo,
+  setAddingTo,
+  newSectionTitle,
+  setNewSectionTitle
+}: any) {
+  const [blocks, setBlocks] = useState(volume.blocks);
+  
+  useEffect(() => {
+    setBlocks(volume.blocks);
+  }, [volume.blocks]);
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: any) => {
+    const {active, over} = event;
+
+    if (active.id !== over.id) {
+      const oldIndex = blocks.findIndex((b: any) => b.id === active.id);
+      const newIndex = blocks.findIndex((b: any) => b.id === over.id);
+      
+      const newBlocks = arrayMove(blocks, oldIndex, newIndex);
+      setBlocks(newBlocks);
+      onReorder(volume.id, newBlocks);
+    }
+  };
+
+  return (
+    <Card className="border-l-4 border-l-primary">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">{volume.title}</CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setAddingTo(addingTo === volume.id ? null : volume.id)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Section
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {addingTo === volume.id && (
+          <div className="mb-4 p-3 bg-muted rounded-lg flex gap-2">
+            <Input
+              placeholder="New section title"
+              value={newSectionTitle}
+              onChange={(e) => setNewSectionTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onAddSection(volume.id);
+                }
+              }}
+            />
+            <Button onClick={() => onAddSection(volume.id)} size="sm">
+              Add
+            </Button>
+            <Button onClick={() => { setAddingTo(null); setNewSectionTitle(''); }} size="sm" variant="ghost">
+              Cancel
+            </Button>
+          </div>
+        )}
+        
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext 
+            items={blocks.map((b: any) => b.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {blocks.map((block: any) => (
+                <SortableSection
+                  key={block.id}
+                  block={block}
+                  volume={volume}
+                  editing={editingSection?.volumeId === volume.id && editingSection?.blockId === block.id}
+                  onStartEdit={(blockId: string, title: string) => {
+                    setEditingSection({ volumeId: volume.id, blockId });
+                    setSectionTitle(title);
+                  }}
+                  onSaveEdit={() => onRename(volume.id, block.id)}
+                  onCancelEdit={() => {
+                    setEditingSection(null);
+                    setSectionTitle('');
+                  }}
+                  onDelete={() => onDelete(volume.id, block.id)}
+                  sectionTitle={sectionTitle}
+                  setSectionTitle={setSectionTitle}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Sortable Section Component
+function SortableSection({
+  block,
+  volume,
+  editing,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+  sectionTitle,
+  setSectionTitle
+}: any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({id: block.id});
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 p-2 bg-background border rounded hover:bg-muted transition-colors"
+    >
+      <div {...attributes} {...listeners} className="cursor-move p-1">
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </div>
+      
+      {editing ? (
+        <>
+          <Input
+            value={sectionTitle}
+            onChange={(e) => setSectionTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSaveEdit();
+              if (e.key === 'Escape') onCancelEdit();
+            }}
+            className="flex-1"
+            autoFocus
+          />
+          <Button size="sm" onClick={onSaveEdit}>Save</Button>
+          <Button size="sm" variant="ghost" onClick={onCancelEdit}>Cancel</Button>
+        </>
+      ) : (
+        <>
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="flex-1 text-sm">{block.title}</span>
+          <Button 
+            size="sm" 
+            variant="ghost"
+            onClick={() => onStartEdit(block.id, block.title)}
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button 
+            size="sm" 
+            variant="ghost"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 
 // Requirements Tab Component
 function RequirementsTab({ 
@@ -915,7 +1249,13 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
       });
       if (res.ok) {
         const data = await res.json();
-        setVolumeContent(data.content);
+      console.log('Fetched content:', data);
+      if (data.volumes) {
+        data.volumes.forEach((v: any) => {
+          console.log(`Volume ${v.id} blocks:`, v.blocks);
+        });
+      }
+      setVolumeContent(data.content);
         // alert("Past Performance Volume generated successfully!");
       } else {
         alert("Failed to generate volume.");
@@ -1078,11 +1418,68 @@ function PricingTab({ requirements }: { requirements: Requirement[] }) {
 }
 
 // Artifacts Tab Component
-function ArtifactsTab({ artifacts }: { artifacts: Artifact[] }) {
+function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: Artifact[], proposalId: number }) {
+  const [artifacts, setArtifacts] = useState<Artifact[]>(initialArtifacts);
+  const [uploading, setUploading] = useState<number | null>(null);
+  
+  useEffect(() => {
+    setArtifacts(initialArtifacts);
+  }, [initialArtifacts]);
+  
   const getStatusColor = (status: string) => {
     if (status === 'COMPLETE') return 'bg-green-100 text-green-700 border-green-300';
     if (status === 'IN_PROGRESS') return 'bg-blue-100 text-blue-700 border-blue-300';
     return 'bg-gray-100 text-gray-700 border-gray-300';
+  };
+  
+  const handleFileUpload = async (artifactId: number, file: File) => {
+    setUploading(artifactId);
+    
+    try {
+      // Step 1: Upload file
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('opportunity_id', String(proposalId)); // Using proposal_id as fallback
+      
+      const uploadRes = await fetch('/api/v1/files/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!uploadRes.ok) {
+        throw new Error('File upload failed');
+      }
+      
+      const uploadData = await uploadRes.json();
+      const fileId = uploadData.id;
+      
+      // Step 2: Update artifact with file_id
+      const updateRes = await fetch(`/api/v1/requirements/proposals/${proposalId}/artifacts/${artifactId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'COMPLETE',
+          file_id: fileId
+        })
+      });
+      
+      if (!updateRes.ok) {
+        throw new Error('Artifact update failed');
+      }
+      
+      // Update local state
+      setArtifacts(prev => prev.map(art => 
+        art.id === artifactId 
+          ? { ...art, status: 'COMPLETE', file_id: fileId }
+          : art
+      ));
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Failed to upload file. Please try again.');
+    } finally {
+      setUploading(null);
+    }
   };
 
   return (
@@ -1098,7 +1495,7 @@ function ArtifactsTab({ artifacts }: { artifacts: Artifact[] }) {
               <Card key={art.id} className={cn("border-l-4", art.required ? "border-l-red-500" : "border-l-gray-300")}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">
-                    <div className="space-y-2">
+                    <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-2">
                         <h4 className="font-semibold">{art.title}</h4>
                         {art.required && (
@@ -1113,6 +1510,51 @@ function ArtifactsTab({ artifacts }: { artifacts: Artifact[] }) {
                           {art.source_section}
                         </Badge>
                       )}
+                      
+                      {/* File Upload Section */}
+                      <div className="flex items-center gap-2 mt-3">
+                        {art.file_id ? (
+                          <div className="flex items-center gap-2 text-sm text-green-600">
+                            <FileText className="h-4 w-4" />
+                            <span>File attached</span>
+                          </div>
+                        ) : (
+                          <label className="cursor-pointer">
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleFileUpload(art.id, file);
+                                }
+                              }}
+                              disabled={uploading === art.id}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={uploading === art.id}
+                              onClick={(e) => {
+                                const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                input?.click();
+                              }}
+                            >
+                              {uploading === art.id ? (
+                                <>
+                                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                  Uploading...
+                                </>
+                              ) : (
+                                <>
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  Upload File
+                                </>
+                              )}
+                            </Button>
+                          </label>
+                        )}
+                      </div>
                     </div>
                     <Badge className={cn("text-xs", getStatusColor(art.status))}>
                       {art.status.replace('_', ' ')}

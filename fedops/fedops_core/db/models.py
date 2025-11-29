@@ -1,8 +1,19 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, JSON, ARRAY, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, Boolean, JSON, ARRAY, Date, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from fedops_core.db.engine import Base
 from datetime import datetime
+import enum
+
+class ShipleyPhase(str, enum.Enum):
+    """Shipley Business Development Lifecycle Phases"""
+    PHASE_0_MARKET_SEGMENTATION = "PHASE_0_MARKET_SEGMENTATION"
+    PHASE_1_LONG_TERM_POSITIONING = "PHASE_1_LONG_TERM_POSITIONING"
+    PHASE_2_OPPORTUNITY_ASSESSMENT = "PHASE_2_OPPORTUNITY_ASSESSMENT"
+    PHASE_3_CAPTURE_PLANNING = "PHASE_3_CAPTURE_PLANNING"
+    PHASE_4_PROPOSAL_PLANNING = "PHASE_4_PROPOSAL_PLANNING"
+    PHASE_5_PROPOSAL_DEVELOPMENT = "PHASE_5_PROPOSAL_DEVELOPMENT"
+    PHASE_6_POST_SUBMITTAL = "PHASE_6_POST_SUBMITTAL"
 
 class Opportunity(Base):
     __tablename__ = "opportunities"
@@ -134,6 +145,14 @@ class StoredFile(Base):
     
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
     
+    # Version Control Fields
+    version_number = Column(String, default="1.0", index=True)
+    status = Column(String, default="DRAFT")  # DRAFT, REVIEW, FINAL, ARCHIVED
+    checked_out_by = Column(String, nullable=True)
+    checked_out_at = Column(DateTime, nullable=True)
+    s3_uri = Column(String, nullable=True)  # S3 location (future use)
+    parent_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=True)  # Version chain
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -184,6 +203,17 @@ class Proposal(Base):
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, index=True)
     
     version = Column(Integer, default=1)
+    
+    # Shipley Workflow Fields
+    shipley_phase = Column(String, default=ShipleyPhase.PHASE_1_LONG_TERM_POSITIONING.value, index=True)
+    capture_manager_id = Column(String, nullable=True)  # User assignment
+    pmp_data = Column(JSONB, nullable=True)  # Proposal Management Plan
+    
+    # Bid Decision Tracking
+    bid_decision_score = Column(Float, nullable=True)
+    bid_decision_justification = Column(Text, nullable=True)
+    bid_decision_date = Column(DateTime, nullable=True)
+    bid_decision_by = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -241,6 +271,10 @@ class ProposalRequirement(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# Import Shipley workflow models
+from fedops_core.db.shipley_models import ReviewGate, ReviewComment, CompetitiveIntelligence, BidNoGidCriteria
+
 
 class RequirementResponse(Base):
     __tablename__ = "requirement_responses"

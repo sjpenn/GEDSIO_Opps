@@ -108,7 +108,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   }, [opportunityId]);
 
   useEffect(() => {
-    let interval;
+    let interval: any;
     if (loading) {
       const pollLogs = async () => {
         try {

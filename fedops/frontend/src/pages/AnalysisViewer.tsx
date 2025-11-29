@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -6,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
   ArrowLeft, 
   TrendingUp, 
@@ -29,6 +29,8 @@ import {
   Eye
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import ShipleyPhaseIndicator from '@/components/ShipleyPhaseIndicator';
+import PursuitDecision from '@/components/PursuitDecision';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -81,10 +83,13 @@ export default function AnalysisViewer() {
   const [error, setError] = useState<string | null>(null);
   const [generatingProposal, setGeneratingProposal] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<any>(null);
+  const [proposalData, setProposalData] = useState<any>(null);
+  const [showPursuitDialog, setShowPursuitDialog] = useState(false);
 
   useEffect(() => {
     fetchAnalysisData();
     fetchPipelineStatus();
+    fetchProposalData();
   }, [opportunityId]);
 
   const fetchAnalysisData = async () => {
@@ -114,6 +119,22 @@ export default function AnalysisViewer() {
     } catch (err) {
       // Not in pipeline, ignore error
       setPipelineStatus(null);
+    }
+  };
+
+  const fetchProposalData = async () => {
+    if (!opportunityId) return;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/pipeline/`);
+      if (response.ok) {
+        const pipelineData = await response.json();
+        const item = pipelineData.find((p: any) => p.opportunity.id === parseInt(opportunityId));
+        if (item && item.proposal) {
+          setProposalData(item.proposal);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch proposal data:', err);
     }
   };
 
@@ -156,6 +177,18 @@ export default function AnalysisViewer() {
     } catch (err) {
       console.error("Failed to add to pipeline", err);
       alert("An error occurred while adding to pipeline.");
+    }
+  };
+
+  const handlePursuitDecisionMade = async (decision: 'GO' | 'NO_GO', proposalId?: number) => {
+    setShowPursuitDialog(false);
+    
+    if (decision === 'GO' && proposalId) {
+      // Refresh proposal data
+      await fetchProposalData();
+      alert(`Pursuit decision recorded! Proceeding to Phase 2: Opportunity Assessment. You can now make a Bid/No-Bid decision.`);
+    } else {
+      alert(`Pursuit decision recorded: ${decision}. This opportunity will remain in Phase 1.`);
     }
   };
 
@@ -219,6 +252,10 @@ export default function AnalysisViewer() {
 
   const { opportunity, score, logs } = data;
 
+  // Determine if we should show Pursuit Decision button
+  const showPursuitButton = !proposalData || 
+    proposalData.shipley_phase === 'PHASE_1_LONG_TERM_POSITIONING';
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -258,10 +295,22 @@ export default function AnalysisViewer() {
                     In Pipeline
                   </Badge>
                 )}
-                <Button onClick={handleAddToPipeline} variant="outline" className="gap-2">
-                  <Eye className="h-4 w-4" />
-                  Add to Pipeline
-                </Button>
+                {!pipelineStatus && (
+                  <Button onClick={handleAddToPipeline} variant="outline" className="gap-2">
+                    <Eye className="h-4 w-4" />
+                    Add to Pipeline
+                  </Button>
+                )}
+                {showPursuitButton && (
+                  <Button 
+                    onClick={() => setShowPursuitDialog(true)} 
+                    variant="default"
+                    className="gap-2 bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Target className="h-4 w-4" />
+                    Make Pursuit Decision
+                  </Button>
+                )}
                 <Button onClick={handleGenerateProposal} disabled={generatingProposal} variant="default" className="gap-2">
                   {generatingProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                   Generate Proposal Draft
@@ -269,8 +318,29 @@ export default function AnalysisViewer() {
               </div>
             )}
           </div>
+          
+          {/* Shipley Phase Indicator */}
+          {proposalData && proposalData.shipley_phase && (
+            <div className="mt-4">
+              <ShipleyPhaseIndicator currentPhase={proposalData.shipley_phase} showLabels={false} />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Pursuit Decision Dialog */}
+      <Dialog open={showPursuitDialog} onOpenChange={setShowPursuitDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pursuit Decision Gate</DialogTitle>
+          </DialogHeader>
+          <PursuitDecision
+            opportunityId={parseInt(opportunityId || '0')}
+            opportunityTitle={opportunity.title}
+            onDecisionMade={handlePursuitDecisionMade}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Tab Navigation */}
       <div className="bg-card border-b">

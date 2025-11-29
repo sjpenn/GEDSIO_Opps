@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, Calendar, Building2, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink } from "lucide-react"
+import { Search, Filter, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink } from "lucide-react"
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils"
 

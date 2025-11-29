@@ -55,14 +55,26 @@ async def watch_opportunity(opportunity_id: int, db: AsyncSession = Depends(get_
 async def get_pipeline(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(OpportunityPipeline))
     items = result.scalars().all()
-    # Enrich with opportunity details
+    # Enrich with opportunity and proposal details
     enriched_result = []
     for item in items:
         opp_result = await db.execute(select(Opportunity).filter(Opportunity.id == item.opportunity_id))
         opp = opp_result.scalar_one_or_none()
+        
+        # Get proposal if exists
+        from fedops_core.db.models import Proposal
+        proposal_result = await db.execute(select(Proposal).filter(Proposal.opportunity_id == item.opportunity_id))
+        proposal = proposal_result.scalar_one_or_none()
+        
         enriched_result.append({
             "pipeline": item,
-            "opportunity": opp
+            "opportunity": opp,
+            "proposal": {
+                "id": proposal.id if proposal else None,
+                "shipley_phase": proposal.shipley_phase if proposal else None,
+                "capture_manager_id": proposal.capture_manager_id if proposal else None,
+                "bid_decision_score": proposal.bid_decision_score if proposal else None
+            } if proposal else None
         })
     return enriched_result
 

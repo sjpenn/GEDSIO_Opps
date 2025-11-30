@@ -80,6 +80,98 @@ async def generate_proposal(opportunity_id: int, background_tasks: BackgroundTas
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
+    # 2a. Fetch Primary Entity for company information
+    from fedops_core.db.models import Entity
+    entity_result = await db.execute(select(Entity).where(Entity.is_primary == True))
+    primary_entity = entity_result.scalar_one_or_none()
+    
+    # Extract entity data from SAM.gov response
+    entity_data = {}
+    if primary_entity and primary_entity.full_response:
+        entity_reg = primary_entity.full_response.get("entityRegistration", {})
+        core_data = primary_entity.full_response.get("coreData", {})
+        
+        entity_data = {
+            "legal_name": entity_reg.get("legalBusinessName", ""),
+            "dba_name": entity_reg.get("dbaName"),
+            "uei": entity_reg.get("ueiSAM", ""),
+            "cage_code": entity_reg.get("cageCode", ""),
+            "physical_address": core_data.get("physicalAddress", {}),
+            "website": core_data.get("entityInformation", {}).get("entityURL", ""),
+            "business_types": core_data.get("businessTypes", {}).get("businessTypeList", []),
+            "sba_certifications": core_data.get("businessTypes", {}).get("sbaBusinessTypeList", []),
+            "logo_url": primary_entity.logo_url
+        }
+    
+    # Build title page content
+    address = entity_data.get("physical_address", {})
+    address_line1 = address.get("addressLine1", "")
+    address_line2 = address.get("addressLine2", "")
+    city = address.get("city", "")
+    state = address.get("stateOrProvinceCode", "")
+    zip_code = address.get("zipCode", "")
+    zip_plus4 = address.get("zipCodePlus4", "")
+    
+    # Format address
+    street = address_line1
+    if address_line2:
+        street += f", {address_line2}"
+    full_zip = zip_code
+    if zip_plus4:
+        full_zip += f"-{zip_plus4}"
+    
+    # Extract certifications
+    certifications = []
+    for cert in entity_data.get("sba_certifications", []):
+        certifications.append(cert.get("sbaBusinessTypeDesc", ""))
+    for biz_type in entity_data.get("business_types", []):
+        desc = biz_type.get("businessTypeDesc", "")
+        # Include relevant socioeconomic statuses
+        if any(keyword in desc.lower() for keyword in ["small", "disadvantaged", "woman", "veteran", "hubzone", "8(a)"]):
+            if desc not in certifications:
+                certifications.append(desc)
+    
+    from datetime import datetime
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    
+    title_page_content = f"""# Technical and Management Proposal
+
+{f"![Company Logo]({entity_data.get('logo_url')})" if entity_data.get('logo_url') else ""}
+
+**For:** {opp.title}
+
+---
+
+## Solicitation Information
+- **Solicitation Number:** {opp.solicitation_number or 'N/A'}
+- **Agency:** {opp.department or 'N/A'}
+- **NAICS Code:** {opp.naics_code or 'N/A'}
+- **Proposal Type:** Prime
+
+---
+
+## Offeror Information
+**Legal Name:** {entity_data.get('legal_name', '[Company Name]')}  
+**UEI:** {entity_data.get('uei', '[UEI]')}  
+**CAGE Code:** {entity_data.get('cage_code', '[CAGE]')}  
+
+**Business Address:**  
+{street}  
+{city}, {state} {full_zip}
+
+**Website:** {entity_data.get('website', 'N/A')}
+
+---
+
+## Small Business & Certifications
+{chr(10).join(f'- {cert}' for cert in certifications) if certifications else '- N/A'}
+
+---
+
+**Submission Date:** {current_date}  
+**Submitted by:** {entity_data.get('legal_name', '[Company Name]')}
+"""
+
     # 3. Define Volumes and Blocks (Standard Proposal Response Template)
     volumes_data = [
         {
@@ -87,9 +179,15 @@ async def generate_proposal(opportunity_id: int, background_tasks: BackgroundTas
             "order": 1,
             "blocks": [
                 {
+                    "id": str(uuid.uuid4()),
+                    "title": "0.0 Cover Page",
+                    "content": "![Cover Page](/static/covers/space_metrics_cover.png)",
+                    "order": 0
+                },
+                {
                     "id": str(uuid.uuid4()), 
                     "title": "1.0 Title Page", 
-                    "content": f"**Proposal for:** {opp.title}\n**Solicitation Number:** {opp.solicitation_number}\n**Submitted by:** [Company Name]\n**Date:** [Date]", 
+                    "content": title_page_content,
                     "order": 1
                 },
                 {

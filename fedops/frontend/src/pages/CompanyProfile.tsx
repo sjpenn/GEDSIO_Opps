@@ -18,6 +18,7 @@ interface CompanyProfile {
   target_naics: string[];
   target_keywords: string[];
   target_set_asides: string[];
+  logo_url?: string;
 }
 
 interface Entity {
@@ -25,6 +26,7 @@ interface Entity {
   legal_business_name: string;
   cage_code?: string;
   similarity_score?: number;
+  logo_url?: string;
 }
 
 interface ProfileDocument {
@@ -110,8 +112,23 @@ export default function CompanyProfilePage() {
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          setProfile(data[0]);
-          setFormData(data[0]);
+          const profileData = data[0];
+          
+          // Fetch entity details to get logo
+          try {
+            const entityRes = await fetch(`/api/v1/entities/primary`);
+            if (entityRes.ok) {
+              const entityData = await entityRes.json();
+              if (entityData && entityData.logo_url) {
+                profileData.logo_url = entityData.logo_url;
+              }
+            }
+          } catch (e) {
+            console.error("Failed to fetch entity logo", e);
+          }
+          
+          setProfile(profileData);
+          setFormData(profileData);
         }
       }
     } catch (err) {
@@ -307,6 +324,35 @@ export default function CompanyProfilePage() {
       }
     } catch (err) {
       setError('Failed to delete link');
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0] || !profile) return;
+    
+    const file = e.target.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/v1/entities/${profile.uei}/logo`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(prev => prev ? ({...prev, logo_url: data.logo_url}) : null);
+        setSuccess('Logo uploaded successfully!');
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        throw new Error('Failed to upload logo');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -525,9 +571,43 @@ export default function CompanyProfilePage() {
               ) : (
                 <div className="space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground uppercase mb-1">Company Name</h3>
-                      <p className="text-2xl font-bold tracking-tight">{profile?.company_name}</p>
+                    <div className="flex items-start gap-4">
+                      {profile?.logo_url ? (
+                        <div className="relative group shrink-0">
+                          <img 
+                            src={profile.logo_url} 
+                            alt="Company Logo" 
+                            className="h-16 w-16 object-contain rounded border bg-white"
+                          />
+                          <label 
+                            htmlFor="logo-upload" 
+                            className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded cursor-pointer"
+                          >
+                            <Upload className="h-4 w-4 text-white" />
+                          </label>
+                        </div>
+                      ) : (
+                        <label 
+                          htmlFor="logo-upload"
+                          className="h-16 w-16 flex shrink-0 items-center justify-center rounded border border-dashed bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
+                          title="Upload Logo"
+                        >
+                          <Upload className="h-6 w-6 text-muted-foreground" />
+                        </label>
+                      )}
+                      <input 
+                        id="logo-upload" 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={handleLogoUpload}
+                        disabled={loading}
+                      />
+                      
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground uppercase mb-1">Company Name</h3>
+                        <p className="text-2xl font-bold tracking-tight">{profile?.company_name}</p>
+                      </div>
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground uppercase mb-1">UEI</h3>

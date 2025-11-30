@@ -112,6 +112,7 @@ class Entity(Base):
     full_response = Column(JSONB, nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
     is_primary = Column(Boolean, default=False)
+    logo_url = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -232,12 +232,14 @@ class ProposalContentService:
         
         # Get section title for context
         section_title = block.get('title', 'Section')
+        page_limit = block.get('page_limit')
         
         # Generate content
         result = await generator.generate_section_content(
             proposal_id=proposal_id,
             section_title=section_title,
-            prompt_instructions=prompt
+            prompt_instructions=prompt,
+            page_limit=page_limit
         )
         
         if result["status"] == "error":

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     LLM_PROVIDER: str = "gemini"
     LLM_MODEL: str = "gemini-2.5-flash"
+    # LLM_MODEL: str = "gemini-3-pro-preview"
+    # LLM_MODEL: str = "gemini-2.5-pro"
 
     
     class Config:

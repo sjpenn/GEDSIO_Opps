@@ -96,13 +96,13 @@ Create a markdown table with these columns:
 | Req ID | Requirement Summary | Source Section | Proposal Response Section | Compliance Status | Notes |
 
 GUIDELINES:
-- Summarize each requirement concisely (max 100 chars)
-- Map to appropriate proposal volume/section (e.g., "Technical Volume, Section 3.2")
-- Set compliance status as "Compliant", "Partial", or "Non-Compliant"
-- Add brief notes on approach or concerns
-- Use professional government contracting terminology
-- Ensure all {len(requirements)} requirements are included
-- Number requirements sequentially (REQ-001, REQ-002, etc.)
+- **Identify Implied Requirements**: Look beyond "shall" statements. If a task implies a requirement (e.g., "deliver report" implies "write report"), include it.
+- **Summarize Concisely**: Max 100 chars per summary.
+- **Map to Proposal Structure**: Map to appropriate volume/section (e.g., "Technical Volume, Section 3.2").
+- **Compliance Status**: "Compliant", "Partial", or "Non-Compliant".
+- **Notes**: Add brief notes on approach or concerns.
+- **Completeness**: Ensure all {len(requirements)} requirements are included.
+- **Numbering**: REQ-001, REQ-002, etc.
 
 Generate the complete requirements compliance matrix now:
 """
@@ -200,6 +200,7 @@ For each major SOW section:
 - **Deliverables**: Specific deliverables expected
 - **Performance Standards**: Metrics and acceptance criteria
 - **Technical Challenges**: Potential difficulties
+- **Compliance Strategy**: How we will ensure full compliance (e.g., "Use automated testing", "Assign dedicated QA")
 - **Recommended Approach**: High-level technical strategy
 
 ## Consolidated Deliverables List
@@ -218,6 +219,7 @@ GUIDELINES:
 - Be thorough and specific
 - Identify all deliverables and deadlines
 - Highlight technical challenges
+- **Focus on Compliance**: The "Compliance Strategy" is critical.
 - Use professional proposal language
 - Organize clearly with markdown headers
 
@@ -308,6 +310,12 @@ Brief narrative establishing our relevant experience and qualifications
 **Relevance to Current Opportunity**:
 [Explain how this project relates to the current solicitation]
 
+**Performance Narrative (STAR Format)**:
+*   **Situation**: What was the problem or context?
+*   **Task**: What were we required to do?
+*   **Action**: What specific actions did we take? (Use active voice: "We developed...", "We implemented...")
+*   **Result**: What was the outcome? (Quantify! e.g., "Reduced costs by 15%", "Delivered 2 weeks early")
+
 **Key Accomplishments**:
 - [Specific achievement with metrics]
 - [Another achievement]
@@ -315,11 +323,6 @@ Brief narrative establishing our relevant experience and qualifications
 
 **Challenges and Solutions**:
 [Describe a challenge faced and how it was overcome]
-
-**Results**:
-- [Quantifiable outcome]
-- [Another outcome]
-- [Customer satisfaction metric]
 
 **Reference**:
 Name: [Contact Name]
@@ -333,13 +336,12 @@ Email: [Email]
 Brief conclusion reinforcing our capabilities
 
 GUIDELINES:
+- **Strict STAR Format**: Ensure the narrative follows Situation, Task, Action, Result.
+- **Quantify Results**: Use numbers, percentages, and dollars whenever possible.
+- **Relevance**: Explicitly tie past work to the *current* opportunity's requirements.
 - Generate 3-5 highly relevant case studies
 - Make projects realistic for government contracting
-- Include specific, quantifiable results
-- Demonstrate similar scope and complexity
-- Use professional proposal language
 - Include complete reference information
-- Emphasize successful outcomes and client satisfaction
 
 Generate the complete past performance volume now:
 """
@@ -468,12 +470,13 @@ For each question, provide:
 - Clear, specific answer (2-3 paragraphs)
 - Concrete examples from past projects
 - Quantifiable metrics where possible
-- Professional, confident tone
+- **Tone**: Confident, professional, but grounded in reality. Avoid hyperbole.
 
 GUIDELINES:
-- Be specific and provide evidence
-- Use metrics and data points
-- Reference actual project examples
+- **Be Specific**: Don't just say "we have a process", describe the process steps.
+- **Provide Evidence**: Cite specific past contracts where this was demonstrated.
+- **Use Metrics**: "99.9% uptime", "0 cost overruns", "ISO 9001 certified".
+- **Address the Question Directly**: Don't fluff.
 - Maintain professional government contracting tone
 - Demonstrate capability and reliability
 - Keep responses concise but comprehensive
@@ -496,7 +499,13 @@ Generate complete PPQ responses now:
                 "message": f"Failed to generate PPQs: {str(e)}"
             }
     
-    async def generate_section_content(self, proposal_id: int, section_title: str, prompt_instructions: Optional[str] = None) -> Dict:
+    async def generate_section_content(
+        self, 
+        proposal_id: int, 
+        section_title: str, 
+        prompt_instructions: Optional[str] = None,
+        page_limit: Optional[str] = None
+    ) -> Dict:
         """
         Generate content for a specific proposal section.
         
@@ -521,14 +530,23 @@ Generate complete PPQ responses now:
         
         context = self._build_opportunity_context(opportunity)
         company_context = await self._get_company_context(opportunity)
+        sow_content = await self._get_sow_content(proposal.opportunity_id)
         
         custom_instructions = prompt_instructions or "Provide a comprehensive response addressing the requirements for this section."
         
+        # Format page limit instruction
+        length_instruction = ""
+        if page_limit:
+            length_instruction = f"\n**Length Constraint**: Approximately {page_limit} pages. Adjust detail level accordingly."
+
         prompt = f"""
 You are a professional proposal writer for government contracts.
 
 OPPORTUNITY CONTEXT:
 {context}
+
+STATEMENT OF WORK (SOW) EXCERPT:
+{sow_content[:15000] if sow_content else "No SOW content available."}
 
 COMPANY CONTEXT:
 {company_context}
@@ -537,6 +555,12 @@ TASK: Write the content for the proposal section titled "{section_title}".
 
 INSTRUCTIONS:
 {custom_instructions}
+{length_instruction}
+
+GUIDANCE:
+1. **Address SOW Requirements**: Specifically address the requirements in the SOW related to this section.
+2. **Use Company Capabilities**: substantiate your claims using the Company Context (Past Performance, Capabilities).
+3. **Compliance**: Ensure all "shall" statements relevant to this section are addressed.
 
 OUTPUT FORMAT:
 Write the content in Markdown format. Do not include the section title as a header (it will be added by the system).
@@ -647,3 +671,29 @@ Generate the section content now:
                 f"(Source: {req.source_section or 'N/A'}, Priority: {req.priority})"
             )
         return "\n".join(formatted)
+
+    async def _get_sow_content(self, opportunity_id: int) -> str:
+        """Fetch and combine SOW/PWS content from stored files"""
+        result = await self.db.execute(
+            select(StoredFile).where(
+                StoredFile.opportunity_id == opportunity_id
+            )
+        )
+        documents = result.scalars().all()
+        
+        sow_content = ""
+        for doc in documents:
+            # Simple heuristic to prioritize SOW-like files
+            if any(x in doc.filename.lower() for x in ['sow', 'pws', 'statement', 'work', 'objective', 'soo']):
+                content = doc.parsed_content
+                if not content and doc.file_path and os.path.exists(doc.file_path):
+                    try:
+                        with open(doc.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                    except Exception as e:
+                        print(f"Error reading file {doc.filename}: {e}")
+                
+                if content:
+                    sow_content += f"\n\n=== {doc.filename} ===\n{content[:20000]}"
+        
+        return sow_content

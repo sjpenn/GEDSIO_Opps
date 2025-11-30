@@ -234,17 +234,19 @@ You are a federal government contracting financial analyst. Analyze this opportu
 - Description: {description}
 
 **Analysis Required:**
-1. Estimated contract value and profitability potential
-2. Cost considerations and pricing strategy recommendations
-3. Financial risks and opportunities
-4. ROI assessment and financial viability
-5. Overall financial recommendation
+1. **Estimated Contract Value**: Provide a realistic range based on scope and similar awards.
+2. **Profitability Potential**: Estimate potential profit margins (Low/Medium/High) with justification.
+3. **Cost Drivers**: Identify major cost components (Labor, Materials, Travel, ODC).
+4. **Pricing Strategy**: Recommend a pricing strategy (e.g., Loss Leader, Market Penetration, Premium).
+5. **Financial Risks**: Specific risks that could impact profitability (e.g., fixed price with uncertain scope).
 
 **Output Format (JSON):**
 Return ONLY a valid JSON object with this structure:
 {{
   "summary": "2-3 sentence executive summary of financial viability",
   "score": <number 0-100>,
+  "estimated_value_range": {{"low": <number>, "high": <number>, "confidence": "Low/Medium/High"}},
+  "margin_potential": "Low (<5%) / Medium (5-10%) / High (>10%)",
   "insights": ["insight 1", "insight 2", "insight 3"],
   "risks": ["financial risk 1", "financial risk 2"],
   "opportunities": ["financial opportunity 1", "financial opportunity 2"],
@@ -268,17 +270,19 @@ You are a federal government contracting strategist. Analyze this opportunity fo
 - Capabilities: {company_capabilities}
 
 **Analysis Required:**
-1. Strategic fit with company capabilities
-2. Alignment with company growth objectives
-3. Market positioning and competitive advantage
-4. Long-term strategic value
-5. Capability gaps and development opportunities
+1. **Strategic Fit**: How well does this align with our core capabilities and NAICS codes?
+2. **Win Themes**: Identify 3 key themes that would make us win (e.g., "Incumbent advantage", "Innovative tech").
+3. **Discriminators**: What sets us apart from competitors for THIS specific opportunity?
+4. **Competitive Landscape**: Likely competitors and our position.
+5. **Long-term Value**: Does this open doors to future work?
 
 **Output Format (JSON):**
 Return ONLY a valid JSON object with this structure:
 {{
   "summary": "2-3 sentence executive summary of strategic alignment",
   "score": <number 0-100>,
+  "win_themes": ["Theme 1", "Theme 2", "Theme 3"],
+  "discriminators": ["Discriminator 1", "Discriminator 2"],
   "insights": ["strategic insight 1", "strategic insight 2", "strategic insight 3"],
   "capability_matches": ["match 1", "match 2", "match 3"],
   "gaps": ["capability gap 1", "capability gap 2"],
@@ -298,21 +302,23 @@ You are a federal government contracting risk analyst. Analyze this opportunity 
 - Place of Performance: {place_of_performance}
 
 **Analysis Required:**
-1. Contract execution risks
-2. Compliance and regulatory requirements
-3. Technical and operational risks
-4. Schedule and delivery risks
-5. Risk mitigation strategies
+1. **Contract Execution Risks**: Technical, schedule, or performance risks.
+2. **Compliance Risks**: Regulatory hurdles, certifications (CMMC, ISO), or clearance requirements.
+3. **Resource Risks**: Staffing shortages, incumbent capture issues.
+4. **Risk Classification**: Classify each risk by Probability (Low/Med/High) and Impact (Low/Med/High).
 
 **Output Format (JSON):**
 Return ONLY a valid JSON object with this structure:
 {{
   "summary": "2-3 sentence executive summary of risk assessment",
   "risk_score": <number 0-100, where 0 is low risk and 100 is high risk>,
-  "high_risks": ["high risk 1", "high risk 2"],
-  "medium_risks": ["medium risk 1", "medium risk 2"],
+  "high_risks": [
+    {{"risk": "Risk description", "probability": "High", "impact": "High", "mitigation": "Mitigation strategy"}}
+  ],
+  "medium_risks": [
+    {{"risk": "Risk description", "probability": "Medium", "impact": "Medium", "mitigation": "Mitigation strategy"}}
+  ],
   "compliance_requirements": ["requirement 1", "requirement 2"],
-  "mitigation_strategies": ["strategy 1", "strategy 2"],
   "recommendation": "Risk-based GO/NO-GO/REVIEW recommendation"
 }}
 """
@@ -364,17 +370,17 @@ You are a federal government contracting analyst. Provide a comprehensive summar
 - Response Deadline: {response_deadline}
 
 **Analysis Required:**
-1. Comprehensive summary of the solicitation (Scope, Objectives, Background)
-2. Key dates and milestones (Questions due, Proposal due, Award date, etc.)
-3. Key personnel requirements (Roles, Qualifications, Key vs Non-Key)
-4. Agency goals and mission objectives
+1. **Scope Summary**: Concise overview of what is being bought.
+2. **Key Dates**: Extract specific dates. If dates are relative (e.g., "30 days after award"), state them clearly as such.
+3. **Key Personnel**: Identify specific roles labeled as "Key Personnel" and their mandatory qualifications.
+4. **Agency Goals**: What problem is the agency trying to solve?
 
 **Output Format (JSON):**
 Return ONLY a valid JSON object with this structure:
 {{
   "summary": "Detailed 3-5 paragraph summary of the solicitation scope and objectives",
   "key_dates": [
-    {{"event": "Questions Due", "date": "YYYY-MM-DD or Description"}},
+    {{"event": "Questions Due", "date": "YYYY-MM-DD or Description (e.g., 10 days after RFP release)"}},
     {{"event": "Proposal Due", "date": "YYYY-MM-DD or Description"}}
   ],
   "key_personnel": [

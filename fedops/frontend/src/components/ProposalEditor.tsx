@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +61,7 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
   const [editingBlock, setEditingBlock] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [newSectionTitle, setNewSectionTitle] = useState('');
+  const autoSaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     fetchContent();
@@ -232,9 +233,27 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
   };
 
   const cancelEdit = () => {
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
     setEditingBlock(null);
     setEditContent('');
   };
+
+  // Auto-save with debouncing
+  const handleContentChange = useCallback((newContent: string, volumeId: number, blockId: string) => {
+    setEditContent(newContent);
+    
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    // Set new timeout for auto-save (2 seconds after user stops typing)
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      await handleUpdateSection(volumeId, blockId, { content: newContent });
+    }, 2000);
+  }, []);
 
   // Helper function to calculate page limit based on section type
   const calculatePageLimit = (block: Block): number => {
@@ -247,16 +266,32 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
     const title = block.title.toLowerCase();
     
     // Default page limits based on common section types
+    // Cover materials (typically 1 page each)
+    if (title.includes('title page') || title.includes('cover page')) return 1;
+    if (title.includes('cover letter') || title.includes('transmittal letter')) return 1;
+    if (title.includes('table of contents') || title.includes('toc')) return 1;
+    
+    // Executive materials (short)
     if (title.includes('executive summary')) return 2;
+    
+    // Technical sections (longer)
     if (title.includes('technical approach') || title.includes('technical solution')) return 15;
     if (title.includes('management') || title.includes('management approach')) return 10;
+    
+    // Experience and qualifications
     if (title.includes('past performance')) return 5;
     if (title.includes('staffing') || title.includes('key personnel')) return 8;
+    if (title.includes('corporate experience') || title.includes('company background')) return 3;
+    
+    // Quality and process
     if (title.includes('quality assurance') || title.includes('qa')) return 5;
     if (title.includes('transition') || title.includes('phase-in')) return 3;
     
-    // Default for other sections
-    return 5;
+    // Pricing (typically short)
+    if (title.includes('pricing') || title.includes('cost') || title.includes('price volume')) return 3;
+    
+    // Default for other sections (reduced from 5 to 3)
+    return 3;
   };
 
   // Helper function to estimate pages from content
@@ -393,11 +428,13 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
                                   Page Limit: {calculatePageLimit(block)} pages
                                 </Badge>
                               </TooltipTrigger>
-                              {block.page_limit_source && (
-                                <TooltipContent>
+                              <TooltipContent>
+                                {block.page_limit_source ? (
                                   <p className="text-sm">Source: {block.page_limit_source}</p>
-                                </TooltipContent>
-                              )}
+                                ) : (
+                                  <p className="text-sm">Estimated page limit (not from solicitation)</p>
+                                )}
+                              </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         </div>
@@ -432,7 +469,7 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
                         <div className="space-y-3">
                           <Textarea
                             value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
+                            onChange={(e) => handleContentChange(e.target.value, currentVolume.id, block.id)}
                             className="min-h-[300px] font-mono text-sm"
                           />
                           <div className="flex items-center justify-between">

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Any, Optional
@@ -269,6 +269,56 @@ async def set_primary_entity(
     await db.commit()
     await db.refresh(entity)
     return entity
+
+@router.post("/{uei}/logo")
+async def upload_entity_logo(
+    uei: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload a logo for the entity"""
+    import shutil
+    import os
+    from pathlib import Path
+    
+    # Verify entity exists
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    entity = result.scalars().first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    # Create static/logos directory if not exists
+    # Assuming app root is where main.py is, or relative to this file
+    # Let's use a fixed path relative to the project root for now
+    # We need to find the project root.
+    # fedops/fedops_api/routers/entities.py -> fedops/
+    
+    base_path = Path(__file__).resolve().parent.parent.parent
+    static_dir = base_path / "static" / "logos"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate filename
+    file_ext = os.path.splitext(file.filename)[1]
+    filename = f"{uei}_logo{file_ext}"
+    file_path = static_dir / filename
+    
+    # Save file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        
+    # Update entity logo_url
+    # We'll store the relative path for serving
+    logo_url = f"/static/logos/{filename}"
+    entity.logo_url = logo_url
+    
+    await db.commit()
+    await db.refresh(entity)
+    
+    return {"logo_url": logo_url}
+
 
 @router.get("/primary", response_model=Optional[schemas.Entity])
 async def get_primary_entity(db: AsyncSession = Depends(get_db)):

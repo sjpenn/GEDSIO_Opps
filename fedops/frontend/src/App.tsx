@@ -7,9 +7,12 @@ import AnalysisViewer from './pages/AnalysisViewer';
 import ProposalWorkspace from './pages/ProposalWorkspace';
 import PipelinePage from './pages/Pipeline';
 import BidDecisionPage from './pages/BidDecision';
+import ManualUploadPage from './pages/ManualUpload';
+import PartnerTeamsPage from './pages/PartnerTeams';
 import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
+import AboutPage from './pages/About';
 
 function App() {
   return (
@@ -27,9 +30,19 @@ function App() {
                 <OpportunitiesPage />
               </PageTransition>
             } />
+            <Route path="/opportunities/:opportunityId" element={
+              <PageTransition>
+                <OpportunitiesPage />
+              </PageTransition>
+            } />
             <Route path="/entities" element={
               <PageTransition>
                 <EntitySearchPage />
+              </PageTransition>
+            } />
+            <Route path="/teams" element={
+              <PageTransition>
+                <PartnerTeamsPage />
               </PageTransition>
             } />
             <Route path="/profile" element={
@@ -40,6 +53,11 @@ function App() {
             <Route path="/files" element={
               <PageTransition>
                 <FileManagementPage />
+              </PageTransition>
+            } />
+            <Route path="/upload-opportunity" element={
+              <PageTransition>
+                <ManualUploadPage />
               </PageTransition>
             } />
             <Route path="/pipeline" element={
@@ -57,6 +75,11 @@ function App() {
             } />
             <Route path="/proposal-workspace/:opportunityId" element={
               <ProposalWorkspace />
+            } />
+            <Route path="/about" element={
+              <PageTransition>
+                <AboutPage />
+              </PageTransition>
             } />
           </Routes>
         </Layout>

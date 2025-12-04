@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Moon, Sun, LayoutDashboard, Search, FileText, Building2, Kanban } from "lucide-react";
+import { Moon, Sun, LayoutDashboard, Search, FileText, Building2, Kanban, Users, Info } from "lucide-react";
 import { useTheme } from "./theme-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -12,8 +12,10 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { path: "/", label: "Opportunities", icon: LayoutDashboard },
     { path: "/pipeline", label: "Pipeline", icon: Kanban },
     { path: "/entities", label: "Entity Search", icon: Search },
+    { path: "/teams", label: "Partner Teams", icon: Users },
     { path: "/profile", label: "Company Profile", icon: Building2 },
     { path: "/files", label: "Files & AI", icon: FileText },
+    { path: "/about", label: "About", icon: Info },
   ];
 
   return (

@@ -196,3 +196,44 @@ async def check_phase_prerequisites(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class PhaseAdvanceRequest(BaseModel):
+    target_phase: str
+
+
+@router.post("/proposals/{proposal_id}/advance")
+async def advance_phase(
+    proposal_id: int,
+    request: PhaseAdvanceRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually advance a proposal to the next phase, checking prerequisites.
+    """
+    try:
+        # Get current phase to validate transition
+        from fedops_core.db.models import Proposal
+        from sqlalchemy import select
+        
+        result = await db.execute(select(Proposal).where(Proposal.id == proposal_id))
+        proposal = result.scalar_one_or_none()
+        
+        if not proposal:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+            
+        result = await GateValidationService.enforce_phase_transition(
+            db=db,
+            proposal_id=proposal_id,
+            from_phase=proposal.shipley_phase,
+            to_phase=request.target_phase
+        )
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error") or result.get("description"))
+            
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

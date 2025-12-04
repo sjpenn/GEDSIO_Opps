@@ -28,6 +28,7 @@ export interface Opportunity {
   links: any[]
   resource_links: string[]
   full_response: any
+  source?: string  // SAM.gov, Manual, eBuy, eFast, SeaPort, etc.
 }
 
 export interface UnifiedOpportunity {
@@ -49,4 +50,35 @@ export interface OpportunityComment {
   opportunity_id: number
   text: string
   created_at: string
+}
+
+export interface Entity {
+  uei: string
+  legal_business_name: string
+  cage_code?: string
+  entity_type?: string
+  is_primary?: boolean
+  notes?: string
+  logo_url?: string
+  last_synced_at?: string
+  similarity_score?: number
+  full_response?: any
+  
+  // Partner Search Fields
+  revenue?: number
+  capabilities?: {
+    type: string
+    code?: string
+    description?: string
+  }[]
+  locations?: {
+    type: string
+    address: any
+  }[]
+  web_addresses?: any[]
+  personnel_count?: number
+  business_types?: {
+    code: string
+    description: string
+  }[]
 }

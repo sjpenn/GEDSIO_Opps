@@ -56,6 +56,14 @@ class Opportunity(Base):
     compliance_status = Column(String, default="PENDING") # PENDING, COMPLIANT, NON_COMPLIANT
     risk_score = Column(Float, nullable=True) # Overall risk score
 
+    # Manual Ingest & Incumbent Details
+    source = Column(String, default="SAM.gov") # SAM.gov, Ebuy, Efast, Seaport, Manual
+    incumbent_vendor = Column(String, nullable=True)
+    incumbent_contract_number = Column(String, nullable=True)
+    incumbent_value = Column(String, nullable=True)
+    incumbent_expiration_date = Column(DateTime, nullable=True)
+    previous_sow_document_id = Column(Integer, ForeignKey("stored_files.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -114,8 +122,17 @@ class Entity(Base):
     is_primary = Column(Boolean, default=False)
     logo_url = Column(String, nullable=True)
     
+    # Partner Search Fields
+    revenue = Column(Float, nullable=True)  # Annual revenue if available
+    capabilities = Column(JSONB, nullable=True)  # Array of capability descriptions/NAICS/PSC
+    locations = Column(JSONB, nullable=True)  # Array of business locations
+    web_addresses = Column(JSONB, nullable=True)  # Array of website URLs
+    personnel_count = Column(Integer, nullable=True)  # Employee count
+    business_types = Column(JSONB, nullable=True)  # Array of business type codes and descriptions
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class EntityAward(Base):
     __tablename__ = "entity_awards"
@@ -253,6 +270,11 @@ class OpportunityPipeline(Base):
     
     notes = Column(Text, nullable=True)
     
+    # Archive fields
+    archived = Column(Boolean, default=False, index=True)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by = Column(String, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -275,6 +297,9 @@ class ProposalRequirement(Base):
 
 # Import Shipley workflow models
 from fedops_core.db.shipley_models import ReviewGate, ReviewComment, CompetitiveIntelligence, BidNoGidCriteria
+
+# Import Team models
+from fedops_core.db.team_models import OpportunityTeam, TeamMember
 
 
 class RequirementResponse(Base):
@@ -305,3 +330,17 @@ class DocumentArtifact(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stored_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    metadata_ = Column("metadata", JSONB, nullable=True) # "metadata" is reserved in SQLAlchemy Base, so we map it
+    
+    page_number = Column(Integer, nullable=True)
+    section = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)

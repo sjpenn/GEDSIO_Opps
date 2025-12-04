@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Loader2, Search, Building2, DollarSign, Calendar, FileText, ExternalLink, X, Settings, Sliders } from 'lucide-react';
+import { Loader2, Search, Building2, DollarSign, Calendar, FileText, ExternalLink, X, Settings, Sliders, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { PartnerProfile } from "@/components/PartnerProfile";
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -104,6 +105,25 @@ export default function EntitySearchPage() {
   const [selectedAward, setSelectedAward] = useState<Award | null>(null);
   const [solicitationDocs, setSolicitationDocs] = useState<any[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [viewProfile, setViewProfile] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async (uei: string) => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(`/api/v1/entities/${uei}/refresh`, { method: 'POST' });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedEntity(updated);
+        // Update in results list too
+        setResults(results.map(r => r.uei === uei ? updated : r));
+      }
+    } catch (err) {
+      console.error("Refresh failed", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   
   // Search Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -505,6 +525,25 @@ export default function EntitySearchPage() {
                       </CardDescription>
                     </div>
                     <div className="flex gap-2">
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setViewProfile(!viewProfile)}
+                        className={cn("border-primary/20 hover:bg-primary/5", viewProfile && "bg-primary/10")}
+                      >
+                        {viewProfile ? <FileText className="h-4 w-4 mr-2" /> : <Building2 className="h-4 w-4 mr-2" />}
+                        {viewProfile ? "View Awards" : "Full Profile"}
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRefresh(selectedEntity.uei)}
+                        disabled={refreshing}
+                        className="border-primary/20 hover:bg-primary/5"
+                      >
+                        <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
+                        Refresh Data
+                      </Button>
                       {!selectedEntity.is_primary && (
                           <Button 
                               variant="outline"
@@ -527,7 +566,9 @@ export default function EntitySearchPage() {
                 </CardHeader>
                 
                 <CardContent>
-                  {awardsLoading ? (
+                  {viewProfile ? (
+                    <PartnerProfile entity={selectedEntity} />
+                  ) : awardsLoading ? (
                     <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                       <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
                       <p>Loading awards data...</p>

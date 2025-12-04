@@ -94,8 +94,20 @@ async def get_company_profiles(
     limit: int = 10, 
     db: AsyncSession = Depends(get_db)
 ):
+    # Get all profiles
     result = await db.execute(select(CompanyProfile).offset(skip).limit(limit))
-    return result.scalars().all()
+    profiles = result.scalars().all()
+    
+    # Sort so that the profile corresponding to the primary entity is first
+    # We need to fetch the primary entity UEI first
+    primary_res = await db.execute(select(Entity.uei).where(Entity.is_primary == True))
+    primary_uei = primary_res.scalar_one_or_none()
+    
+    if primary_uei:
+        # Sort profiles: primary first
+        profiles = sorted(profiles, key=lambda p: p.uei != primary_uei)
+        
+    return profiles
 
 @router.get("/{uei}", response_model=schemas.CompanyProfile)
 async def get_company_profile(uei: str, db: AsyncSession = Depends(get_db)):
@@ -126,12 +138,31 @@ async def update_company_profile(
 
 # ============ Entity Selection Endpoints ============
 
+async def _set_primary_entity(db: AsyncSession, entity_uei: str):
+    """Helper to set the primary entity flag"""
+    # Unset primary for all
+    # We fetch all primary and unset them
+    result = await db.execute(select(Entity).where(Entity.is_primary == True))
+    current_primaries = result.scalars().all()
+    for p in current_primaries:
+        p.is_primary = False
+        db.add(p)
+    
+    # Set new primary
+    result = await db.execute(select(Entity).where(Entity.uei == entity_uei))
+    entity = result.scalars().first()
+    if entity:
+        entity.is_primary = True
+        db.add(entity)
+    
+    return entity
+
 @router.post("/set-entity/{entity_uei}", response_model=schemas.CompanyProfile)
 async def set_entity_as_profile(
     entity_uei: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Set an entity from SAM.gov as the company profile"""
+    """Set an entity from SAM.gov as the ACTIVE company profile. Creates profile if needed."""
     # 1. Verify entity exists
     result = await db.execute(select(Entity).where(Entity.uei == entity_uei))
     entity = result.scalars().first()
@@ -152,28 +183,23 @@ async def set_entity_as_profile(
             db.add(entity) # Mark for update
             await db.commit() # Commit to save full data
     
-    # 2. Check if a company profile already exists
-    result = await db.execute(select(CompanyProfile))
+    # 2. Set as primary entity
+    await _set_primary_entity(db, entity_uei)
+    
+    # 3. Check if a company profile already exists for THIS entity
+    result = await db.execute(select(CompanyProfile).where(CompanyProfile.uei == entity_uei))
     existing_profile = result.scalars().first()
     
-    # 3. Extract metadata from entity
-    metadata = extract_entity_metadata(entity.full_response)
-    
     if existing_profile:
-        # Update existing profile
-        existing_profile.entity_uei = entity_uei
-        existing_profile.company_name = entity.legal_business_name
-        existing_profile.uei = entity_uei
-        
-        # Only update if empty or overwrite? Let's overwrite for now as this is an explicit "set" action
-        existing_profile.target_naics = metadata["naics"]
-        existing_profile.target_keywords = metadata["keywords"]
-        
+        # Profile exists, just return it (it's now the active one because we set is_primary)
         await db.commit()
         await db.refresh(existing_profile)
         return existing_profile
     else:
-        # Create new profile
+        # 4. Extract metadata from entity
+        metadata = extract_entity_metadata(entity.full_response)
+        
+        # Create new profile for this entity
         new_profile = CompanyProfile(
             uei=entity_uei,
             company_name=entity.legal_business_name,
@@ -193,46 +219,10 @@ async def switch_company_entity(
     new_entity_uei: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Switch the company profile to a different entity"""
-    # 1. Verify new entity exists
-    result = await db.execute(select(Entity).where(Entity.uei == new_entity_uei))
-    entity = result.scalars().first()
-    if not entity:
-        raise HTTPException(status_code=404, detail="New entity not found. Please search for the entity first.")
-    
-    # 1.5 Check if entity has full data (assertions), if not fetch it
-    if not entity.full_response or "assertions" not in entity.full_response:
-        sam_client = SamEntityClient()
-        full_data = await sam_client.get_entity(new_entity_uei)
-        if full_data:
-            entity.full_response = full_data
-            # Update other fields if needed
-            if "entityRegistration" in full_data:
-                reg = full_data["entityRegistration"]
-                entity.legal_business_name = reg.get("legalBusinessName", entity.legal_business_name)
-                entity.cage_code = reg.get("cageCode", entity.cage_code)
-            db.add(entity) # Mark for update
-            await db.commit() # Commit to save full data
-            
-    # 2. Get existing profile
-    result = await db.execute(select(CompanyProfile).where(CompanyProfile.uei == company_uei))
-    profile = result.scalars().first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Company Profile not found")
-    
-    # 3. Extract metadata from new entity
-    metadata = extract_entity_metadata(entity.full_response)
-    
-    # 4. Update profile
-    profile.entity_uei = new_entity_uei
-    profile.company_name = entity.legal_business_name
-    profile.uei = new_entity_uei
-    profile.target_naics = metadata["naics"]
-    profile.target_keywords = metadata["keywords"]
-    
-    await db.commit()
-    await db.refresh(profile)
-    return profile
+    """Switch the ACTIVE company profile to a different entity. Creates profile if needed."""
+    # This is effectively the same as set_entity_as_profile, but we might want to validate company_uei was the previous one
+    # For now, just delegate to the same logic
+    return await set_entity_as_profile(new_entity_uei, db)
 
 # ============ Document Management Endpoints ============
 

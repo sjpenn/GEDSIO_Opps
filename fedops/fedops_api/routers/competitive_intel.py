@@ -140,3 +140,26 @@ async def identify_competitors(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/competitors/{competitor_uei}/entity_details")
+async def get_entity_details(
+    competitor_uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed SAM.gov entity data for a specific competitor
+    Returns comprehensive entity information including NAICS codes and business types
+    """
+    try:
+        entity_data = await CompetitiveAnalyticsService.fetch_entity_data(competitor_uei)
+        
+        if not entity_data:
+            raise HTTPException(status_code=404, detail=f"Entity data not found for UEI {competitor_uei}")
+        
+        return entity_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -120,6 +120,31 @@ async def search_entities(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/partners", response_model=List[schemas.Entity])
+async def get_partner_entities(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all entities marked as partners for team building"""
+    result = await db.execute(
+        select(Entity)
+        .where(Entity.entity_type == "PARTNER")
+        .order_by(Entity.legal_business_name)
+    )
+    return result.scalars().all()
+
+@router.get("/primary", response_model=schemas.Entity)
+async def get_primary_entity(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the primary entity (company profile entity)"""
+    result = await db.execute(
+        select(Entity).where(Entity.is_primary == True)
+    )
+    entity = result.scalars().first()
+    if not entity:
+        raise HTTPException(status_code=404, detail="No primary entity set. Please configure your company profile.")
+    return entity
+
 
 @router.post("/", response_model=schemas.Entity)
 async def save_entity(
@@ -464,3 +489,59 @@ async def get_contract_documents(
             
     return documents
 
+@router.get("/{uei}/profile", response_model=schemas.Entity)
+async def get_entity_profile(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get comprehensive entity profile including partner search details"""
+    from fedops_core.services.partner_service import PartnerService
+    service = PartnerService(db)
+    entity = await service.get_entity_profile(uei)
+    
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+        
+    return entity
+
+@router.post("/{uei}/refresh", response_model=schemas.Entity)
+async def refresh_entity_data(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Refresh entity data from SAM.gov and re-extract details"""
+    # 1. Fetch fresh data from SAM
+    client = SamEntityClient()
+    data = await client.get_entity(uei)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="Entity not found in SAM.gov")
+        
+    # 2. Update entity in DB
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    entity = result.scalars().first()
+    
+    if not entity:
+        # Should create if not exists? Maybe. For now assume it exists or use save logic.
+        # Let's create if not exists to be safe
+        reg = data.get("entityRegistration", {}) if "entityRegistration" in data else data.get("entityData", [{}])[0].get("entityRegistration", {})
+        entity = Entity(
+            uei=uei,
+            legal_business_name=reg.get("legalBusinessName", "Unknown"),
+            cage_code=reg.get("cageCode"),
+            full_response=data,
+            last_synced_at=datetime.utcnow()
+        )
+        db.add(entity)
+    else:
+        entity.full_response = data
+        entity.last_synced_at = datetime.utcnow()
+        
+    await db.commit()
+    
+    # 3. Extract details using PartnerService
+    from fedops_core.services.partner_service import PartnerService
+    service = PartnerService(db)
+    await service.update_entity_from_sam(entity)
+    
+    return entity

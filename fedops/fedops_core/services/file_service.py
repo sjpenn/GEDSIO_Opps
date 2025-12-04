@@ -14,6 +14,7 @@ import pdfplumber
 from docx import Document
 from PIL import Image
 import pytesseract
+import pypdfium2 as pdfium
 
 # Ensure upload directory exists
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -63,37 +64,68 @@ class FileService:
         if not db_file:
             raise ValueError("File not found")
 
-        # 1. Parse Content
-        content = self._parse_file_content(db_file.file_path, db_file.file_type)
-        db_file.parsed_content = content
+        # 1. Parse Content with AdvancedParser
+        parsed_elements = None
+        content = None
+        
+        try:
+            from fedops_core.services.advanced_parser import AdvancedParser
+            parser = AdvancedParser()
+            parsed_elements = parser.parse_document(db_file.file_path)
+            # Also get plain text for legacy AI summary
+            content = " ".join([el.text for el in parsed_elements])
+            db_file.parsed_content = content
+            print(f"Parsed {db_file.filename} using AdvancedParser: {len(parsed_elements)} elements")
+        except Exception as e:
+            print(f"AdvancedParser failed for {db_file.filename}: {e}, falling back to legacy parser")
+            # Fallback to legacy parsing
+            content = self._parse_file_content(db_file.file_path, db_file.file_type)
+            db_file.parsed_content = content
 
         # 2. Generate Summary (Shipley)
-        try:
-            doc_type = determine_document_type(db_file.filename, content)
-            response_text = await self.ai_service.generate_shipley_summary(content, doc_type)
-            
-            import json
-            import re
-
+        if content:
             try:
-                # Clean response if it's wrapped in markdown code blocks
-                cleaned_text = re.sub(r'^```json\s*|\s*```$', '', response_text.strip(), flags=re.MULTILINE)
-                data = json.loads(cleaned_text)
+                doc_type = determine_document_type(db_file.filename, content)
+                response_text = await self.ai_service.generate_shipley_summary(content, doc_type)
                 
-                summary = data.get("markdown_report", "No report generated.")
-                structured_data = data.get("structured_data", {})
-                
-                db_file.content_summary = summary
-                db_file.analysis_json = structured_data
-            except json.JSONDecodeError:
-                # Fallback if response is not valid JSON (e.g. raw text)
-                db_file.content_summary = response_text
-                db_file.analysis_json = {"error": "Failed to parse structured data", "raw_response": response_text}
-        except Exception as e:
-            print(f"Warning: AI summary generation failed for {db_file.filename}: {e}")
-            db_file.content_summary = "AI Summary generation failed."
-            db_file.analysis_json = {"error": str(e)}
+                import json
+                import re
+
+                try:
+                    # Clean response if it's wrapped in markdown code blocks
+                    cleaned_text = re.sub(r'^```json\s*|\s*```$', '', response_text.strip(), flags=re.MULTILINE)
+                    data = json.loads(cleaned_text)
+                    
+                    summary = data.get("markdown_report", "No report generated.")
+                    structured_data = data.get("structured_data", {})
+                    
+                    db_file.content_summary = summary
+                    db_file.analysis_json = structured_data
+                except json.JSONDecodeError:
+                    # Fallback if response is not valid JSON (e.g. raw text)
+                    db_file.content_summary = response_text
+                    db_file.analysis_json = {"error": "Failed to parse structured data", "raw_response": response_text}
+            except Exception as e:
+                print(f"Warning: AI summary generation failed for {db_file.filename}: {e}")
+                db_file.content_summary = "AI Summary generation failed."
+                db_file.analysis_json = {"error": str(e)}
         
+        # 3. Shred Document (Advanced or Legacy)
+        try:
+            from fedops_core.services.shredding_service import ShreddingService
+            shredding_service = ShreddingService(self.db)
+            
+            if parsed_elements:
+                # Use advanced shredding with metadata
+                chunk_count = await shredding_service.shred_document(db_file.id, parsed_elements)
+                print(f"Advanced shredding: {db_file.filename} into {chunk_count} chunks with page/section metadata")
+            elif content:
+                # Use legacy shredding
+                chunk_count = await shredding_service.shred_document(db_file.id, content)
+                print(f"Legacy shredding: {db_file.filename} into {chunk_count} chunks")
+        except Exception as e:
+            print(f"Warning: Document shredding failed for {db_file.filename}: {e}")
+
         await self.db.commit()
         await self.db.refresh(db_file)
         return db_file
@@ -193,15 +225,51 @@ class FileService:
         try:
             if file_type == 'pdf':
                 text = ""
-                with pdfplumber.open(file_path) as pdf:
-                    for page in pdf.pages:
-                        # Extract text
-                        text += page.extract_text() + "\n"
-                        # Extract tables (basic)
-                        tables = page.extract_tables()
-                        for table in tables:
-                            for row in table:
-                                text += " | ".join([str(cell) if cell else "" for cell in row]) + "\n"
+                try:
+                    # Method 1: Try pdfplumber (best for layout preservation)
+                    with pdfplumber.open(file_path) as pdf:
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text += page_text + "\n"
+                            
+                            # Extract tables (basic)
+                            tables = page.extract_tables()
+                            for table in tables:
+                                for row in table:
+                                    text += " | ".join([str(cell) if cell else "" for cell in row]) + "\n"
+                except Exception as e:
+                    print(f"pdfplumber failed: {e}")
+
+                # Method 2: Fallback to OCR if text is empty or very short
+                if len(text.strip()) < 100:
+                    print(f"PDF text extraction yielded {len(text)} chars. Attempting OCR with pypdfium2/tesseract...")
+                    try:
+                        pdf = pdfium.PdfDocument(file_path)
+                        ocr_text = ""
+                        # Limit to first 20 pages to avoid timeout on large docs during synchronous processing
+                        # In a real async worker we could do all, but for now let's be safe
+                        pages_to_process = min(len(pdf), 20)
+                        
+                        for i in range(pages_to_process):
+                            page = pdf[i]
+                            # Render to image (scale=2 for better OCR)
+                            bitmap = page.render(scale=2)
+                            pil_image = bitmap.to_pil()
+                            
+                            # OCR
+                            page_ocr = pytesseract.image_to_string(pil_image)
+                            ocr_text += page_ocr + "\n"
+                        
+                        if len(ocr_text.strip()) > len(text.strip()):
+                            text = ocr_text
+                            print(f"OCR extracted {len(text)} chars")
+                        else:
+                            print("OCR did not extract more text than pdfplumber")
+                            
+                    except Exception as e:
+                        print(f"OCR fallback failed: {e}")
+                
                 return text
             elif file_type in ['xlsx', 'xls']:
                 df = pd.read_excel(file_path)

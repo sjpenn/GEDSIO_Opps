@@ -127,6 +127,7 @@ async def get_full_analysis(opportunity_id: int, db: AsyncSession = Depends(get_
                 "active": opportunity.active,
                 "compliance_status": opportunity.compliance_status,
                 "risk_score": opportunity.risk_score,
+                "full_parent_path_name": opportunity.full_response.get("fullParentPathName") if opportunity.full_response else None,
             },
             "score": {
                 "id": score.id,
@@ -161,3 +162,27 @@ async def get_full_analysis(opportunity_id: int, db: AsyncSession = Depends(get_
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching analysis data: {str(e)}")
+
+@router.get("/opportunities/{opportunity_id}/eligibility")
+async def check_opportunity_eligibility(
+    opportunity_id: int, 
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if primary entity qualifies for this opportunity.
+    Returns detailed eligibility status with disqualification reasons.
+    """
+    from fedops_core.services.qualification_service import QualificationService
+    
+    try:
+        result = await QualificationService.check_eligibility(db, opportunity_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error checking eligibility: {str(e)}")
+
+
+

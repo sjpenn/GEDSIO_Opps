@@ -88,12 +88,26 @@ interface Opportunity {
   point_of_contact: any;
 }
 
+interface Block {
+  id: string;
+  title: string;
+  content: string;
+  order: number;
+}
+
+interface Volume {
+  id: number;
+  title: string;
+  order: number;
+  blocks: Block[];
+}
+
 interface WorkspaceData {
   proposal: {
     id: number;
     opportunity_id: number;
     version: number;
-    volumes: any[];
+    volumes: Volume[];
   };
   opportunity: Opportunity | null;
   requirements: Requirement[];
@@ -101,7 +115,7 @@ interface WorkspaceData {
   documents: Document[];
 }
 
-type TabType = 'overview' | 'capture' | 'development' | 'specification' | 'requirements' | 'sow' | 'past-performance' | 'pricing' | 'artifacts' | 'reviews' | 'submission';
+type TabType = 'overview' | 'capture' | 'development' | 'specification' | 'requirements' | 'sow' | 'past-performance' | 'pricing' | 'artifacts' | 'reviews' | 'submission' | 'sources-sought';
 
 export default function ProposalWorkspace() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
@@ -159,6 +173,7 @@ export default function ProposalWorkspace() {
     { id: 'artifacts' as TabType, label: 'Required Artifacts', icon: Package },
     { id: 'reviews' as TabType, label: 'Reviews', icon: ShieldCheck },
     { id: 'submission' as TabType, label: 'Submission', icon: Send },
+    { id: 'sources-sought' as TabType, label: 'Sources Sought', icon: FileText },
   ];
 
   if (loading) {
@@ -289,6 +304,7 @@ export default function ProposalWorkspace() {
             {activeTab === 'artifacts' && <ArtifactsTab artifacts={workspaceData.artifacts} proposalId={workspaceData.proposal.id} />}
             {activeTab === 'reviews' && <ReviewsTab proposalId={workspaceData.proposal.id} />}
             {activeTab === 'submission' && <SubmissionTab proposalId={workspaceData.proposal.id} />}
+            {activeTab === 'sources-sought' && <SourcesSoughtTab proposalId={workspaceData.proposal.id} />}
           </div>
         </div>
       </div>
@@ -401,9 +417,22 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
             <div>
               <h4 className="font-semibold mb-2">Place of Performance</h4>
               <div className="text-sm bg-muted/30 p-3 rounded-lg">
-                {typeof opportunity.place_of_performance === 'string' 
-                  ? opportunity.place_of_performance 
-                  : JSON.stringify(opportunity.place_of_performance, null, 2)}
+                {typeof opportunity.place_of_performance === 'string' ? (
+                  opportunity.place_of_performance
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">
+                      {[
+                        opportunity.place_of_performance?.city?.name || opportunity.place_of_performance?.city,
+                        opportunity.place_of_performance?.state?.name || opportunity.place_of_performance?.state?.code || opportunity.place_of_performance?.state,
+                        opportunity.place_of_performance?.country?.name || opportunity.place_of_performance?.country?.code || opportunity.place_of_performance?.country
+                      ].filter(Boolean).join(', ')}
+                    </span>
+                    {opportunity.place_of_performance?.zip && (
+                      <span className="text-xs text-muted-foreground">{opportunity.place_of_performance.zip}</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -412,10 +441,40 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
           {opportunity.point_of_contact && (
             <div>
               <h4 className="font-semibold mb-2">Point of Contact</h4>
-              <div className="text-sm bg-muted/30 p-3 rounded-lg">
-                {typeof opportunity.point_of_contact === 'string' 
-                  ? opportunity.point_of_contact 
-                  : JSON.stringify(opportunity.point_of_contact, null, 2)}
+              <div className="space-y-3">
+                {Array.isArray(opportunity.point_of_contact) ? (
+                  opportunity.point_of_contact.map((poc: any, i: number) => (
+                    <div key={i} className="text-sm bg-muted/30 p-3 rounded-lg border">
+                      <div className="font-medium">{poc.fullName || poc.name || 'Unknown Name'}</div>
+                      {poc.title && <div className="text-xs text-muted-foreground">{poc.title}</div>}
+                      <div className="mt-2 space-y-1">
+                        {poc.email && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Email:</span>
+                            <a href={`mailto:${poc.email}`} className="text-primary hover:underline">{poc.email}</a>
+                          </div>
+                        )}
+                        {poc.phone && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Phone:</span>
+                            <span>{poc.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : typeof opportunity.point_of_contact === 'object' ? (
+                   <div className="text-sm bg-muted/30 p-3 rounded-lg border">
+                      <div className="font-medium">{(opportunity.point_of_contact as any).fullName || (opportunity.point_of_contact as any).name}</div>
+                      {(opportunity.point_of_contact as any).email && (
+                        <div className="text-xs mt-1">{(opportunity.point_of_contact as any).email}</div>
+                      )}
+                   </div>
+                ) : (
+                  <div className="text-sm bg-muted/30 p-3 rounded-lg">
+                    {String(opportunity.point_of_contact)}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -431,7 +490,9 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[400px] w-full">
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{opportunity.description}</div>
+              <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                {opportunity.description.replace(/<[^>]*>?/gm, '')}
+              </div>
             </ScrollArea>
           </CardContent>
         </Card>
@@ -452,7 +513,7 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
     setVolumes(proposal.volumes);
   }, [proposal.volumes]);
 
-  const handleReorder = async (volumeId: number, newBlocks: any[]) => {
+  const handleReorder = async (volumeId: number, newBlocks: Block[]) => {
     try {
       const blockOrders = newBlocks.map((block, index) => ({
         id: block.id,
@@ -564,7 +625,6 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
               <VolumeCard 
                 key={volume.id}
                 volume={volume}
-                proposalId={proposalId}
                 onReorder={handleReorder}
                 onRename={handleRename}
                 onDelete={handleDelete}
@@ -586,10 +646,26 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
   );
 }
 
+// VolumeCard Props Interface
+interface VolumeCardProps {
+  volume: Volume;
+  onReorder: (volumeId: number, blocks: Block[]) => void;
+  onRename: (volumeId: number, blockId: string) => void;
+  onDelete: (volumeId: number, blockId: string) => void;
+  onAddSection: (volumeId: number) => void;
+  editingSection: { volumeId: number; blockId: string } | null;
+  setEditingSection: (section: { volumeId: number; blockId: string } | null) => void;
+  sectionTitle: string;
+  setSectionTitle: (title: string) => void;
+  addingTo: number | null;
+  setAddingTo: (id: number | null) => void;
+  newSectionTitle: string;
+  setNewSectionTitle: (title: string) => void;
+}
+
 // Volume Card Component with Drag and Drop
 function VolumeCard({
   volume,
-  proposalId,
   onReorder,
   onRename,
   onDelete,
@@ -602,8 +678,8 @@ function VolumeCard({
   setAddingTo,
   newSectionTitle,
   setNewSectionTitle
-}: any) {
-  const [blocks, setBlocks] = useState(volume.blocks);
+}: VolumeCardProps) {
+  const [blocks, setBlocks] = useState<Block[]>(volume.blocks);
   
   useEffect(() => {
     setBlocks(volume.blocks);
@@ -620,8 +696,8 @@ function VolumeCard({
     const {active, over} = event;
 
     if (active.id !== over.id) {
-      const oldIndex = blocks.findIndex((b: any) => b.id === active.id);
-      const newIndex = blocks.findIndex((b: any) => b.id === over.id);
+      const oldIndex = blocks.findIndex((b) => b.id === active.id);
+      const newIndex = blocks.findIndex((b) => b.id === over.id);
       
       const newBlocks = arrayMove(blocks, oldIndex, newIndex);
       setBlocks(newBlocks);
@@ -672,15 +748,14 @@ function VolumeCard({
           onDragEnd={handleDragEnd}
         >
           <SortableContext 
-            items={blocks.map((b: any) => b.id)}
+            items={blocks.map((b) => b.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-2">
-              {blocks.map((block: any) => (
+              {blocks.map((block) => (
                 <SortableSection
                   key={block.id}
                   block={block}
-                  volume={volume}
                   editing={editingSection?.volumeId === volume.id && editingSection?.blockId === block.id}
                   onStartEdit={(blockId: string, title: string) => {
                     setEditingSection({ volumeId: volume.id, blockId });
@@ -704,10 +779,21 @@ function VolumeCard({
   );
 }
 
+// SortableSection Props Interface
+interface SortableSectionProps {
+  block: Block;
+  editing: boolean;
+  onStartEdit: (blockId: string, title: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+  sectionTitle: string;
+  setSectionTitle: (title: string) => void;
+}
+
 // Sortable Section Component
 function SortableSection({
   block,
-  volume,
   editing,
   onStartEdit,
   onSaveEdit,
@@ -715,7 +801,7 @@ function SortableSection({
   onDelete,
   sectionTitle,
   setSectionTitle
-}: any) {
+}: SortableSectionProps) {
   const {
     attributes,
     listeners,
@@ -778,6 +864,99 @@ function SortableSection({
   );
 }
 
+// Sources Sought Tab Component
+function SourcesSoughtTab({ proposalId }: { proposalId: number }) {
+  const [generating, setGenerating] = useState(false);
+  const [response, setResponse] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/proposal-content/proposals/${proposalId}/generate-sources-sought`, {
+        method: 'POST',
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Failed to generate response');
+      }
+      
+      const data = await res.json();
+      setResponse(data.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            Sources Sought / RFI Response
+          </CardTitle>
+          <CardDescription>
+            Generate a specialized response for Sources Sought Notices and RFIs, focusing on capabilities and past performance.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!response && (
+            <div className="text-center py-12 bg-muted/30 rounded-lg border border-dashed">
+              <h3 className="text-lg font-medium mb-2">Generate Response</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Create a tailored response based on the opportunity details and your company's profile.
+              </p>
+              <Button onClick={handleGenerate} disabled={generating} size="lg">
+                {generating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate Sources Sought Response
+                  </>
+                )}
+              </Button>
+              {error && (
+                <div className="mt-4 text-red-600 bg-red-50 p-3 rounded-md inline-block">
+                  <AlertTriangle className="h-4 w-4 inline mr-2" />
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
+
+          {response && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold">Generated Response</h3>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setResponse(null)}>
+                    Regenerate
+                  </Button>
+                  <Button onClick={() => navigator.clipboard.writeText(response)}>
+                    Copy to Clipboard
+                  </Button>
+                </div>
+              </div>
+              <div className="bg-muted/30 p-6 rounded-lg border prose max-w-none dark:prose-invert">
+                <pre className="whitespace-pre-wrap font-sans">{response}</pre>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 
 // Requirements Tab Component
 function RequirementsTab({ 
@@ -800,7 +979,7 @@ function RequirementsTab({
     ? requirements 
     : requirements.filter(r => r.requirement_type === filter);
 
-  const [matrixContent, setMatrixContent] = useState<string>('');
+  const [matrixData, setMatrixData] = useState<any[]>([]);
 
   // Calculate counts for each requirement type
   const requirementCounts = useMemo(() => {
@@ -845,7 +1024,7 @@ function RequirementsTab({
       });
       if (res.ok) {
         const data = await res.json();
-        setMatrixContent(data.content);
+        setMatrixData(data.content);
         setExtractionMessage({type: 'success', text: 'Requirements matrix generated successfully!'});
       } else {
         const errorData = await res.json().catch(() => ({}));
@@ -859,54 +1038,120 @@ function RequirementsTab({
     }
   };
 
+  const downloadCSV = () => {
+    if (!matrixData || matrixData.length === 0) return;
+
+    const headers = ["ID", "Requirement Summary", "Source", "Proposal Section", "Compliance", "Notes"];
+    const csvContent = [
+      headers.join(","),
+      ...matrixData.map(row => [
+        `"${row.id}"`,
+        `"${(row.summary || '').replace(/"/g, '""')}"`,
+        `"${(row.source || '').replace(/"/g, '""')}"`,
+        `"${(row.proposal_section || '').replace(/"/g, '""')}"`,
+        `"${(row.compliance || '').replace(/"/g, '""')}"`,
+        `"${(row.notes || '').replace(/"/g, '""')}"`
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `requirements_matrix_${proposalId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleExtractRequirements = async () => {
     setExtracting(true);
     setExtractionMessage(null);
+    
     try {
+      // Start the extraction
       const res = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/extract-requirements`, {
         method: 'POST'
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.requirements_count > 0) {
-          setExtractionMessage({
-            type: 'success', 
-            text: `Requirements extraction completed! Found ${data.requirements_count} requirements and ${data.artifacts_count} artifacts from ${data.files_processed} document(s). Reloading page...`
-          });
-          // Reload page to show new requirements
-          setTimeout(() => window.location.reload(), 2000);
-        } else {
-          // Use detailed diagnostics from backend
-          let errorText = 'Extraction completed but found 0 requirements.\n\n';
-          
-          if (data.files_found === 0) {
-            errorText += '• No documents are available for this opportunity\n';
-            errorText += '• Documents may need to be uploaded or imported from SAM.gov\n';
-            errorText += '• Check the File Management page to upload documents';
-          } else if (data.files_with_content === 0) {
-            errorText += `• Found ${data.files_found} document(s) but none have parseable content\n`;
-            errorText += '• Documents may need to be processed to extract text\n';
-            errorText += '• Try re-importing documents from SAM.gov or re-uploading files';
-          } else {
-            errorText += `• Found ${data.files_found} document(s), ${data.files_with_content} with content\n`;
-            errorText += '• AI extraction may have failed to identify requirements\n';
-            errorText += '• Documents may not contain standard requirement language\n';
-            errorText += '• Check extraction_debug.log for details';
-          }
-          
-          setExtractionMessage({
-            type: 'error',
-            text: errorText
-          });
-        }
-      } else {
+      
+      if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         setExtractionMessage({type: 'error', text: `Failed to start extraction: ${errorData.detail || errorData.message || 'Unknown error'}`});
+        setExtracting(false);
+        return;
       }
+      
+      const startData = await res.json();
+      
+      if (startData.status === 'already_running') {
+        setExtractionMessage({type: 'info', text: 'Extraction is already in progress. Checking status...'});
+      } else {
+        setExtractionMessage({type: 'info', text: 'Extraction started. Processing documents...'});
+      }
+      
+      // Poll for progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const progressRes = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/extract-requirements/progress`);
+          if (progressRes.ok) {
+            const progress = await progressRes.json();
+            
+            if (progress.status === 'running') {
+              // Update message with current progress
+              const fileList = progress.filenames.length > 0 
+                ? '\n\nProcessed files:\n' + progress.filenames.map((f: string) => `  • ${f}`).join('\n')
+                : '';
+              
+              setExtractionMessage({
+                type: 'info',
+                text: `Extracting requirements... ${progress.percentage}%\n\nCurrent file: ${progress.current_file || 'Initializing...'}\nProcessed: ${progress.processed_files} / ${progress.total_files} files${fileList}`
+              });
+            } else if (progress.status === 'completed') {
+              clearInterval(pollInterval);
+              setExtracting(false);
+              
+              if (progress.requirements_count > 0) {
+                setExtractionMessage({
+                  type: 'success',
+                  text: `Requirements extraction completed! Found ${progress.requirements_count} requirements and ${progress.artifacts_count} artifacts from ${progress.total_files} document(s). Reloading page...`
+                });
+                // Reload page to show new requirements
+                setTimeout(() => window.location.reload(), 2000);
+              } else {
+                setExtractionMessage({
+                  type: 'error',
+                  text: `Extraction completed but found 0 requirements.\n\nProcessed ${progress.total_files} document(s). The documents may not contain standard requirement language, or AI extraction may have failed to identify requirements.`
+                });
+              }
+            } else if (progress.status === 'failed') {
+              clearInterval(pollInterval);
+              setExtracting(false);
+              setExtractionMessage({
+                type: 'error',
+                text: `Extraction failed: ${progress.error || 'Unknown error'}`
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error polling progress:', error);
+        }
+      }, 2000); // Poll every 2 seconds
+      
+      // Cleanup interval after 5 minutes (safety timeout)
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (extracting) {
+          setExtracting(false);
+          setExtractionMessage({
+            type: 'error',
+            text: 'Extraction timed out. Please try again or check the logs.'
+          });
+        }
+      }, 300000); // 5 minutes
+      
     } catch (error) {
       console.error("Extraction failed:", error);
       setExtractionMessage({type: 'error', text: 'An error occurred during extraction.'});
-    } finally {
       setExtracting(false);
     }
   };
@@ -1078,18 +1323,56 @@ function RequirementsTab({
         </CardContent>
       </Card>
 
-      {matrixContent && (
+      {matrixData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Generated Compliance Matrix</CardTitle>
-            <CardDescription>AI-generated compliance matrix based on requirements</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Generated Compliance Matrix</CardTitle>
+                <CardDescription>AI-generated compliance matrix based on requirements</CardDescription>
+              </div>
+              <Button onClick={downloadCSV} variant="outline" size="sm" className="gap-2">
+                <FileText className="h-4 w-4" />
+                Download CSV
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <Textarea 
-              value={matrixContent} 
-              readOnly 
-              className="min-h-[400px] font-mono text-sm"
-            />
+            <div className="rounded-md border">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b">
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-24">ID</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Requirement</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-24">Source</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-48">Proposal Section</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-32">Compliance</th>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixData.map((row, i) => (
+                      <tr key={i} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                        <td className="p-4 align-middle font-mono text-xs">{row.id}</td>
+                        <td className="p-4 align-middle">{row.summary}</td>
+                        <td className="p-4 align-middle">{row.source}</td>
+                        <td className="p-4 align-middle">{row.proposal_section}</td>
+                        <td className="p-4 align-middle">
+                          <Badge variant={
+                            row.compliance === 'Compliant' ? 'default' : 
+                            row.compliance === 'Non-Compliant' ? 'destructive' : 'secondary'
+                          }>
+                            {row.compliance}
+                          </Badge>
+                        </td>
+                        <td className="p-4 align-middle text-muted-foreground">{row.notes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

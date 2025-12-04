@@ -13,7 +13,10 @@ import {
   Users,
   Award,
   DollarSign,
-  Target
+  Target,
+  Building2,
+  Calendar,
+  Briefcase
 } from 'lucide-react';
 
 interface BidScore {
@@ -49,18 +52,56 @@ interface BidScore {
 interface Competitor {
   id: number;
   competitor_name: string;
+  competitor_uei: string;
   historical_wins: number;
   total_obligation: number;
   is_incumbent: boolean;
   naics_match: string;
 }
 
+interface EntityData {
+  uei: string;
+  legal_business_name: string;
+  dba_name: string;
+  naics_codes: Array<{
+    code: string;
+    description: string;
+    is_primary: boolean;
+  }>;
+  psc_codes: Array<{
+    code: string;
+    description: string;
+  }>;
+  business_types: Array<{
+    code: string;
+    description: string;
+  }>;
+  company_division: string;
+  division_number: string;
+  registration_status: string;
+  registration_date: string;
+  expiration_date: string;
+}
+
+
+interface Opportunity {
+  id: number;
+  title: string;
+  notice_id: string;
+  department: string;
+}
+
 export default function BidDecisionPage() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const navigate = useNavigate();
   
+  const [opportunity, setOpportunity] = useState<Opportunity | null>(null);
   const [bidScore, setBidScore] = useState<BidScore | null>(null);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [showAllCompetitors, setShowAllCompetitors] = useState(false);
+  const [expandedCompetitor, setExpandedCompetitor] = useState<string | null>(null);
+  const [entityData, setEntityData] = useState<Record<string, EntityData>>({});
+  const [loadingEntity, setLoadingEntity] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [decision, setDecision] = useState<'BID' | 'NO_BID' | null>(null);
@@ -69,9 +110,21 @@ export default function BidDecisionPage() {
   const [decisionBy] = useState('Current User'); // TODO: Get from auth context
 
   useEffect(() => {
+    loadOpportunity();
     loadBidScore();
     refreshCompetitiveIntel();
   }, [opportunityId]);
+
+  const loadOpportunity = async () => {
+    try {
+      const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+      if (!response.ok) throw new Error('Failed to load opportunity');
+      const data = await response.json();
+      setOpportunity(data);
+    } catch (err) {
+      console.error('Failed to load opportunity:', err);
+    }
+  };
 
   const loadBidScore = async () => {
     try {
@@ -99,6 +152,34 @@ export default function BidDecisionPage() {
       console.error('Failed to refresh competitive intelligence:', err);
       // Still try to load existing competitors
       await loadCompetitors();
+    }
+  };
+
+  const toggleCompetitor = async (competitor: Competitor) => {
+    if (expandedCompetitor === competitor.competitor_uei) {
+      setExpandedCompetitor(null);
+      return;
+    }
+
+    setExpandedCompetitor(competitor.competitor_uei);
+
+    // Fetch entity data if not already loaded
+    if (!entityData[competitor.competitor_uei]) {
+      setLoadingEntity(competitor.competitor_uei);
+      try {
+        const response = await fetch(`/api/v1/competitive_intel/competitors/${competitor.competitor_uei}/entity_details`);
+        if (response.ok) {
+          const data = await response.json();
+          setEntityData(prev => ({
+            ...prev,
+            [competitor.competitor_uei]: data
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load entity data:', err);
+      } finally {
+        setLoadingEntity(null);
+      }
     }
   };
 
@@ -209,7 +290,12 @@ export default function BidDecisionPage() {
     <div className="container mx-auto p-6 max-w-7xl">
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">Bid/No-Bid Decision</h1>
-        <p className="text-gray-600">Opportunity #{opportunityId} - Phase 2: Opportunity Assessment</p>
+        <p className="text-lg font-semibold text-gray-900 mb-1">
+          {opportunity?.title || `Opportunity #${opportunityId}`}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {opportunity?.notice_id} • Phase 2: Opportunity Assessment
+        </p>
       </div>
 
       {error && (
@@ -345,38 +431,218 @@ export default function BidDecisionPage() {
       {competitors.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              <CardTitle>Competitive Intelligence</CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                <CardTitle>Competitive Intelligence</CardTitle>
+              </div>
+              <Badge variant="outline">{competitors.length} Competitors</Badge>
             </div>
             <CardDescription>Historical competitor data from USAspending.gov</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {competitors.slice(0, 5).map((competitor) => (
-                <div key={competitor.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="font-medium flex items-center gap-2">
-                        {competitor.competitor_name}
-                        {competitor.is_incumbent && (
-                          <Badge variant="destructive">Incumbent</Badge>
-                        )}
+              {(showAllCompetitors ? competitors : competitors.slice(0, 5)).map((competitor) => (
+                <div key={competitor.id} className="border rounded-lg overflow-hidden">
+                  <div 
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => toggleCompetitor(competitor)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          {competitor.competitor_name}
+                          {competitor.is_incumbent && (
+                            <Badge variant="destructive">Incumbent</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          NAICS: {competitor.naics_match}
+                        </div>
                       </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{competitor.historical_wins} wins</div>
                       <div className="text-sm text-gray-600">
-                        NAICS: {competitor.naics_match}
+                        ${(competitor.total_obligation / 1_000_000).toFixed(1)}M total
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-medium">{competitor.historical_wins} wins</div>
-                    <div className="text-sm text-gray-600">
-                      ${(competitor.total_obligation / 1_000_000).toFixed(1)}M total
+
+                  {/* Expanded Details */}
+                  {expandedCompetitor === competitor.competitor_uei && (
+                    <div className="bg-slate-50/80 p-6 border-t animate-in slide-in-from-top-2 duration-200">
+                      {loadingEntity === competitor.competitor_uei ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+                          <p className="text-sm">Fetching entity details from SAM.gov...</p>
+                        </div>
+                      ) : entityData[competitor.competitor_uei] ? (
+                        <div className="space-y-6">
+                          {/* Header Info */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                              <div className="flex items-start gap-3">
+                                <Building2 className="h-5 w-5 text-blue-600 mt-0.5" />
+                                <div>
+                                  <h4 className="font-semibold text-gray-900">Entity Information</h4>
+                                  <div className="mt-2 space-y-2 text-sm">
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-muted-foreground">Legal Business Name:</span>
+                                      <span className="font-medium text-right">{entityData[competitor.competitor_uei].legal_business_name}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-muted-foreground">UEI:</span>
+                                      <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-xs">{entityData[competitor.competitor_uei].uei}</span>
+                                    </div>
+                                    {entityData[competitor.competitor_uei].dba_name && (
+                                      <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">DBA Name:</span>
+                                        <span className="font-medium text-right">{entityData[competitor.competitor_uei].dba_name}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              <div className="flex items-start gap-3">
+                                <Calendar className="h-5 w-5 text-green-600 mt-0.5" />
+                                <div>
+                                  <h4 className="font-semibold text-gray-900">Registration Status</h4>
+                                  <div className="mt-2 space-y-2 text-sm">
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-muted-foreground">Status:</span>
+                                      <Badge variant={entityData[competitor.competitor_uei].registration_status === 'Active' ? 'default' : 'secondary'} 
+                                             className={entityData[competitor.competitor_uei].registration_status === 'Active' ? 'bg-green-600 hover:bg-green-700' : ''}>
+                                        {entityData[competitor.competitor_uei].registration_status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-muted-foreground">Expiration Date:</span>
+                                      <span className="font-medium">{entityData[competitor.competitor_uei].expiration_date}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span className="text-muted-foreground">Registration Date:</span>
+                                      <span className="font-medium">{entityData[competitor.competitor_uei].registration_date}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Business Types & Certifications */}
+                          {entityData[competitor.competitor_uei].business_types.length > 0 && (
+                            <div className="pt-4 border-t">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Award className="h-5 w-5 text-purple-600" />
+                                <h4 className="font-semibold text-gray-900">Business Types & Certifications</h4>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {entityData[competitor.competitor_uei].business_types.map((type, idx) => (
+                                  <Badge key={idx} variant="outline" className="bg-white hover:bg-slate-50 transition-colors py-1 px-2.5 border-slate-200 shadow-sm">
+                                    <span className="font-medium text-slate-700">{type.description}</span>
+                                    {type.code !== type.description && (
+                                      <span className="ml-1.5 text-xs text-slate-400 border-l pl-1.5">{type.code}</span>
+                                    )}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* NAICS & PSC Codes */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                            {/* NAICS Codes */}
+                            {entityData[competitor.competitor_uei].naics_codes.length > 0 && (
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="h-5 w-5 text-orange-600" />
+                                  <h4 className="font-semibold text-gray-900">NAICS Codes</h4>
+                                </div>
+                                <div className="bg-white rounded-lg border shadow-sm max-h-48 overflow-y-auto">
+                                  <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
+                                      <tr>
+                                        <th className="px-3 py-2 w-16">Code</th>
+                                        <th className="px-3 py-2">Description</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                      {entityData[competitor.competitor_uei].naics_codes.map((naics, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50/50">
+                                          <td className="px-3 py-2 font-mono text-slate-600 text-xs">{naics.code}</td>
+                                          <td className="px-3 py-2 text-slate-700 text-xs">
+                                            {naics.description}
+                                            {naics.is_primary && (
+                                              <Badge variant="secondary" className="ml-2 text-[10px] h-4 bg-blue-50 text-blue-700 border-blue-200">
+                                                Primary
+                                              </Badge>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* PSC Codes */}
+                            {entityData[competitor.competitor_uei].psc_codes && entityData[competitor.competitor_uei].psc_codes.length > 0 && (
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <Target className="h-5 w-5 text-teal-600" />
+                                  <h4 className="font-semibold text-gray-900">PSC Codes</h4>
+                                </div>
+                                <div className="bg-white rounded-lg border shadow-sm max-h-48 overflow-y-auto">
+                                  <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0">
+                                      <tr>
+                                        <th className="px-3 py-2 w-16">Code</th>
+                                        <th className="px-3 py-2">Description</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                      {entityData[competitor.competitor_uei].psc_codes.map((psc, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50/50">
+                                          <td className="px-3 py-2 font-mono text-slate-600 text-xs">{psc.code}</td>
+                                          <td className="px-3 py-2 text-slate-700 text-xs">{psc.description}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <AlertTriangle className="h-10 w-10 text-yellow-500 mx-auto mb-3" />
+                          <p className="text-gray-900 font-medium">No detailed entity data available</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Could not retrieve detailed profile from SAM.gov for this entity.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>
+            
+            {competitors.length > 5 && (
+              <Button
+                variant="ghost"
+                className="w-full mt-4 text-muted-foreground"
+                onClick={() => setShowAllCompetitors(!showAllCompetitors)}
+              >
+                {showAllCompetitors ? 'Show Less' : `Show All (${competitors.length})`}
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

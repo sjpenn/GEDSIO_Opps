@@ -388,3 +388,221 @@ class QualificationService:
                 "attractiveness": attractiveness_weight
             }
         )
+
+    @staticmethod
+    async def check_eligibility(
+        db: AsyncSession,
+        opportunity_id: int
+    ) -> Dict[str, Any]:
+        """
+        Check if primary entity qualifies for the opportunity
+        Returns detailed eligibility status with disqualification reasons
+        """
+        # Get opportunity
+        result = await db.execute(
+            select(Opportunity).where(Opportunity.id == opportunity_id)
+        )
+        opportunity = result.scalar_one_or_none()
+        
+        if not opportunity:
+            raise ValueError(f"Opportunity {opportunity_id} not found")
+        
+        # Get primary entity
+        entity_result = await db.execute(
+            select(Entity).where(Entity.is_primary == True)
+        )
+        entity = entity_result.scalar_one_or_none()
+        
+        disqualifiers = []
+        
+        # Check if primary entity exists
+        if not entity:
+            return {
+                "qualified": False,
+                "disqualifiers": [{
+                    "type": "NO_PRIMARY_ENTITY",
+                    "severity": "CRITICAL",
+                    "reason": "No primary entity has been set. Please designate your company as the primary entity.",
+                    "required": "Primary entity designation",
+                    "actual": "None"
+                }],
+                "entity_info": None
+            }
+        
+        # Extract entity information
+        entity_info = {
+            "uei": entity.uei,
+            "name": entity.legal_business_name,
+            "business_types": [],
+            "certifications": []
+        }
+        
+        # Extract business types from SAM.gov data
+        business_type_codes = []
+        sba_certifications = []
+        
+        if entity.full_response and isinstance(entity.full_response, dict):
+            # Try multiple locations for business types
+            core_data = entity.full_response.get("coreData", {})
+            entity_registration = entity.full_response.get("entityRegistration", {})
+            assertions = entity.full_response.get("assertions", {})
+            
+            # Extract from coreData first (most common)
+            if "businessTypes" in core_data:
+                business_types_data = core_data.get("businessTypes", {})
+                business_type_list = business_types_data.get("businessTypeList", [])
+                sba_business_type_list = business_types_data.get("sbaBusinessTypeList", [])
+                
+                for bt in business_type_list:
+                    code = bt.get("businessTypeCode")
+                    desc = bt.get("businessTypeDesc", "")
+                    if code:
+                        business_type_codes.append(code)
+                        # Use SAM.gov description if available, otherwise just code
+                        if desc:
+                            entity_info["business_types"].append(f"{desc} ({code})")
+                        else:
+                            entity_info["business_types"].append(code)
+                
+                for sba in sba_business_type_list:
+                    cert_type = sba.get("certificationEntryTypeCode")
+                    if cert_type:
+                        sba_certifications.append(cert_type)
+                        entity_info["certifications"].append(cert_type)
+            
+            # Fallback to entityRegistration
+            elif "businessTypes" in entity_registration:
+                business_types_data = entity_registration.get("businessTypes", {})
+                business_type_list = business_types_data.get("businessTypeList", [])
+                
+                for bt in business_type_list:
+                    code = bt.get("businessTypeCode")
+                    desc = bt.get("businessTypeDesc", "")
+                    if code:
+                        business_type_codes.append(code)
+                        # Use SAM.gov description if available, otherwise just code
+                        if desc:
+                            entity_info["business_types"].append(f"{desc} ({code})")
+                        else:
+                            entity_info["business_types"].append(code)
+        
+        # Check set-aside requirements
+        set_aside = opportunity.type_of_set_aside
+        set_aside_desc = opportunity.type_of_set_aside_description
+        
+        if set_aside and set_aside not in ["None", "N/A", ""]:
+            # Map SAM.gov set-aside codes to required business type codes
+            # Reference: https://samsearch.co/set-aside-codes
+            set_aside_requirements = {
+                # Service-Disabled Veteran-Owned Small Business
+                "SDVOSBC": {  # Competitive
+                    "codes": ["QF"],
+                    "name": "Service-Disabled Veteran-Owned Small Business (Competitive)"
+                },
+                "SDVOSBS": {  # Sole Source
+                    "codes": ["QF"],
+                    "name": "Service-Disabled Veteran-Owned Small Business (Sole Source)"
+                },
+                # 8(a) Business Development Program
+                "8A": {  # Competitive
+                    "codes": ["27"],
+                    "name": "8(a) Program Participant (Competitive)"
+                },
+                "8AN": {  # Sole Source
+                    "codes": ["27"],
+                    "name": "8(a) Program Participant (Sole Source)"
+                },
+                # HUBZone
+                "HZC": {  # Competitive
+                    "codes": ["A6"],
+                    "name": "HUBZone (Competitive)"
+                },
+                "HZS": {  # Sole Source
+                    "codes": ["A6"],
+                    "name": "HUBZone (Sole Source)"
+                },
+                # Woman Owned Small Business
+                "WOSB": {
+                    "codes": ["A2"],
+                    "name": "Woman Owned Small Business"
+                },
+                "WOSBSS": {  # Sole Source
+                    "codes": ["A2"],
+                    "name": "Woman Owned Small Business (Sole Source)"
+                },
+                # Economically Disadvantaged WOSB
+                "EDWOSB": {
+                    "codes": ["A5"],
+                    "name": "Economically Disadvantaged Woman Owned Small Business"
+                },
+                "EDWOSBSS": {  # Sole Source
+                    "codes": ["A5"],
+                    "name": "Economically Disadvantaged Woman Owned Small Business (Sole Source)"
+                },
+                # Small Business
+                # Accept all small business variants: NB (Small Business), 27 (Small Disadvantaged), XX (Small Disadvantaged), A4 (SBA Certified SDB)
+                "SBA": {
+                    "codes": ["NB", "27", "XX", "A4"],
+                    "name": "Small Business"
+                },
+                "SBP": {  # Small Business Partial
+                    "codes": ["NB", "27", "XX", "A4"],
+                    "name": "Small Business (Partial)"
+                },
+                # Veteran-Owned Small Business
+                "VOSB": {
+                    "codes": ["VET"],
+                    "name": "Veteran-Owned Small Business"
+                }
+            }
+            
+            # Direct code lookup (case-sensitive for exact codes)
+            matched_requirement = set_aside_requirements.get(set_aside)
+            
+            # If no exact match, try case-insensitive
+            if not matched_requirement:
+                set_aside_upper = set_aside.upper()
+                for code, req in set_aside_requirements.items():
+                    if code.upper() == set_aside_upper:
+                        matched_requirement = req
+                        break
+            
+            if matched_requirement:
+                required_codes = matched_requirement["codes"]
+                has_required = any(code in business_type_codes for code in required_codes)
+                
+                if not has_required:
+                    # Use formatted business types from entity_info instead of raw codes
+                    entity_certs = ', '.join(entity_info["business_types"]) if entity_info["business_types"] else 'No certifications found'
+                    
+                    disqualifiers.append({
+                        "type": "SET_ASIDE",
+                        "severity": "CRITICAL",
+                        "reason": f"This opportunity is set aside for {matched_requirement['name']} ({set_aside}), but your entity does not have this certification.",
+                        "required": f"{matched_requirement['name']} certification (Business Type Code: {', '.join(required_codes)})",
+                        "actual": f"Entity has: {entity_certs}"
+                    })
+            else:
+                # Unknown set-aside type - add as warning
+                entity_certs = ', '.join(entity_info["business_types"]) if entity_info["business_types"] else 'None found'
+                
+                disqualifiers.append({
+                    "type": "SET_ASIDE",
+                    "severity": "WARNING",
+                    "reason": f"This opportunity has a set-aside type '{set_aside}' ({set_aside_desc or 'N/A'}) that requires manual verification.",
+                    "required": f"Set-aside: {set_aside}",
+                    "actual": f"Entity certifications: {entity_certs}"
+                })
+        
+        # Determine overall qualification
+        critical_disqualifiers = [d for d in disqualifiers if d["severity"] == "CRITICAL"]
+        qualified = len(critical_disqualifiers) == 0
+        
+        return {
+            "qualified": qualified,
+            "disqualifiers": disqualifiers,
+            "entity_info": entity_info
+        }
+
+
+

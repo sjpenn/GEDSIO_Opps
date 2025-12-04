@@ -1,0 +1,12 @@
+This is a test capability statement for SPACE METRICS, INC.
+
+Company Overview:
+SPACE METRICS, INC. specializes in advanced aerospace engineering and satellite communications.
+
+Core Capabilities:
+- Satellite design and integration
+- Ground station operations
+- Data analysis and processing
+- Mission planning and support
+
+This document is uploaded to test the multi-profile document storage feature.

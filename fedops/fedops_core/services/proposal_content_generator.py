@@ -24,15 +24,9 @@ from fedops_core.db.models import (
     Entity,
     EntityAward
 )
-from fedops_core.settings import settings
 
-# Configure Gemini
-# Configure Gemini
-if settings.GOOGLE_API_KEY:
-    genai.configure(api_key=settings.GOOGLE_API_KEY)
-else:
-    # Fallback or log warning
-    print("Warning: GOOGLE_API_KEY not found in settings")
+from fedops_core.settings import settings
+from fedops_core.services.ai_service import AIService
 
 
 class ProposalContentGenerator:
@@ -40,7 +34,7 @@ class ProposalContentGenerator:
     
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.model = genai.GenerativeModel(settings.LLM_MODEL)
+        self.ai_service = AIService()
     
     async def generate_requirements_matrix(self, proposal_id: int) -> Dict:
         """
@@ -49,7 +43,16 @@ class ProposalContentGenerator:
         Returns:
             {
                 "status": "success",
-                "content": "Markdown table content",
+                "content": [
+                    {
+                        "id": "REQ-001",
+                        "summary": "...",
+                        "source": "...",
+                        "proposal_section": "...",
+                        "compliance": "...",
+                        "notes": "..."
+                    }
+                ],
                 "requirements_count": int
             }
         """
@@ -92,32 +95,86 @@ REQUIREMENTS ({len(requirements)} total):
 {requirements_list}
 
 OUTPUT FORMAT:
-Create a markdown table with these columns:
-| Req ID | Requirement Summary | Source Section | Proposal Response Section | Compliance Status | Notes |
+Return ONLY a JSON array of objects. Do not include markdown formatting like ```json.
+Each object must have these fields:
+- "id": Requirement ID (e.g., "REQ-001")
+- "summary": Concise summary of the requirement (max 100 chars)
+- "source": Source section reference
+- "proposal_section": Mapped proposal volume/section (e.g., "Technical Volume, Section 3.2")
+- "compliance": "Compliant", "Partial", or "Non-Compliant"
+- "notes": Brief notes on approach or concerns
+
+Example:
+[
+  {{
+    "id": "REQ-001",
+    "summary": "Contractor shall provide monthly reports",
+    "source": "C.4.1",
+    "proposal_section": "Management Volume, Section 1.2",
+    "compliance": "Compliant",
+    "notes": "Will use automated reporting tool"
+  }}
+]
 
 GUIDELINES:
-- **Identify Implied Requirements**: Look beyond "shall" statements. If a task implies a requirement (e.g., "deliver report" implies "write report"), include it.
-- **Summarize Concisely**: Max 100 chars per summary.
-- **Map to Proposal Structure**: Map to appropriate volume/section (e.g., "Technical Volume, Section 3.2").
-- **Compliance Status**: "Compliant", "Partial", or "Non-Compliant".
-- **Notes**: Add brief notes on approach or concerns.
+- **Identify Implied Requirements**: Look beyond "shall" statements.
 - **Completeness**: Ensure all {len(requirements)} requirements are included.
-- **Numbering**: REQ-001, REQ-002, etc.
+- **Strict JSON**: Output must be valid JSON.
 
 Generate the complete requirements compliance matrix now:
 """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            matrix_content = response.text.strip()
+            # Use AIService to get JSON response
+            # We'll wrap the prompt to ensure it returns the list in an object if needed, 
+            # but analyze_opportunity handles JSON extraction well.
+            # The prompt asks for a JSON array. analyze_opportunity might wrap it in {"data": ...} if it finds an array.
+            
+            result = await self.ai_service.analyze_opportunity(prompt)
+            
+            matrix_data = []
+            if result and isinstance(result, dict):
+                if 'data' in result and isinstance(result['data'], list):
+                    matrix_data = result['data']
+                elif isinstance(result, list): # Should not happen as analyze_opportunity returns dict
+                    matrix_data = result
+                else:
+                    # Maybe it returned the object directly?
+                    # Check if the result itself is what we want (unlikely for a list)
+                    # Or maybe it found a dict inside the array?
+                    pass
+            
+            # Fallback if analyze_opportunity didn't give us the list directly (it returns a dict)
+            # If the model returned a list, analyze_opportunity wraps it in {"data": list}
+            
+            if not matrix_data and result and isinstance(result, dict):
+                 # Check if any value is a list
+                 for k, v in result.items():
+                     if isinstance(v, list):
+                         matrix_data = v
+                         break
+            
+            if not matrix_data:
+                 # Try to parse raw response if available in fallback
+                 if result.get('status') == 'error' and result.get('raw_response'):
+                     import re
+                     import json
+                     text = result.get('raw_response')
+                     json_match = re.search(r'\[.*\]', text, re.DOTALL)
+                     if json_match:
+                         try:
+                             matrix_data = json.loads(json_match.group())
+                         except:
+                             pass
             
             return {
                 "status": "success",
-                "content": matrix_content,
+                "content": matrix_data,
                 "requirements_count": len(requirements),
                 "generated_at": "now"
             }
         except Exception as e:
+            print(f"Error generating matrix: {e}")
             return {
                 "status": "error",
                 "message": f"Failed to generate matrix: {str(e)}"
@@ -227,8 +284,8 @@ Generate the complete SOW decomposition now:
 """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            decomposition = response.text.strip()
+            decomposition = await self.ai_service.generate_content(prompt)
+            decomposition = decomposition.strip()
             
             return {
                 "status": "success",
@@ -347,8 +404,8 @@ Generate the complete past performance volume now:
 """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            volume_content = response.text.strip()
+            volume_content = await self.ai_service.generate_content(prompt)
+            volume_content = volume_content.strip()
             
             # Count case studies in response
             case_studies_count = volume_content.count("### Case Study")
@@ -485,8 +542,8 @@ Generate complete PPQ responses now:
 """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            ppq_content = response.text.strip()
+            ppq_content = await self.ai_service.generate_content(prompt)
+            ppq_content = ppq_content.strip()
             
             return {
                 "status": "success",
@@ -572,8 +629,8 @@ Generate the section content now:
 """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            content = response.text.strip()
+            content = await self.ai_service.generate_content(prompt)
+            content = content.strip()
             
             return {
                 "status": "success",
@@ -697,3 +754,85 @@ Generate the section content now:
                     sow_content += f"\n\n=== {doc.filename} ===\n{content[:20000]}"
         
         return sow_content
+
+    async def generate_sources_sought_response(self, proposal_id: int) -> Dict:
+        """
+        Generate a specialized response for Sources Sought / RFI.
+        
+        Returns:
+            {
+                "status": "success",
+                "content": "Markdown formatted response",
+                "generated_at": "now"
+            }
+        """
+        # Get proposal and opportunity
+        result = await self.db.execute(
+            select(Proposal).where(Proposal.id == proposal_id)
+        )
+        proposal = result.scalar_one_or_none()
+        if not proposal:
+            return {"status": "error", "message": "Proposal not found"}
+        
+        result = await self.db.execute(
+            select(Opportunity).where(Opportunity.id == proposal.opportunity_id)
+        )
+        opportunity = result.scalar_one_or_none()
+        
+        # Build contexts
+        from fedops_core.prompts import SOURCES_SOUGHT_RESPONSE_PROMPT
+        company_context = await self._get_company_context(opportunity)
+        
+        prompt = SOURCES_SOUGHT_RESPONSE_PROMPT.format(
+            title=opportunity.title or "N/A",
+            department=opportunity.department or "N/A",
+            naics_code=opportunity.naics_code or "N/A",
+            description=(opportunity.description or "")[:5000],
+            company_context=company_context
+        )
+        
+        try:
+            content = await self.ai_service.generate_content(prompt)
+            content = content.strip()
+            
+            # Save to database as a new Volume
+            # Check if volume exists
+            result = await self.db.execute(
+                select(ProposalVolume).where(
+                    ProposalVolume.proposal_id == proposal_id,
+                    ProposalVolume.title.ilike("%Sources Sought%")
+                )
+            )
+            volume = result.scalar_one_or_none()
+            
+            if not volume:
+                volume = ProposalVolume(
+                    proposal_id=proposal_id,
+                    title="Volume I: Sources Sought Response",
+                    order=1,
+                    blocks=[]
+                )
+                self.db.add(volume)
+            
+            # Update volume content
+            import uuid
+            volume.blocks = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "Sources Sought Response",
+                    "content": content,
+                    "order": 1
+                }
+            ]
+            await self.db.commit()
+            
+            return {
+                "status": "success",
+                "content": content,
+                "generated_at": "now"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to generate Sources Sought response: {str(e)}"
+            }

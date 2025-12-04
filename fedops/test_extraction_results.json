@@ -1,0 +1,155 @@
+{
+  "section_l": {
+    "formatting": {
+      "font": "Arial/Times New Roman, 12pt min",
+      "margins": "1 inch all sides",
+      "pageLimits": {
+        "Technical Proposal (Vol 1)": "50 pages",
+        "Executive Summary": "2 pages max",
+        "Cost/Price Proposal (Vol 2) Narrative": "20 pages"
+      },
+      "fileTypes": [
+        "PDF",
+        "Excel"
+      ],
+      "fileSizeLimit": "200 MB per file",
+      "namingConvention": "As specified in Section L, e.g., 'Tech_Vol1.pdf', 'Cost_Worksheets.xlsx'",
+      "colorPrinting": "Black and White recommended, color allowed for graphics only."
+    },
+    "submission": {
+      "method": "Electronic via PIEE Solicitation Module",
+      "portal": "https://piee.eb.mil",
+      "email": "Not permitted for final submission.",
+      "copies": {
+        "electronic": 1,
+        "hard": 0
+      },
+      "dueDate": "2023-11-16 17:00 ET",
+      "timeZone": "ET",
+      "questionsDue": "2023-11-02 17:00 ET",
+      "modsAllowed": true,
+      "lateProposals": "Strictly Not Accepted (FAR 52.212-1(f))"
+    },
+    "volume_structure": [
+      {
+        "name": "Technical Proposal (Vol 1)",
+        "pageLimit": 50,
+        "font": "Arial 12pt",
+        "margins": "1 inch",
+        "fileName": "Tech_Vol1.pdf"
+      },
+      {
+        "name": "Cost/Price Proposal (Vol 2)",
+        "pageLimit": "20 (for narrative, worksheets separate)",
+        "font": "Arial 12pt",
+        "margins": "1 inch",
+        "fileName": "Cost_Vol2.pdf, Cost_Worksheets.xlsx"
+      }
+    ],
+    "content_requirements": [
+      {
+        "volume": "Technical Proposal (Vol 1)",
+        "item": "Executive Summary",
+        "details": "Max 2 pages"
+      },
+      {
+        "volume": "Technical Proposal (Vol 1)",
+        "item": "Technical Approach",
+        "details": "Shall trace directly to the SOW requirements"
+      },
+      {
+        "volume": "Technical Proposal (Vol 1)",
+        "item": "Management Plan",
+        "details": "Shall identify all key personnel"
+      },
+      {
+        "volume": "Technical Proposal (Vol 1)",
+        "item": "Past Performance",
+        "details": "Max 5 references"
+      },
+      {
+        "volume": "Cost/Price Proposal (Vol 2)",
+        "item": "Pricing worksheets",
+        "details": "Shall be submitted in Excel format"
+      },
+      {
+        "volume": "Cost/Price Proposal (Vol 2)",
+        "item": "Basis of Estimate (BOE)",
+        "details": "Shall be provided for all T&M/Labor Hour elements"
+      },
+      {
+        "volume": "Cost/Price Proposal (Vol 2)",
+        "item": "Certified cost/price data",
+        "details": "Shall be provided if proposal value exceeds $2M"
+      },
+      {
+        "item": "SF1449/SF33 cover sheet",
+        "details": "Shall be completed"
+      },
+      {
+        "item": "Signed representations and certifications",
+        "details": "From Section K, shall be included"
+      },
+      {
+        "item": "All amendments",
+        "details": "Shall be acknowledged"
+      },
+      {
+        "item": "File names",
+        "details": "Shall exactly match specified format"
+      },
+      {
+        "item": "Page numbering",
+        "details": "Shall be continuous within each volume"
+      },
+      {
+        "item": "Extraneous marketing material",
+        "details": "Shall not be included"
+      }
+    ]
+  },
+  "section_m": {
+    "evaluationApproach": {
+      "awardType": "Unable to Determine - Section M Content Not Readable",
+      "ratings": {
+        "adjectival": [],
+        "color": [],
+        "numerical": "Unable to Determine"
+      },
+      "relativeImportance": "Unable to Determine"
+    },
+    "factors": [
+      {
+        "name": "Technical",
+        "weight": "Unable to Determine",
+        "subfactors": [],
+        "discriminators": [],
+        "proposalEvidence": []
+      },
+      {
+        "name": "Past Performance",
+        "weight": "Unable to Determine",
+        "subfactors": [],
+        "discriminators": [],
+        "proposalEvidence": []
+      }
+    ],
+    "price": {
+      "priceEvaluation": "Unable to Determine",
+      "mostProbableCost": false,
+      "tradeoffAuthority": false
+    }
+  },
+  "source_documents": [
+    {
+      "filename": "Section L - Instructions to Offerors.pdf",
+      "type": "section_l",
+      "section": "section_l"
+    },
+    {
+      "filename": "Section M - Evaluation Factors.pdf",
+      "type": "section_m",
+      "section": "section_m"
+    }
+  ]
+}

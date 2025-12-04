@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from fedops_core.db.engine import get_db
-from fedops_core.db.models import OpportunityPipeline, Opportunity
+from fedops_core.db.models import OpportunityPipeline, Opportunity, OpportunityScore
 
 router = APIRouter(
     prefix="/api/v1/pipeline",
@@ -52,8 +52,13 @@ async def watch_opportunity(opportunity_id: int, db: AsyncSession = Depends(get_
     return pipeline_item
 
 @router.get("/")
-async def get_pipeline(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(OpportunityPipeline))
+async def get_pipeline(include_archived: bool = Query(False), db: AsyncSession = Depends(get_db)):
+    # Filter archived items unless explicitly requested
+    query = select(OpportunityPipeline)
+    if not include_archived:
+        query = query.filter(OpportunityPipeline.archived == False)
+    
+    result = await db.execute(query)
     items = result.scalars().all()
     # Enrich with opportunity and proposal details
     enriched_result = []
@@ -66,6 +71,31 @@ async def get_pipeline(db: AsyncSession = Depends(get_db)):
         proposal_result = await db.execute(select(Proposal).filter(Proposal.opportunity_id == item.opportunity_id))
         proposal = proposal_result.scalar_one_or_none()
         
+        # Get opportunity score if exists
+        score_result = await db.execute(select(OpportunityScore).filter(OpportunityScore.opportunity_id == item.opportunity_id))
+        score = score_result.scalar_one_or_none()
+        
+        # Get bid criteria if exists (this is the score shown on Bid Decision page)
+        from fedops_core.db.shipley_models import BidNoGidCriteria
+        bid_criteria_result = await db.execute(select(BidNoGidCriteria).filter(BidNoGidCriteria.opportunity_id == item.opportunity_id))
+        bid_criteria = bid_criteria_result.scalar_one_or_none()
+        
+        # Prioritize scores: 1) Submitted bid_decision_score, 2) Bid Criteria score, 3) Automated analysis score
+        display_score = None
+        score_source = None
+        if proposal and proposal.bid_decision_score is not None:
+            # User has submitted their official decision - use that score
+            display_score = proposal.bid_decision_score
+            score_source = "bid_decision"
+        elif bid_criteria and bid_criteria.weighted_score is not None:
+            # Bid criteria exists (shown on Bid Decision page) - use that
+            display_score = bid_criteria.weighted_score  
+            score_source = "bid_criteria"
+        elif score and score.weighted_score is not None:
+            # Fall back to initial automated analysis score
+            display_score = score.weighted_score
+            score_source = "automated_analysis"
+        
         enriched_result.append({
             "pipeline": item,
             "opportunity": opp,
@@ -74,7 +104,13 @@ async def get_pipeline(db: AsyncSession = Depends(get_db)):
                 "shipley_phase": proposal.shipley_phase if proposal else None,
                 "capture_manager_id": proposal.capture_manager_id if proposal else None,
                 "bid_decision_score": proposal.bid_decision_score if proposal else None
-            } if proposal else None
+            } if proposal else None,
+            "score": {
+                "weighted_score": score.weighted_score if score else None,
+                "go_no_go_decision": score.go_no_go_decision if score else None
+            } if score else None,
+            "display_score": display_score,
+            "score_source": score_source
         })
     return enriched_result
 
@@ -122,3 +158,54 @@ async def unwatch_opportunity(opportunity_id: int, db: AsyncSession = Depends(ge
     await db.delete(item)
     await db.commit()
     return {"message": "Stopped watching opportunity"}
+
+@router.post("/{opportunity_id}/archive")
+async def archive_opportunity(opportunity_id: int, archived_by: str = Query("system"), db: AsyncSession = Depends(get_db)):
+    """Archive a pipeline item - removes from active view but keeps the record"""
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Pipeline item not found")
+    
+    item.archived = True
+    item.archived_at = datetime.utcnow()
+    item.archived_by = archived_by
+    
+    await db.commit()
+    await db.refresh(item)
+    return {"message": "Opportunity archived", "item": item}
+
+@router.post("/{opportunity_id}/unarchive")
+async def unarchive_opportunity(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+    """Unarchive a pipeline item - returns it to active view"""
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Pipeline item not found")
+    
+    item.archived = False
+    item.archived_at = None
+    item.archived_by = None
+    
+    await db.commit()
+    await db.refresh(item)
+    return {"message": "Opportunity unarchived", "item": item}
+
+@router.get("/archived")
+async def get_archived_pipeline(db: AsyncSession = Depends(get_db)):
+    """Get only archived pipeline items"""
+    result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.archived == True))
+    items = result.scalars().all()
+    
+    # Enrich with opportunity details
+    enriched_result = []
+    for item in items:
+        opp_result = await db.execute(select(Opportunity).filter(Opportunity.id == item.opportunity_id))
+        opp = opp_result.scalar_one_or_none()
+        
+        enriched_result.append({
+            "pipeline": item,
+            "opportunity": opp
+        })
+    
+    return enriched_result

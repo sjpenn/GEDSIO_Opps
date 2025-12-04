@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
 import { AgentControlPanel } from '@/components/AgentControlPanel'
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink } from "lucide-react"
+import { Search, Filter, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink, Upload, AlertTriangle } from "lucide-react"
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils"
 
@@ -36,6 +37,8 @@ export default function OpportunitiesPage() {
   const [loadingPartners, setLoadingPartners] = useState(false)
   const [showPartnerMatches, setShowPartnerMatches] = useState(false)
   const [pipelineItems, setPipelineItems] = useState<any[]>([])
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
@@ -197,6 +200,29 @@ export default function OpportunitiesPage() {
     fetchOpportunities();
   }, [searchParams.skip, searchParams.keywords, searchParams.naics, searchParams.setAside, searchParams.active, searchParams.type, searchParams.postedFrom, searchParams.postedTo]);
 
+  const { opportunityId } = useParams();
+  const navigate = useNavigate();
+
+  // Fetch specific opportunity if ID is in URL
+  useEffect(() => {
+    if (opportunityId) {
+      const fetchOne = async () => {
+        try {
+          const res = await fetch(`/api/v1/opportunities/${opportunityId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setSelectedOpp(data);
+          }
+        } catch (e) {
+          console.error("Failed to fetch opportunity", e);
+        }
+      };
+      fetchOne();
+    } else {
+      setSelectedOpp(null);
+    }
+  }, [opportunityId]);
+
   const fetchComments = async (oppId: number) => {
     try {
       const response = await fetch(`/api/v1/opportunities/${oppId}/comments`)
@@ -309,6 +335,36 @@ export default function OpportunitiesPage() {
     }
   };
 
+  const handleDeleteOpportunity = async () => {
+    if (!selectedOpp) return;
+    
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/opportunities/${selectedOpp.id}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Opportunity deleted successfully. Removed ${data.summary.deleted_counts.files} files, ${data.summary.deleted_counts.proposals} proposals, and related data.`);
+        setShowDeleteDialog(false);
+        setSelectedOpp(null);
+        navigate('/opportunities');
+        // Refresh the list
+        fetchOpportunities();
+        fetchPipelineData();
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete opportunity: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error("Failed to delete opportunity", err);
+      alert("An error occurred while deleting the opportunity");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchParams(prev => ({ ...prev, skip: 0 })); // Reset to first page on new search
@@ -325,6 +381,10 @@ export default function OpportunitiesPage() {
           <h2 className="text-3xl font-bold tracking-tight">Opportunities</h2>
           <p className="text-muted-foreground">Search and manage federal opportunities.</p>
         </div>
+        <Button onClick={() => navigate('/upload-opportunity')} className="gap-2">
+          <Upload className="h-4 w-4" />
+          Upload Opportunity
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -635,13 +695,24 @@ export default function OpportunitiesPage() {
       </div>
 
       {/* Details Dialog */}
-      <Dialog open={!!selectedOpp} onOpenChange={(open) => !open && setSelectedOpp(null)}>
+      <Dialog 
+        open={!!selectedOpp} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedOpp(null);
+            navigate('/opportunities');
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col p-0 gap-0">
           {selectedOpp && (
             <>
               <div className="p-6 border-b sticky top-0 bg-background z-10 flex justify-between items-start">
                 <div className="space-y-1 pr-8">
                   <DialogTitle className="text-2xl font-bold leading-tight">{selectedOpp.title}</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Detailed information about this opportunity including description, contacts, resources, and analysis
+                  </DialogDescription>
                   <div className="flex flex-wrap gap-2 mt-2">
                      <Badge variant="secondary" className="font-mono">
                       {selectedOpp.solicitation_number}
@@ -675,12 +746,28 @@ export default function OpportunitiesPage() {
                     {loadingPartners ? 'Searching...' : 'Find Partners'}
                   </Button>
                   <Button 
+                    variant="default" 
+                    onClick={() => navigate(`/teams?opportunityId=${selectedOpp.id}`)}
+                    className="gap-2"
+                  >
+                    <Users className="h-4 w-4" /> Build Team
+                  </Button>
+                  <Button 
                     variant="outline" 
                     onClick={handleWatchOpportunity}
                     className="gap-2"
                   >
                     <Eye className="h-4 w-4" /> Watch Opportunity
                   </Button>
+                  {selectedOpp.source && selectedOpp.source !== 'SAM.gov' && (
+                    <Button 
+                      variant="destructive" 
+                      onClick={() => setShowDeleteDialog(true)}
+                      className="gap-2 ml-auto"
+                    >
+                      <Trash2 className="h-4 w-4" /> Delete
+                    </Button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-muted/30 p-4 rounded-lg border">
@@ -719,7 +806,7 @@ export default function OpportunitiesPage() {
                         View Full Description on SAM.gov <ExternalLink className="h-3 w-3" />
                       </a>
                     ) : (
-                      selectedOpp.description
+                      stripHtml(selectedOpp.description || '')
                     )}
                   </div>
                 </div>
@@ -923,11 +1010,78 @@ export default function OpportunitiesPage() {
           <div className="p-4 border-b flex justify-between items-center">
             <div>
               <DialogTitle>Files & AI Analysis</DialogTitle>
-              <DialogDescription>For: {selectedOpp?.title}</DialogDescription>
+              <DialogDescription>
+                Manage uploaded files and run AI analysis for: {selectedOpp?.title}
+              </DialogDescription>
             </div>
           </div>
           <div className="flex-1 overflow-hidden p-4">
              {selectedOpp && <FileManagementPage opportunityId={selectedOpp.id} />}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Opportunity?
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the opportunity and all related data.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 py-4">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-md p-4 space-y-2">
+              <p className="text-sm font-medium">The following will be removed:</p>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>All uploaded files and documents</li>
+                <li>Proposals and proposal volumes</li>
+                <li>Requirements and artifacts</li>
+                <li>Pipeline entries</li>
+                <li>Comments and activity logs</li>
+                <li>Scores and analysis data</li>
+              </ul>
+            </div>
+            
+            {selectedOpp && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-sm font-medium mb-1">Opportunity:</p>
+                <p className="text-sm text-muted-foreground">{selectedOpp.title}</p>
+                <p className="text-xs text-muted-foreground mt-1">ID: {selectedOpp.notice_id}</p>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteOpportunity}
+              disabled={deleting}
+              className="gap-2"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete Permanently
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

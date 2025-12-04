@@ -73,44 +73,18 @@ async def list_opportunities(
     logger.error(f"DEBUG: list_opportunities called with skip={skip}, limit={limit}, active={active}, keywords={keywords}")
     logger.info(f"list_opportunities called with skip={skip}, limit={limit}")
     
-    # Only fetch from SAM.gov if keywords are provided (explicit search)
-    # Don't fetch on every page load - use local DB for browsing
-    should_fetch_sam = (keywords is not None and keywords.strip() != "")
+    # Only fetch from SAM.gov if keywords are provided OR if date range is specified
+    # This ensures we populate the DB with recent opportunities on first load
+    should_fetch_sam = (keywords is not None and keywords.strip() != "") or (postedFrom is not None and postedTo is not None)
     
     if should_fetch_sam and settings.SAM_API_KEY:
         try:
-            # Date Cycling Strategy: Fetch by year to ensure API coverage
-            # We will fetch from current year back 12 years
-            current_year = datetime.now().year
-            start_year = current_year - 12
-            years = range(current_year, start_year - 1, -1)
+            all_opportunities_data = []
             
-            async def fetch_year(year: int, base_params: dict):
-                year_params = base_params.copy()
-                year_params["postedFrom"] = f"01/01/{year}"
-                year_params["postedTo"] = f"12/31/{year}"
-                # Remove active param from API call to get everything
-                if "active" in year_params:
-                    del year_params["active"]
-                    
-                try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        logger.info(f"Fetching year {year} with params: {year_params}")
-                        resp = await client.get(SAM_API_URL, params=year_params)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            return data.get("opportunitiesData", [])
-                        else:
-                            logger.warning(f"Failed to fetch year {year}: {resp.status_code}")
-                            return []
-                except Exception as e:
-                    logger.error(f"Error fetching year {year}: {e}")
-                    return []
-
             # Prepare base params
             base_params = {
                 "api_key": settings.SAM_API_KEY,
-                "limit": 1000, # Fetch more per year to ensure we find it
+                "limit": 1000, 
                 "offset": 0
             }
             if ptype:
@@ -118,23 +92,62 @@ async def list_opportunities(
             if keywords:
                 base_params["title"] = keywords
             if naics:
-                # Split comma-separated string into list for API
                 base_params["ncode"] = [n.strip() for n in naics.split(",") if n.strip()]
             if setAside:
                 base_params["setAside"] = [s.strip() for s in setAside.split(",") if s.strip()]
 
-            # Execute parallel requests
-            # Limit concurrency to avoid rate limits (e.g., 5 at a time)
-            all_opportunities_data = []
-            chunk_size = 5
-            for i in range(0, len(years), chunk_size):
-                chunk_years = years[i:i + chunk_size]
-                tasks = [fetch_year(year, base_params) for year in chunk_years]
-                results = await asyncio.gather(*tasks)
-                for res in results:
-                    all_opportunities_data.extend(res)
+            # If we have specific dates, use them directly instead of the 12-year cycle
+            if postedFrom and postedTo:
+                logger.info(f"Fetching SAM.gov with date range: {postedFrom} to {postedTo}")
+                base_params["postedFrom"] = postedFrom
+                base_params["postedTo"] = postedTo
+                
+                # Remove active param from API call to get everything within date range
+                # We filter by active status locally later
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(SAM_API_URL, params=base_params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        all_opportunities_data = data.get("opportunitiesData", [])
+                    else:
+                        logger.warning(f"Failed to fetch from SAM.gov: {resp.status_code}")
             
-            logger.info(f"Total raw opportunities found from all years: {len(all_opportunities_data)}")
+            else:
+                # Date Cycling Strategy: Fetch by year to ensure API coverage for broad keyword searches
+                current_year = datetime.now().year
+                start_year = current_year - 12
+                years = range(current_year, start_year - 1, -1)
+                
+                async def fetch_year(year: int, base_params: dict):
+                    year_params = base_params.copy()
+                    year_params["postedFrom"] = f"01/01/{year}"
+                    year_params["postedTo"] = f"12/31/{year}"
+                        
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            logger.info(f"Fetching year {year} with params: {year_params}")
+                            resp = await client.get(SAM_API_URL, params=year_params)
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                return data.get("opportunitiesData", [])
+                            else:
+                                logger.warning(f"Failed to fetch year {year}: {resp.status_code}")
+                                return []
+                    except Exception as e:
+                        logger.error(f"Error fetching year {year}: {e}")
+                        return []
+
+                # Execute parallel requests
+                chunk_size = 5
+                for i in range(0, len(years), chunk_size):
+                    chunk_years = years[i:i + chunk_size]
+                    tasks = [fetch_year(year, base_params) for year in chunk_years]
+                    results = await asyncio.gather(*tasks)
+                    for res in results:
+                        all_opportunities_data.extend(res)
+            
+            logger.info(f"Total raw opportunities found: {len(all_opportunities_data)}")
 
             # Deduplicate by noticeId
             unique_opps = {}
@@ -156,69 +169,88 @@ async def list_opportunities(
             logger.info(f"Final filtered opportunities: {len(opportunities_data)}")
 
             for opp_data in opportunities_data:
-                # Map SAM.gov data to our model
-                notice_id = opp_data.get("noticeId")
-                
-                # Check if description is a URL or text
-                raw_description = opp_data.get("description", "")
-                description_text = raw_description
-                
-                # If it looks like a URL to the description endpoint, fetch the actual text
-                if raw_description and (raw_description.startswith("http") and "noticedesc" in raw_description):
-                    if notice_id:
-                        fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
-                        if fetched_desc:
-                            description_text = fetched_desc
-                
-                # Check if exists
-                stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
-                result = await db.execute(stmt)
-                existing_opp = result.scalar_one_or_none()
-                
-                # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
+                try:
+                    # Map SAM.gov data to our model
+                    notice_id = opp_data.get("noticeId")
+                    
+                    # Check if description is a URL or text
+                    raw_description = opp_data.get("description", "")
+                    description_text = raw_description
+                    
+                    # If it looks like a URL to the description endpoint, fetch the actual text
+                    if raw_description and (raw_description.startswith("http") and "noticedesc" in raw_description):
+                        if notice_id:
+                            fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
+                            if fetched_desc:
+                                description_text = fetched_desc
+                    
+                    # Check if exists
+                    stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
+                    result = await db.execute(stmt)
+                    existing_opp = result.scalar_one_or_none()
+                    
+                    # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
 
-                opp_dict = {
-                    "notice_id": notice_id,
-                    "title": opp_data.get("title"),
-                    "solicitation_number": opp_data.get("solicitationNumber"),
-                    "department": opp_data.get("department"),
-                    "sub_tier": opp_data.get("subTier"),
-                    "office": opp_data.get("office"),
-                    "posted_date": parse_date(opp_data.get("postedDate")),
-                    "type": opp_data.get("type"),
-                    "base_type": opp_data.get("baseType"),
-                    "archive_type": opp_data.get("archiveType"),
-                    "archive_date": parse_date(opp_data.get("archiveDate")),
-                    "type_of_set_aside_description": opp_data.get("typeOfSetAsideDescription"),
-                    "type_of_set_aside": opp_data.get("typeOfSetAside"),
-                    "response_deadline": parse_date(opp_data.get("responseDeadLine")),
-                    "naics_code": opp_data.get("naicsCode"),
-                    "classification_code": opp_data.get("classificationCode"),
+                    opp_dict = {
+                        "notice_id": notice_id,
+                        "title": opp_data.get("title"),
+                        "solicitation_number": opp_data.get("solicitationNumber"),
+                        "department": opp_data.get("department"),
+                        "sub_tier": opp_data.get("subTier"),
+                        "office": opp_data.get("office"),
+                        "posted_date": parse_date(opp_data.get("postedDate")),
+                        "type": opp_data.get("type"),
+                        "base_type": opp_data.get("baseType"),
+                        "archive_type": opp_data.get("archiveType"),
+                        "archive_date": parse_date(opp_data.get("archiveDate")),
+                        "type_of_set_aside_description": opp_data.get("typeOfSetAsideDescription"),
+                        "type_of_set_aside": opp_data.get("typeOfSetAside"),
+                        "response_deadline": parse_date(opp_data.get("responseDeadLine")),
+                        "naics_code": opp_data.get("naicsCode"),
+                        "classification_code": opp_data.get("classificationCode"),
 
-                    "active": opp_data.get("active"),
-                    "award": opp_data.get("award"),
-                    "point_of_contact": opp_data.get("pointOfContact"),
-                    "description": description_text,
-                    "organization_type": opp_data.get("organizationType"),
-                    "office_address": opp_data.get("officeAddress"),
-                    "place_of_performance": opp_data.get("placeOfPerformance"),
-                    "additional_info_link": opp_data.get("additionalInfoLink"),
-                    "ui_link": opp_data.get("uiLink"),
-                    "links": opp_data.get("links"),
-                    "resource_links": opp_data.get("resourceLinks"),
-                    "full_response": opp_data
-                }
-                
-                if existing_opp:
-                    for key, value in opp_dict.items():
-                        setattr(existing_opp, key, value)
-                else:
-                    new_opp = OpportunityModel(**opp_dict)
-                    db.add(new_opp)
+                        "active": opp_data.get("active"),
+                        "award": opp_data.get("award"),
+                        "point_of_contact": opp_data.get("pointOfContact"),
+                        "description": description_text,
+                        "organization_type": opp_data.get("organizationType"),
+                        "office_address": opp_data.get("officeAddress"),
+                        "place_of_performance": opp_data.get("placeOfPerformance"),
+                        "additional_info_link": opp_data.get("additionalInfoLink"),
+                        "ui_link": opp_data.get("uiLink"),
+                        "links": opp_data.get("links"),
+                        "resource_links": opp_data.get("resourceLinks"),
+                        "full_response": opp_data
+                    }
+                    
+                    if existing_opp:
+                        for key, value in opp_dict.items():
+                            setattr(existing_opp, key, value)
+                    else:
+                        new_opp = OpportunityModel(**opp_dict)
+                        db.add(new_opp)
+                    
+                    # Flush to catch integrity errors for this specific opportunity
+                    await db.flush()
+                    
+                except Exception as e:
+                    # Handle duplicate key errors gracefully
+                    from sqlalchemy.exc import IntegrityError
+                    if isinstance(e, IntegrityError) and "duplicate key" in str(e).lower():
+                        logger.warning(f"Skipping duplicate opportunity with notice_id: {notice_id}")
+                        await db.rollback()
+                        # Start a new transaction
+                        continue
+                    else:
+                        # Re-raise other exceptions
+                        logger.error(f"Error processing opportunity {notice_id}: {e}")
+                        await db.rollback()
+                        raise
             
             await db.commit()
             
         except Exception as e:
+            await db.rollback()
             logger.error(f"Error fetching from SAM.gov: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -425,3 +457,131 @@ async def delete_opportunity_comment(id: int, comment_id: int, db: AsyncSession 
     await db.delete(comment)
     await db.commit()
     return {"ok": True}
+
+
+@router.delete("/{id}")
+async def delete_opportunity(id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Delete an opportunity and all related data.
+    
+    This will cascade delete:
+    - Stored files
+    - Opportunity scores
+    - Proposals (and their volumes, requirements, artifacts)
+    - Pipeline entries
+    - Comments
+    - Agent activity logs
+    
+    Typically used for manually uploaded opportunities.
+    SAM.gov opportunities can also be deleted if needed.
+    """
+    from fedops_core.db.models import (
+        OpportunityScore, Proposal, OpportunityPipeline,
+        AgentActivityLog, StoredFile
+    )
+    
+    # Get the opportunity
+    stmt = select(OpportunityModel).where(OpportunityModel.id == id)
+    result = await db.execute(stmt)
+    opportunity = result.scalar_one_or_none()
+    
+    if not opportunity:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    
+    # Track what we're deleting for the response
+    deletion_summary = {
+        "opportunity_id": id,
+        "notice_id": opportunity.notice_id,
+        "title": opportunity.title,
+        "source": opportunity.source,
+        "deleted_counts": {}
+    }
+    
+    try:
+        # Delete stored files
+        files_stmt = select(StoredFile).where(StoredFile.opportunity_id == id)
+        files_result = await db.execute(files_stmt)
+        files = files_result.scalars().all()
+        file_count = len(files)
+        
+        for file in files:
+            # Delete physical file if it exists
+            if file.file_path and os.path.exists(file.file_path):
+                try:
+                    os.remove(file.file_path)
+                except Exception as e:
+                    logger.warning(f"Could not delete file {file.file_path}: {e}")
+            await db.delete(file)
+        
+        deletion_summary["deleted_counts"]["files"] = file_count
+        
+        # Delete opportunity scores
+        score_stmt = select(OpportunityScore).where(OpportunityScore.opportunity_id == id)
+        score_result = await db.execute(score_stmt)
+        score = score_result.scalar_one_or_none()
+        if score:
+            await db.delete(score)
+            deletion_summary["deleted_counts"]["scores"] = 1
+        else:
+            deletion_summary["deleted_counts"]["scores"] = 0
+        
+        # Delete proposals (cascade will handle volumes, requirements, artifacts)
+        proposals_stmt = select(Proposal).where(Proposal.opportunity_id == id)
+        proposals_result = await db.execute(proposals_stmt)
+        proposals = proposals_result.scalars().all()
+        proposal_count = len(proposals)
+        
+        for proposal in proposals:
+            await db.delete(proposal)
+        
+        deletion_summary["deleted_counts"]["proposals"] = proposal_count
+        
+        # Delete pipeline entries
+        pipeline_stmt = select(OpportunityPipeline).where(OpportunityPipeline.opportunity_id == id)
+        pipeline_result = await db.execute(pipeline_stmt)
+        pipeline = pipeline_result.scalar_one_or_none()
+        if pipeline:
+            await db.delete(pipeline)
+            deletion_summary["deleted_counts"]["pipeline_entries"] = 1
+        else:
+            deletion_summary["deleted_counts"]["pipeline_entries"] = 0
+        
+        # Delete comments
+        comments_stmt = select(OpportunityCommentModel).where(OpportunityCommentModel.opportunity_id == id)
+        comments_result = await db.execute(comments_stmt)
+        comments = comments_result.scalars().all()
+        comment_count = len(comments)
+        
+        for comment in comments:
+            await db.delete(comment)
+        
+        deletion_summary["deleted_counts"]["comments"] = comment_count
+        
+        # Delete agent activity logs
+        logs_stmt = select(AgentActivityLog).where(AgentActivityLog.opportunity_id == id)
+        logs_result = await db.execute(logs_stmt)
+        logs = logs_result.scalars().all()
+        log_count = len(logs)
+        
+        for log in logs:
+            await db.delete(log)
+        
+        deletion_summary["deleted_counts"]["agent_logs"] = log_count
+        
+        # Finally, delete the opportunity itself
+        await db.delete(opportunity)
+        
+        await db.commit()
+        
+        logger.info(f"Deleted opportunity {id} ({opportunity.notice_id}) and all related data")
+        
+        return {
+            "message": "Opportunity deleted successfully",
+            "summary": deletion_summary
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting opportunity {id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete opportunity: {str(e)}")
+

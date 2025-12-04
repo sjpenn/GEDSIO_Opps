@@ -7,7 +7,7 @@ from sqlalchemy import select
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from fedops_core.db.models import Proposal, Opportunity, ShipleyPhase
+from fedops_core.db.models import Proposal, Opportunity, ShipleyPhase, OpportunityPipeline
 from fedops_core.db.shipley_models import ReviewGate, BidNoGidCriteria
 
 
@@ -133,6 +133,15 @@ class GateValidationService:
         # Transition to Phase 3 if BID
         if decision == "BID":
             proposal.shipley_phase = ShipleyPhase.PHASE_3_CAPTURE_PLANNING.value
+            
+            # Also update Pipeline Stage
+            pipeline_result = await db.execute(
+                select(OpportunityPipeline).where(OpportunityPipeline.opportunity_id == opportunity_id)
+            )
+            pipeline_item = pipeline_result.scalar_one_or_none()
+            if pipeline_item:
+                pipeline_item.stage = "PROPOSAL_DEV"
+                pipeline_item.status = "GO"
         
         proposal.updated_at = datetime.utcnow()
         
@@ -343,6 +352,18 @@ class GateValidationService:
         
         proposal.shipley_phase = to_phase
         proposal.updated_at = datetime.utcnow()
+        
+        # Sync with Pipeline Stage
+        pipeline_result = await db.execute(
+            select(OpportunityPipeline).where(OpportunityPipeline.opportunity_id == proposal.opportunity_id)
+        )
+        pipeline_item = pipeline_result.scalar_one_or_none()
+        if pipeline_item:
+            if to_phase in [ShipleyPhase.PHASE_3_CAPTURE_PLANNING.value, ShipleyPhase.PHASE_4_PROPOSAL_PLANNING.value, ShipleyPhase.PHASE_5_PROPOSAL_DEVELOPMENT.value]:
+                pipeline_item.stage = "PROPOSAL_DEV"
+            elif to_phase == ShipleyPhase.PHASE_6_POST_SUBMITTAL.value:
+                pipeline_item.stage = "SUBMISSION"
+                pipeline_item.status = "SUBMITTED"
         
         await db.commit()
         

@@ -11,16 +11,13 @@ import google.generativeai as genai
 
 from fedops_core.db.models import StoredFile, Opportunity
 from fedops_core.settings import settings
-
-# Configure Gemini
-if settings.GOOGLE_API_KEY:
-    genai.configure(api_key=settings.GOOGLE_API_KEY)
+from fedops_core.services.ai_service import AIService
 
 class PageLimitExtractor:
     """Extract page limits from Section L and other solicitation sections"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel(settings.LLM_MODEL)
+        self.ai_service = AIService()
     
     async def extract_page_limits(
         self, 
@@ -87,9 +84,28 @@ class PageLimitExtractor:
         prompt = self._build_extraction_prompt(section_l_content)
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            page_limits = self._parse_ai_response(response.text)
-            return page_limits
+            # Use AIService to get the response
+            # Note: AIService.analyze_opportunity returns a dict (JSON), so we don't need _parse_ai_response if it works well
+            # But _parse_ai_response handles raw text too, so let's see what AIService gives us.
+            # Actually, AIService.analyze_opportunity tries to return a dict.
+            
+            result = await self.ai_service.analyze_opportunity(prompt)
+            
+            if result and isinstance(result, dict) and result.get('status') != 'error':
+                 # Validate structure matches what we expect
+                validated = {}
+                for key, value in result.items():
+                    if isinstance(value, dict) and 'limit' in value and 'source' in value:
+                        try:
+                            validated[key] = {
+                                'limit': int(value['limit']),
+                                'source': str(value['source'])
+                            }
+                        except (ValueError, TypeError):
+                            continue
+                return validated
+            
+            return {}
         except Exception as e:
             print(f"Error extracting page limits from {document.filename}: {e}")
             return {}

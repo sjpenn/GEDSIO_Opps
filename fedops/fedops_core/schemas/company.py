@@ -84,6 +84,14 @@ class Entity(EntityBase):
     created_at: datetime
     updated_at: datetime
     similarity_score: Optional[float] = None
+    
+    # Partner Search Fields
+    revenue: Optional[float] = None
+    capabilities: Optional[List[dict]] = None
+    locations: Optional[List[dict]] = None
+    web_addresses: Optional[List[dict]] = None
+    personnel_count: Optional[int] = None
+    business_types: Optional[List[dict]] = None
 
     class Config:
         from_attributes = True

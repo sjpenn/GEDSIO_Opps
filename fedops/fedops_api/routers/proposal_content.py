@@ -231,3 +231,20 @@ def _format_as_markdown(content_data: Dict[str, Any]) -> str:
             lines.append("")
     
     return "\n".join(lines)
+
+
+@router.post("/proposals/{proposal_id}/generate-sources-sought")
+async def generate_sources_sought(
+    proposal_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate a Sources Sought / RFI response"""
+    try:
+        result = await ProposalContentService.generate_sources_sought(db, proposal_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

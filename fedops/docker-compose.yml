@@ -8,7 +8,10 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/fedops
+      - TZ=America/New_York
+      - DATABASE_URL=postgresql+asyncpg://fedops:fedops@db:5432/fedops
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - db
     volumes:
@@ -20,6 +23,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=fedops
+      - TZ=America/New_York
     ports:
       - "5432:5432"
     volumes:
@@ -28,6 +32,8 @@ services:
   frontend:
     image: node:22-alpine
     working_dir: /app
+    environment:
+      - TZ=America/New_York
     volumes:
       - ./frontend:/app
       - /app/node_modules

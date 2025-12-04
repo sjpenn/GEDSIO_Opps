@@ -24,24 +24,32 @@ class OrchestratorAgent(BaseAgent):
             # ingestion_agent = IngestionAgent(self.db)
             # await ingestion_agent.execute(opportunity_id)
 
-            # 2. Document Analysis (Sequential)
+            # 2. Document Analysis (Sequential) - This now includes extraction
+            await self.log_activity(opportunity_id, "DOCUMENT_ANALYSIS", "IN_PROGRESS")
             doc_agent = DocumentAnalysisAgent(self.db)
             doc_results = await doc_agent.execute(opportunity_id)
+            
+            # Extract the extracted_data to pass to other agents
+            extracted_data = doc_results.get("extracted_data", {})
+            
+            await self.log_activity(opportunity_id, "EXTRACTION_COMPLETE", "SUCCESS", {
+                "sections_extracted": [k for k, v in extracted_data.items() if v and k != 'source_documents'] if extracted_data else []
+            })
 
-            # 3. Concurrent Analysis
+            # 3. Concurrent Analysis - Pass extracted_data to all agents
             await self.log_activity(opportunity_id, "CONCURRENT_ANALYSIS", "IN_PROGRESS")
             
-            # Compliance & Security
+            # Compliance & Security (with extracted Section H/I/K data)
             comp_agent = ComplianceAgent(self.db)
-            comp_results = await comp_agent.execute(opportunity_id)
+            comp_results = await comp_agent.execute(opportunity_id, extracted_data=extracted_data)
             
-            # Capability
+            # Capability (with extracted SOW and Section M data)
             cap_agent = CapabilityMappingAgent(self.db)
-            cap_results = await cap_agent.execute(opportunity_id)
+            cap_results = await cap_agent.execute(opportunity_id, extracted_data=extracted_data)
             
-            # Financial
+            # Financial (with extracted Section B data)
             fin_agent = FinancialAnalysisAgent(self.db)
-            fin_results = await fin_agent.execute(opportunity_id)
+            fin_results = await fin_agent.execute(opportunity_id, extracted_data=extracted_data)
 
             # 4. Executive Overview Generation
             result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
@@ -67,7 +75,7 @@ class OrchestratorAgent(BaseAgent):
                 "financial_viability_score": fin_results.get("financial_viability_score", 0.0),
                 "strategic_alignment_score": cap_results.get("strategic_alignment_score", 50.0),
                 "data_integrity_score": 100.0,  # Placeholder
-                # AI-generated details
+                # AI-generated details (now includes extracted_data)
                 "financial_details": fin_results.get("details"),
                 "strategic_details": cap_results.get("strategic_details"),
                 "risk_details": comp_results.get("details"),
@@ -78,7 +86,9 @@ class OrchestratorAgent(BaseAgent):
                 # New Analysis Details
                 "solicitation_details": doc_results.get("solicitation_details"),
                 "security_details": comp_results.get("security_details"),
-                "executive_overview": executive_overview
+                "executive_overview": executive_overview,
+                # Store extracted data for reference
+                "extracted_data": extracted_data
             }
             
             final_score = await self.calculate_score(opportunity_id, score_data)
@@ -130,7 +140,7 @@ class OrchestratorAgent(BaseAgent):
         else:
             score_entry.go_no_go_decision = "NO_GO"
         
-        # Store AI-generated details
+        # Store AI-generated details and extracted data
         from datetime import datetime
         score_entry.details = {
             "financial": scores.get("financial_details"),
@@ -142,6 +152,7 @@ class OrchestratorAgent(BaseAgent):
             "solicitation": scores.get("solicitation_details"),
             "security": scores.get("security_details"),
             "executive_overview": scores.get("executive_overview"),
+            "extracted_data": scores.get("extracted_data"),  # NEW: Store extracted document data
             "generated_at": datetime.utcnow().isoformat()
         }
             

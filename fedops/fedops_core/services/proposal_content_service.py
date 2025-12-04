@@ -283,3 +283,12 @@ class ProposalContentService:
         await db.refresh(volume)
         
         return blocks
+
+    @staticmethod
+    async def generate_sources_sought(
+        db: AsyncSession,
+        proposal_id: int
+    ) -> Dict[str, Any]:
+        """Generate a Sources Sought / RFI response"""
+        generator = ProposalContentGenerator(db)
+        return await generator.generate_sources_sought_response(proposal_id)

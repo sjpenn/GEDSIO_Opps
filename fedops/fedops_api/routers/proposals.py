@@ -5,7 +5,8 @@ from sqlalchemy.orm import selectinload
 import uuid
 
 from fedops_core.db.engine import get_db, AsyncSessionLocal
-from fedops_core.db.models import Opportunity, OpportunityScore, Proposal, ProposalVolume
+from fedops_core.db.models import Opportunity, OpportunityScore, Proposal, ProposalVolume, ShipleyPhase
+from fedops_core.services.gate_validation_service import GateValidationService
 from pydantic import BaseModel
 
 router = APIRouter(
@@ -291,6 +292,37 @@ async def generate_proposal(opportunity_id: int, background_tasks: BackgroundTas
     
     await db.commit()
     
+    # Try to advance phase to Proposal Development if prerequisites are met
+    try:
+        # Check if we can move to Phase 5 (Proposal Development)
+        # This requires a BID decision (Phase 3) and potentially Capture Plan (Phase 4)
+        # If we are in Phase 3 or 4, try to move to 5
+        if proposal.shipley_phase in [ShipleyPhase.PHASE_3_CAPTURE_PLANNING.value, ShipleyPhase.PHASE_4_PROPOSAL_PLANNING.value]:
+            # We skip explicit Phase 4 check for now as generation implies we are starting development
+            # But we must respect the GateValidationService checks
+            
+            # First try Phase 3 -> Phase 4
+            if proposal.shipley_phase == ShipleyPhase.PHASE_3_CAPTURE_PLANNING.value:
+                await GateValidationService.enforce_phase_transition(
+                    db, proposal.id, 
+                    ShipleyPhase.PHASE_3_CAPTURE_PLANNING.value,
+                    ShipleyPhase.PHASE_4_PROPOSAL_PLANNING.value
+                )
+                # Refresh to get new phase
+                await db.refresh(proposal)
+                
+            # Then Phase 4 -> Phase 5
+            if proposal.shipley_phase == ShipleyPhase.PHASE_4_PROPOSAL_PLANNING.value:
+                await GateValidationService.enforce_phase_transition(
+                    db, proposal.id,
+                    ShipleyPhase.PHASE_4_PROPOSAL_PLANNING.value,
+                    ShipleyPhase.PHASE_5_PROPOSAL_DEVELOPMENT.value
+                )
+    except Exception as e:
+        print(f"Warning: Could not auto-advance phase: {e}")
+        # Don't fail the request, just log it
+
+    
     # 5. Trigger Background Processing (Documents & Requirements)
     background_tasks.add_task(process_proposal_assets, opportunity_id, proposal.id)
     
@@ -460,16 +492,69 @@ async def generate_all_content(proposal_id: int, db: AsyncSession = Depends(get_
     }
 
 @router.post("/{proposal_id}/extract-requirements")
-async def extract_requirements(proposal_id: int, db: AsyncSession = Depends(get_db)):
+async def extract_requirements(proposal_id: int, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """
     Trigger AI extraction of requirements from all associated documents.
+    Runs in background and returns immediately.
     """
     from fedops_core.services.requirement_extraction_service import RequirementExtractionService
+    from fedops_core.services.extraction_progress import extraction_progress
     
-    service = RequirementExtractionService(db)
-    result = await service.extract_requirements_from_proposal(proposal_id)
+    # Check if extraction is already running
+    current_progress = extraction_progress.get(proposal_id)
+    if current_progress and current_progress.get("status") == "running":
+        return {
+            "status": "already_running",
+            "message": "Extraction is already in progress for this proposal"
+        }
     
-    if result["status"] == "failed":
-        raise HTTPException(status_code=400, detail=result.get("error", "Extraction failed"))
+    # Start extraction in background
+    async def run_extraction():
+        async with AsyncSessionLocal() as bg_db:
+            try:
+                service = RequirementExtractionService(bg_db)
+                result = await service.extract_requirements_from_proposal(proposal_id)
+                print(f"Extraction completed for proposal {proposal_id}: {result}")
+            except Exception as e:
+                print(f"Extraction failed for proposal {proposal_id}: {e}")
+                extraction_progress.fail(proposal_id, str(e))
     
-    return result
+    background_tasks.add_task(run_extraction)
+    
+    return {
+        "status": "started",
+        "message": "Extraction started in background. Use the progress endpoint to check status."
+    }
+
+@router.get("/{proposal_id}/extract-requirements/progress")
+async def get_extraction_progress(proposal_id: int):
+    """
+    Get the current progress of requirement extraction for a proposal.
+    """
+    from fedops_core.services.extraction_progress import extraction_progress
+    
+    progress = extraction_progress.get(proposal_id)
+    
+    if not progress:
+        return {
+            "status": "not_started",
+            "message": "No extraction in progress or completed recently"
+        }
+    
+    # Calculate percentage
+    percentage = 0
+    if progress.get("total_files", 0) > 0:
+        percentage = int((progress.get("processed_files", 0) / progress["total_files"]) * 100)
+    
+    return {
+        "status": progress.get("status"),
+        "percentage": percentage,
+        "current_file": progress.get("current_file"),
+        "processed_files": progress.get("processed_files", 0),
+        "total_files": progress.get("total_files", 0),
+        "filenames": progress.get("filenames", []),
+        "requirements_count": progress.get("requirements_count", 0),
+        "artifacts_count": progress.get("artifacts_count", 0),
+        "error": progress.get("error")
+    }
+

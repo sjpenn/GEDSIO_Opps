@@ -515,9 +515,6 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
                             ) : (
                               <div className="text-sm text-muted-foreground italic">
                                 Click to add content or use Generate button
-                                <div className="mt-2 text-xs font-mono bg-slate-100 p-2 rounded">
-                                  DEBUG: {JSON.stringify(block, null, 2)}
-                                </div>
                               </div>
                             )}
                           </div>

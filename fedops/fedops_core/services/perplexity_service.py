@@ -119,7 +119,8 @@ Return ONLY valid JSON, no other text."""
         
         try:
             logger.info(f"Researching entity: {entity_name}")
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # Extended timeout for deep research
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(
                     self.BASE_URL,
                     json=payload,
@@ -130,6 +131,9 @@ Return ONLY valid JSON, no other text."""
                 
             return self._parse_response(data, entity_name, entity_uei)
             
+        except httpx.TimeoutException:
+            logger.error(f"Perplexity API timed out researching {entity_name}")
+            raise ValueError("Research timed out. The competitor analysis is taking longer than expected. Please try again.")
         except httpx.HTTPStatusError as e:
             logger.error(f"Perplexity API error: {e.response.status_code} - {e.response.text}")
             raise ValueError(f"Perplexity API error: {e.response.status_code}")

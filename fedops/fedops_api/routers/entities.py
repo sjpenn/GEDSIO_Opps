@@ -132,6 +132,21 @@ async def get_partner_entities(
     )
     return result.scalars().all()
 
+@router.get("/recent", response_model=List[schemas.Entity])
+async def get_recent_entities(
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the most recently synced entities"""
+    from sqlalchemy import desc
+    result = await db.execute(
+        select(Entity)
+        .order_by(desc(Entity.last_synced_at))
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
 @router.get("/primary", response_model=schemas.Entity)
 async def get_primary_entity(
     db: AsyncSession = Depends(get_db)

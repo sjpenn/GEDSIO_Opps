@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
@@ -104,7 +104,18 @@ export default function OpportunitiesPage() {
     return pipelineItems.find(item => item.pipeline?.opportunity_id === opportunityId);
   };
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const fetchOpportunities = async () => {
+    // Cancel any pending request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new controller for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       setLoading(true);
       setError(null);
@@ -121,7 +132,10 @@ export default function OpportunitiesPage() {
       queryParams.append('skip', searchParams.skip.toString());
 
       console.log('Fetching opportunities with params:', queryParams.toString());
-      const response = await fetch(`/api/v1/opportunities/?${queryParams.toString()}`);
+      const response = await fetch(`/api/v1/opportunities/?${queryParams.toString()}`, {
+        signal: controller.signal
+      });
+      
       if (!response.ok) {
         throw new Error('Failed to fetch opportunities');
       }
@@ -129,9 +143,16 @@ export default function OpportunitiesPage() {
       setOpportunities(data.items);
       setTotal(data.total);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Fetch aborted');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
-      setLoading(false);
+      // Only turn off loading if this is still the active request
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 

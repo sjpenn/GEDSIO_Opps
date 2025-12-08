@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Loader2, Search, Building2, DollarSign, Calendar, FileText, ExternalLink, X, Settings, Sliders, RefreshCw, Target, History } from 'lucide-react';
+import { Loader2, Search, Building2, DollarSign, Calendar, FileText, X, Settings, Sliders, RefreshCw, Target, History } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Slideout } from "@/components/ui/slideout"
 import { PartnerProfile } from "@/components/PartnerProfile";
 import CompetitorAnalysis from "@/components/CompetitorAnalysis";
 import { Input } from "@/components/ui/input"
@@ -431,6 +432,8 @@ export default function EntitySearchPage() {
 
               <form onSubmit={handleSearch} className="flex gap-2">
                 <Input
+                  id="search-query"
+                  name="search-query"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Company Name..."
@@ -649,14 +652,22 @@ export default function EntitySearchPage() {
                 </CardHeader>
                 
                 <CardContent>
-                  {/* Competitive Analysis Section */}
-                  {showCompetitorAnalysis && (
+                  {/* Competitive Analysis Slideout */}
+                  <Slideout
+                    isOpen={showCompetitorAnalysis}
+                    onClose={() => setShowCompetitorAnalysis(false)}
+                    title={`Competitive Analysis: ${selectedEntity.legal_business_name}`}
+                    width="max-w-4xl" // Wider for analysis content
+                  >
                      <CompetitorAnalysis 
                         entityName={selectedEntity.legal_business_name} 
-                        onClose={() => setShowCompetitorAnalysis(false)}
+                        // We don't need the internal close button as the slideout has one, 
+                        // but we can keep it if we want multiple ways to close.
+                        // passing undefined or handling it.
+                        onClose={() => setShowCompetitorAnalysis(false)} 
                         awards={awards}
                      />
-                  )}
+                  </Slideout>
 
                   {viewProfile ? (
                     <PartnerProfile entity={selectedEntity} />
@@ -675,8 +686,8 @@ export default function EntitySearchPage() {
                             <CardTitle className="text-base">Spending by Agency</CardTitle>
                           </CardHeader>
                           <CardContent>
-                            <div className="h-[300px] w-full min-w-0">
-                              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
+                            <div className="h-[300px] w-full min-w-0" style={{ width: '100%', height: 300 }}>
+                              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={50}>
                                 <BarChart data={chartData} layout="vertical" margin={{ left: 40, right: 20 }}>
                                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#334155" />
                                   <XAxis 

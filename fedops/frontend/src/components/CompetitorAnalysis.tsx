@@ -285,7 +285,7 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
   }
 
   return (
-    <div className="space-y-4 mt-6 p-4 border rounded-lg bg-card/50">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>

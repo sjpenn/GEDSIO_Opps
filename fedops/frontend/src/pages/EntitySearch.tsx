@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Loader2, Search, Building2, DollarSign, Calendar, FileText, ExternalLink, X, Settings, Sliders, RefreshCw } from 'lucide-react';
+import { Loader2, Search, Building2, DollarSign, Calendar, FileText, ExternalLink, X, Settings, Sliders, RefreshCw, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { PartnerProfile } from "@/components/PartnerProfile";
+import CompetitorAnalysis from "@/components/CompetitorAnalysis";
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -106,6 +107,7 @@ export default function EntitySearchPage() {
   const [solicitationDocs, setSolicitationDocs] = useState<any[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [viewProfile, setViewProfile] = useState(false);
+  const [showCompetitorAnalysis, setShowCompetitorAnalysis] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async (uei: string) => {
@@ -544,6 +546,18 @@ export default function EntitySearchPage() {
                         <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
                         Refresh Data
                       </Button>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowCompetitorAnalysis(!showCompetitorAnalysis)}
+                        className={cn(
+                          "text-purple-600 border-purple-200 hover:bg-purple-50",
+                          showCompetitorAnalysis && "bg-purple-100"
+                        )}
+                      >
+                        <Target className="h-4 w-4 mr-2" />
+                        {showCompetitorAnalysis ? "Hide Analysis" : "Research Competitor"}
+                      </Button>
                       {!selectedEntity.is_primary && (
                           <Button 
                               variant="outline"
@@ -566,6 +580,8 @@ export default function EntitySearchPage() {
                 </CardHeader>
                 
                 <CardContent>
+
+
                   {viewProfile ? (
                     <PartnerProfile entity={selectedEntity} />
                   ) : awardsLoading ? (
@@ -829,6 +845,13 @@ export default function EntitySearchPage() {
                         </div>
                       </div>
 
+                      {/* Competitive Analysis Section */}
+                      {showCompetitorAnalysis && selectedEntity && (
+                        <CompetitorAnalysis 
+                          entityName={selectedEntity.legal_business_name}
+                          onClose={() => setShowCompetitorAnalysis(false)}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="text-center py-12 text-muted-foreground">

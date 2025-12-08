@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # External APIs
     SAM_API_KEY: Optional[str] = None
+    PERPLEXITY_API_KEY: Optional[str] = None  # For competitive analysis research
     
     # LLM Providers
     OPENAI_API_KEY: Optional[str] = None

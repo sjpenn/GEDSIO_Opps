@@ -61,6 +61,30 @@ class CompetitiveIntelligence(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PerplexityCompetitorAnalysis(Base):
+    """Competitive analysis from Perplexity API research"""
+    __tablename__ = "perplexity_competitor_analyses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    entity_uei = Column(String, ForeignKey("entities.uei"), nullable=True, index=True)
+    entity_name = Column(String, nullable=False, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
+    
+    overview = Column(Text, nullable=True)
+    market_position = Column(Text, nullable=True)
+    strengths = Column(JSONB, nullable=True)  # List of Strength objects
+    weaknesses = Column(JSONB, nullable=True)  # List of Weakness objects
+    key_differentiators = Column(JSONB, nullable=True)  # List of strings
+    strategies_to_beat = Column(JSONB, nullable=True)  # List of CompetitiveStrategy
+    citations = Column(JSONB, nullable=True)  # List of Citation objects
+    
+    raw_response = Column(Text, nullable=True)  # Full API response for debugging
+    model_used = Column(String, default="sonar-pro")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BidNoGidCriteria(Base):
     """Weighted Bid/No-Bid scoring matrix"""
     __tablename__ = "bid_no_bid_criteria"

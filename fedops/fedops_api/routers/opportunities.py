@@ -28,14 +28,20 @@ async def fetch_description(notice_id: str, api_key: str) -> str:
             "api_key": api_key,
             "noticeid": notice_id
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        logger.info(f"Fetching description for notice {notice_id} from SAM.gov...")
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(SAM_DESCRIPTION_API_URL, params=params)
+            logger.info(f"Description fetch response status: {response.status_code}")
             if response.status_code == 200:
                 data = response.json()
-                # The description endpoint returns an object with 'description' field
-                return data.get("description", "")
+                desc = data.get("description", "")
+                if desc:
+                    logger.info(f"Successfully fetched description for {notice_id}: {len(desc)} chars")
+                else:
+                    logger.warning(f"Description response for {notice_id} was empty")
+                return desc
             else:
-                logger.warning(f"Failed to fetch description for notice {notice_id}: {response.status_code}")
+                logger.warning(f"Failed to fetch description for notice {notice_id}: {response.status_code} - {response.text[:200]}")
                 return ""
     except Exception as e:
         logger.error(f"Error fetching description for notice {notice_id}: {e}")
@@ -174,15 +180,30 @@ async def list_opportunities(
                     notice_id = opp_data.get("noticeId")
                     
                     # Check if description is a URL or text
+                    # Clean up raw description
                     raw_description = opp_data.get("description", "")
+                    if raw_description:
+                        raw_description = raw_description.strip()
+                    
                     description_text = raw_description
                     
-                    # If it looks like a URL to the description endpoint, fetch the actual text
-                    if raw_description and (raw_description.startswith("http") and "noticedesc" in raw_description):
+                    # Check if description is a URL (stricter check)
+                    is_url = False
+                    if raw_description:
+                        if raw_description.startswith("http") or "noticedesc" in raw_description or "api.sam.gov" in raw_description:
+                            is_url = True
+                    
+                    if is_url:
+                        fetched_desc = None
                         if notice_id:
                             fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
-                            if fetched_desc:
-                                description_text = fetched_desc
+                        
+                        if fetched_desc and len(fetched_desc) > 50: # Assume real description is reasonably long
+                            description_text = fetched_desc
+                        else:
+                            # If fetch failed, returned empty, or returned something short/suspicious
+                            # fallback to empty string. ABSOLUTELY DO NOT USE THE URL.
+                            description_text = ""
                     
                     # Check if exists
                     stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
@@ -304,7 +325,7 @@ async def list_opportunities(
         result = await db.execute(query)
         opportunities = result.scalars().all()
         logger.info(f"Main query returned {len(opportunities)} items")
-        
+
         return PaginatedResponse(
             items=opportunities,
             total=total,

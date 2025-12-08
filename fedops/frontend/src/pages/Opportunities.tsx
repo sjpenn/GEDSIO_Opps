@@ -822,13 +822,7 @@ export default function OpportunitiesPage() {
                 <div>
                   <h3 className="text-lg font-semibold mb-3">Description</h3>
                   <div className="bg-card p-4 rounded-lg text-sm leading-relaxed whitespace-pre-wrap border shadow-sm">
-                    {selectedOpp.description?.startsWith('http') ? (
-                      <a href={selectedOpp.description} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-2">
-                        View Full Description on SAM.gov <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      stripHtml(selectedOpp.description || '')
-                    )}
+                    {selectedOpp.description ? stripHtml(selectedOpp.description) : 'No description available.'}
                   </div>
                 </div>
 

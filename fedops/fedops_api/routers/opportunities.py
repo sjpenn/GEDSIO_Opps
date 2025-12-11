@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+import pydantic
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from typing import List, Optional
@@ -606,3 +607,50 @@ async def delete_opportunity(id: int, db: AsyncSession = Depends(get_db)):
         logger.error(f"Error deleting opportunity {id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to delete opportunity: {str(e)}")
 
+
+class NaicsStatsRequest(pydantic.BaseModel):
+    naics_codes: List[str]
+
+@router.post("/stats/naics")
+async def get_naics_stats(request: NaicsStatsRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Get the count of active opportunities for each provided NAICS code.
+    """
+    if not request.naics_codes:
+        return {}
+        
+    # Clean codes
+    codes = [c.strip() for c in request.naics_codes if c.strip()]
+    if not codes:
+        return {}
+
+    stats = {}
+    
+    # We want counts for exact matches on the code
+    # Or maybe starts with? Usually NAICS filters are exact or prefix. 
+    # For this badge, let's do exact match on the primary NAICS code stored.
+    
+    # It's more efficient to group by if we were doing all, but for a specific list
+    # we can just query.
+    
+    stmt = (
+        select(OpportunityModel.naics_code, func.count(OpportunityModel.id))
+        .where(
+            OpportunityModel.naics_code.in_(codes),
+            OpportunityModel.active == True
+        )
+        .group_by(OpportunityModel.naics_code)
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    # Fill with 0 initially
+    for code in codes:
+        stats[code] = 0
+        
+    for naics_code, count in rows:
+        if naics_code:
+            stats[naics_code] = count
+            
+    return stats

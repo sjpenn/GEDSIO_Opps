@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +109,7 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
   const [error, setError] = useState<string | null>(null);
   const [context, setContext] = useState('');
   const [source, setSource] = useState<'cache' | 'fresh' | null>(null);
+  const [opportunityCounts, setOpportunityCounts] = useState<Record<string, number>>({});
 
   // Compute NAICS Stats
   const naicsStats = useMemo(() => {
@@ -216,6 +217,31 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+        const codes = naicsStats.map(s => s.code).filter(c => c !== "Unknown");
+        if (codes.length === 0) return;
+
+        try {
+            const res = await fetch('/api/v1/opportunities/stats/naics', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ naics_codes: codes })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setOpportunityCounts(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch NAICS stats", e);
+        }
+    };
+
+    if (naicsStats.length > 0) {
+        fetchCounts();
+    }
+  }, [naicsStats]);
 
   const priorityColors = {
     HIGH: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
@@ -563,7 +589,14 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
                                 <ul className="space-y-2 mt-2">
                                    {naicsStats.filter(s => s.code !== "Unknown").slice(0, 3).map((stat, i) => (
                                      <li key={i} className="text-sm border-l-2 border-green-500 pl-2">
-                                        <p className="font-medium">{stat.code}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium">{stat.code}</p>
+                                            {opportunityCounts[stat.code] !== undefined && (
+                                                <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-muted-foreground/10 text-muted-foreground" title={`${opportunityCounts[stat.code]} active opportunities`}>
+                                                    {opportunityCounts[stat.code]}
+                                                </Badge>
+                                            )}
+                                        </div>
                                         <p className="text-xs truncate" title={stat.description}>{stat.description}</p>
                                         <p className="text-xs font-mono text-muted-foreground">
                                             Last: {stat.last_used ? new Date(stat.last_used).toLocaleDateString() : 'N/A'}
@@ -583,7 +616,14 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
                                 <ul className="space-y-2 mt-2">
                                    {[...naicsStats].sort((a,b) => b.value - a.value).filter(s => s.code !== "Unknown").slice(0, 3).map((stat, i) => (
                                      <li key={i} className="text-sm border-l-2 border-blue-500 pl-2">
-                                        <p className="font-medium">{stat.code}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium">{stat.code}</p>
+                                            {opportunityCounts[stat.code] !== undefined && (
+                                                <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-muted-foreground/10 text-muted-foreground" title={`${opportunityCounts[stat.code]} active opportunities`}>
+                                                    {opportunityCounts[stat.code]}
+                                                </Badge>
+                                            )}
+                                        </div>
                                         <p className="text-xs truncate" title={stat.description}>{stat.description}</p>
                                         <p className="text-xs font-mono text-muted-foreground">${stat.value.toLocaleString()}</p>
                                      </li>
@@ -615,7 +655,16 @@ export default function CompetitorAnalysis({ entityName, onClose, awards = [] }:
                              <TableBody>
                                  {naicsStats.slice(0, 10).map((stat) => (
                                      <TableRow key={stat.code}>
-                                         <TableCell className="font-mono text-xs font-medium">{stat.code}</TableCell>
+                                         <TableCell className="font-mono text-xs font-medium">
+                                            <div className="flex items-center gap-2">
+                                                {stat.code}
+                                                {opportunityCounts[stat.code] !== undefined && (
+                                                    <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-muted-foreground/10 text-muted-foreground" title={`${opportunityCounts[stat.code]} active opportunities`}>
+                                                        {opportunityCounts[stat.code]}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                         </TableCell>
                                          <TableCell className="text-xs max-w-[200px] truncate" title={stat.description}>{stat.description}</TableCell>
                                          <TableCell className="text-xs">
                                              {stat.last_used ? new Date(stat.last_used).toLocaleDateString() : 'N/A'}

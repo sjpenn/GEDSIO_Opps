@@ -1541,3 +1541,33 @@ Return the response in Markdown format.
 - Be persuasive and professional.
 - Focus on "selling" our capability to perform.
 """
+
+CONTRACTING_PRO_SEARCH_PROMPT = """Search for federal contracting professionals (Contracting Officers, Specialists, Program Managers, Procurement Officers).
+
+QUERY: "{query}"
+
+SEARCH STRATEGY:
+1. If this looks like a last name only (single word like "Gross", "Smith", "Johnson"), search for federal contracting officers with that surname across ALL major federal agencies (DOD, FAA, NASA, VA, HHS, DHS, etc.)
+2. If this looks like a full name or partial name with typos (e.g. "Gorss" for "Gross"), search for phonetic matches and spelling variations
+3. If this is an agency query (e.g. "NASA", "Contracting Officers at HHS"), find the top named contracting personnel at that agency
+
+IMPORTANT: For surname-only searches, be thorough and search across multiple agencies. A surname like "Gross" should return any contracting officers named Gross at FAA, DOD, NASA, etc.
+
+For each potential match (up to 5), provide a detailed profile in JSON format:
+{{
+    "matches": [
+        {{
+            "name": "Full Name",
+            "agency": "Full Agency Name",
+            "office": "Office/Bureau",
+            "role": "Current Title",
+            "match_reason": "Why this matches (e.g. 'Surname match at FAA' or 'Phonetic match for Gorss')",
+            "location": "City, State",
+            "contact_info": "Email or Phone if publicly available",
+            "overview": "Brief professional background",
+            "recent_activity": "Recent solicitations or awards"
+        }}
+    ]
+}}
+
+Return ONLY valid JSON. If no matches are found, return {{"matches": []}}."""

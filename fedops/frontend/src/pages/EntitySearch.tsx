@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import AgencyAnalysis from "@/components/AgencyAnalysis"
+import COAnalysis from "@/components/COAnalysis"
 
 // Map imports removed for stability
 // import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -349,7 +352,15 @@ export default function EntitySearchPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-auto min-h-[600px]">
+      <Tabs defaultValue="contractors" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="contractors">Contractors</TabsTrigger>
+          <TabsTrigger value="agencies">Agencies</TabsTrigger>
+          <TabsTrigger value="co">Contracting Officers</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="contractors" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-auto min-h-[600px]">
         {/* Search Section */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="h-full flex flex-col">
@@ -962,6 +973,17 @@ export default function EntitySearchPage() {
           )}
         </div>
       </div>
+      </TabsContent>
+
+      <TabsContent value="agencies">
+        <AgencyAnalysis />
+      </TabsContent>
+
+      <TabsContent value="co">
+        <COAnalysis />
+      </TabsContent>
+      
+    </Tabs>
     </div>
   );
 }

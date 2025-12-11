@@ -39,6 +39,7 @@ export default function OpportunitiesPage() {
   const [pipelineItems, setPipelineItems] = useState<any[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [naicsCounts, setNaicsCounts] = useState<Record<string, number>>({})
   
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
@@ -155,6 +156,32 @@ export default function OpportunitiesPage() {
       }
     }
   };
+
+  const fetchNaicsCounts = async (items: Opportunity[]) => {
+    // Extract unique NAICS codes
+    const codes = Array.from(new Set(items.map(o => o.naics_code).filter(Boolean))) as string[];
+    if (codes.length === 0) return;
+
+    try {
+      const res = await fetch('/api/v1/opportunities/stats/naics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ naics_codes: codes })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNaicsCounts(prev => ({ ...prev, ...data }));
+      }
+    } catch (e) {
+      console.error("Failed to fetch NAICS stats", e);
+    }
+  };
+
+  useEffect(() => {
+    if (opportunities.length > 0) {
+      fetchNaicsCounts(opportunities);
+    }
+  }, [opportunities]);
 
   const fetchProfile = async () => {
     try {
@@ -661,7 +688,14 @@ export default function OpportunitiesPage() {
                     </div>
                     <div className="min-w-0">
                       <span className="block text-xs font-medium uppercase opacity-70">NAICS</span>
-                      <span className="text-foreground font-medium truncate block" title={opp.naics_code}>{opp.naics_code || 'N/A'}</span>
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <span className="text-foreground font-medium truncate block" title={opp.naics_code}>{opp.naics_code || 'N/A'}</span>
+                        {opp.naics_code && naicsCounts[opp.naics_code] !== undefined && (
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1 bg-muted-foreground/10 text-muted-foreground hover:bg-muted-foreground/20" title={`${naicsCounts[opp.naics_code]} active opportunities with this NAICS code`}>
+                            {naicsCounts[opp.naics_code]}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="min-w-0">
                       <span className="block text-xs font-medium uppercase opacity-70">Set Aside</span>

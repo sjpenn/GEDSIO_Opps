@@ -344,3 +344,71 @@ class DocumentChunk(Base):
     section = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ContractingOfficer(Base):
+    """
+    Contracting Officers extracted from SAM.gov opportunities.
+    Used for local fuzzy search without relying on external APIs.
+    """
+    __tablename__ = "contracting_officers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Core fields from SAM.gov pointOfContact
+    name = Column(String, nullable=False, index=True)
+    email = Column(String, nullable=True, index=True)
+    phone = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    
+    # Derived agency/office info from opportunities
+    agency = Column(String, nullable=True, index=True)
+    sub_agency = Column(String, nullable=True)
+    office = Column(String, nullable=True)
+    
+    # Searchable name parts for fuzzy matching
+    first_name = Column(String, nullable=True, index=True)
+    last_name = Column(String, nullable=True, index=True)
+    
+    # Tracking fields
+    opportunity_count = Column(Integer, default=1)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Store list of opportunity IDs this CO is associated with
+    opportunity_ids = Column(ARRAY(Integer), default=[])
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SavedAgencySearch(Base):
+    """
+    Saved agency research results for quick access and efficiency.
+    Stores cached Perplexity research with enhanced org tree, LOB, and budget data.
+    """
+    __tablename__ = "saved_agency_searches"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    agency_name = Column(String, nullable=False, index=True)
+    acronym = Column(String, nullable=True)
+    icon_type = Column(String, default="default")  # aviation, military, health, finance, etc.
+    
+    # Cached research data
+    overview = Column(Text, nullable=True)
+    strategic_goals = Column(JSONB, nullable=True)
+    budget_outlook = Column(Text, nullable=True)
+    org_structure = Column(Text, nullable=True)  # Plain text description
+    org_tree = Column(JSONB, nullable=True)  # Hierarchical tree structure for visualization
+    key_bureaus = Column(JSONB, nullable=True)
+    lines_of_business = Column(JSONB, nullable=True)  # LOB with responsibilities
+    budget_by_division = Column(JSONB, nullable=True)  # Budgetary breakdown
+    pain_points = Column(JSONB, nullable=True)
+    procurement_priorities = Column(JSONB, nullable=True)
+    citations = Column(JSONB, nullable=True)
+    
+    raw_response = Column(Text, nullable=True)  # Full API response
+    
+    last_refreshed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

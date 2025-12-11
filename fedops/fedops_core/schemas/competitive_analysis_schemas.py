@@ -86,3 +86,99 @@ class CompetitiveAnalysisDB(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LOBItem(BaseModel):
+    """Line of Business with responsibilities"""
+    name: str = Field(..., description="Name of the line of business")
+    description: str = Field(..., description="What this LOB does")
+    responsibilities: List[str] = Field(default_factory=list, description="Key responsibilities")
+    key_programs: List[str] = Field(default_factory=list, description="Major programs under this LOB")
+    budget_share: Optional[str] = Field(None, description="Percentage of agency budget e.g. '15%'")
+
+
+class BudgetItem(BaseModel):
+    """Budget allocation by division/program"""
+    division: str = Field(..., description="Division or program name")
+    amount: Optional[str] = Field(None, description="Dollar amount e.g. '$2.5B'")
+    percentage: Optional[float] = Field(None, description="Percentage of total budget")
+    trend: Optional[str] = Field(None, description="Budget trend: increasing, stable, decreasing")
+
+
+class OrgNode(BaseModel):
+    """Hierarchical org structure node for tree visualization"""
+    name: str = Field(..., description="Name of position or unit")
+    title: Optional[str] = Field(None, description="Job title or description")
+    icon_type: str = Field("default", description="Icon type: aviation, military, health, finance, etc.")
+    children: List["OrgNode"] = Field(default_factory=list, description="Child nodes in hierarchy")
+
+
+# Enable self-referencing in OrgNode
+OrgNode.model_rebuild()
+
+
+class AgencyResearchResult(BaseModel):
+    """Competitive intelligence for a Federal Agency"""
+    agency_name: str = Field(..., description="Name of the agency")
+    acronym: Optional[str] = Field(None, description="Agency acronym")
+    
+    overview: str = Field(..., description="Agency mission and overview")
+    strategic_goals: List[str] = Field(default_factory=list, description="Key strategic goals and priorities")
+    budget_outlook: str = Field(..., description="Budget summary and outlook")
+    
+    org_structure: str = Field(..., description="Description of organizational structure")
+    org_tree: Optional[OrgNode] = Field(None, description="Hierarchical tree structure for visualization")
+    key_bureaus: List[str] = Field(default_factory=list, description="Key sub-agencies or bureaus")
+    
+    # NEW: Lines of Business with responsibilities
+    lines_of_business: List[LOBItem] = Field(default_factory=list, description="Lines of business and their responsibilities")
+    
+    # NEW: Budget breakdown by division/program
+    budget_by_division: List[BudgetItem] = Field(default_factory=list, description="Budget allocation by division")
+    
+    pain_points: List[str] = Field(default_factory=list, description="Major challenges or pain points")
+    procurement_priorities: List[str] = Field(default_factory=list, description="What they are looking to buy")
+    
+    citations: List[Citation] = Field(default_factory=list, description="Research sources")
+    analyzed_at: datetime = Field(default_factory=datetime.utcnow)
+    raw_response: Optional[str] = Field(None, description="Raw API response")
+
+
+class COResearchResult(BaseModel):
+    """Intelligence on a Contracting Officer"""
+    co_name: str = Field(..., description="Name of the Contracting Officer")
+    agency: Optional[str] = Field(None, description="Agency they work for")
+    
+    overview: str = Field(..., description="Professional background and overview")
+    career_history: List[str] = Field(default_factory=list, description="Past roles and agencies")
+    education: Optional[str] = Field(None, description="Education background")
+    
+    awarding_patterns: Optional[str] = Field(None, description="Observed patterns in their contract awards")
+    preferred_vehicles: List[str] = Field(default_factory=list, description="Contract vehicles they frequently use")
+    
+    citations: List[Citation] = Field(default_factory=list, description="Research sources")
+    analyzed_at: datetime = Field(default_factory=datetime.utcnow)
+    raw_response: Optional[str] = Field(None, description="Raw API response")
+
+
+class ContractingProfessionalMatch(BaseModel):
+    """Details of a matched contracting professional"""
+    name: str = Field(..., description="Full name of the professional")
+    agency: str = Field(..., description="Agency they are associated with")
+    office: Optional[str] = Field(None, description="Office or Bureau")
+    role: Optional[str] = Field(None, description="Job title or role")
+    match_reason: Optional[str] = Field(None, description="Why this person was returned")
+    location: Optional[str] = Field(None, description="Location if available")
+    contact_info: Optional[str] = Field(None, description="Public contact info")
+    overview: Optional[str] = Field(None, description="Brief professional summary")
+    recent_activity: Optional[str] = Field(None, description="Recent solicitations or awards")
+
+
+class ContractingProfessionalSearchResult(BaseModel):
+    """Result of searching for contracting professionals"""
+    query: str = Field(..., description="Original search query")
+    matches: List[ContractingProfessionalMatch] = Field(default_factory=list, description="List of potential matches")
+    
+    citations: List[Citation] = Field(default_factory=list, description="Research sources")
+    analyzed_at: datetime = Field(default_factory=datetime.utcnow)
+    raw_response: Optional[str] = Field(None, description="Raw API response")

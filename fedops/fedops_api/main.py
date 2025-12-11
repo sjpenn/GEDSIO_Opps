@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fedops_core.settings import settings
-from fedops_api.routers import opportunities, ingest, files, company, entities, agents, proposals, requirements, gates, competitive_intel, capture, proposal_content, reviews, submission, manual_upload, teams
+from fedops_api.routers import opportunities, ingest, files, company, entities, agents, proposals, requirements, gates, competitive_intel, capture, proposal_content, reviews, submission, manual_upload, teams, agency_intel, co_intel
 from fedops_core.routers import pipeline
 from fedops_core.db.engine import engine, Base
 from starlette.middleware.cors import CORSMiddleware
@@ -40,6 +40,8 @@ app.include_router(proposals.router, prefix="/api/v1") # Proposals router alread
 app.include_router(requirements.router, prefix="/api/v1") # Requirements router already has /requirements prefix
 app.include_router(gates.router, prefix="/api/v1") # Gates router already has /gates prefix
 app.include_router(competitive_intel.router, prefix="/api/v1") # Competitive intel router already has /competitive_intel prefix
+app.include_router(agency_intel.router, prefix="/api/v1")
+app.include_router(co_intel.router, prefix="/api/v1")
 app.include_router(capture.router, prefix="/api/v1")
 app.include_router(proposal_content.router, prefix="/api/v1")
 app.include_router(reviews.router, prefix="/api/v1")

@@ -95,7 +95,19 @@ Provide a structured analysis in the following JSON format:
         "title": "Secretary/Administrator",
         "icon_type": "leadership",
         "children": [
-            {{"name": "Deputy", "title": "Deputy Secretary", "icon_type": "default", "children": []}}
+            {{
+                "name": "Line Office A", 
+                "title": "Assistant Administrator", 
+                "icon_type": "default", 
+                "children": [
+                     {{
+                        "name": "Program Office A-1 (e.g. AJM-1)",
+                        "title": "Director",
+                        "icon_type": "default",
+                        "children": []
+                     }}
+                ]
+            }}
         ]
     }},
     "key_bureaus": ["Bureau 1", "Bureau 2"],
@@ -117,7 +129,10 @@ Provide a structured analysis in the following JSON format:
 
 Focus on:
 - Mission and strategic direction
-- Detailed organizational hierarchy (org chart)
+- **Detailed organizational hierarchy (org chart)**: GO DEEP. We need at least 3-4 levels of leadership.
+    - Include sub-offices, directorates, and program offices.
+    - specifically look for codes like "AJM-1", "AFI-10", etc. if applicable to the agency.
+    - Include names of current leadership at these lower levels if available.
 - Lines of Business and their specific responsibilities
 - Budget allocation by division/program with trends
 - Budget trends and spending priorities

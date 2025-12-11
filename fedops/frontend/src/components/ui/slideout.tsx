@@ -9,6 +9,7 @@ interface SlideoutProps {
   children: React.ReactNode;
   width?: string;
   title?: string;
+  side?: 'left' | 'right';
 }
 
 export function Slideout({ 
@@ -16,7 +17,8 @@ export function Slideout({
   onClose, 
   children, 
   width = "max-w-2xl", 
-  title 
+  title,
+  side = 'right'
 }: SlideoutProps) {
   // Lock body scroll when open
   useEffect(() => {
@@ -39,10 +41,13 @@ export function Slideout({
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
+  const isRight = side === 'right';
+
   return (
     <div 
       className={cn(
-        "fixed inset-0 z-50 flex justify-end transition-all duration-700 pointer-events-none",
+        "fixed inset-0 z-50 flex transition-all duration-700 pointer-events-none",
+        isRight ? "justify-end" : "justify-start",
         isOpen ? "pointer-events-auto" : ""
       )}
     >
@@ -58,10 +63,13 @@ export function Slideout({
       {/* Slideout Panel - "Slow but confident" animation curve */}
       <div 
         className={cn(
-          "relative h-full bg-background shadow-2xl border-l flex flex-col transition-transform duration-700 cubic-bezier(0.32, 0.72, 0, 1)",
+          "relative h-full bg-background shadow-2xl flex flex-col transition-transform duration-700 cubic-bezier(0.32, 0.72, 0, 1)",
+          isRight ? "border-l" : "border-r",
           width,
           "w-full", // Mobile full width by default unless width constrained
-          isOpen ? "translate-x-0" : "translate-x-full"
+          isOpen 
+            ? "translate-x-0" 
+            : (isRight ? "translate-x-full" : "-translate-x-full")
         )}
         style={{ transitionTimingFunction: 'cubic-bezier(0.25, 1, 0.5, 1)' }} // Custom "confident" ease
       >

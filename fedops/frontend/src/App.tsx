@@ -22,7 +22,7 @@ function App() {
           <Routes>
             <Route path="/" element={
               <PageTransition>
-                <OpportunitiesPage />
+                <AboutPage />
               </PageTransition>
             } />
             <Route path="/opportunities" element={
@@ -76,11 +76,7 @@ function App() {
             <Route path="/proposal-workspace/:opportunityId" element={
               <ProposalWorkspace />
             } />
-            <Route path="/about" element={
-              <PageTransition>
-                <AboutPage />
-              </PageTransition>
-            } />
+
           </Routes>
         </Layout>
       </Router>

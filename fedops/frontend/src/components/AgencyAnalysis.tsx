@@ -8,7 +8,7 @@ import {
   Plane, Shield, Heart, Landmark, Zap, Rocket, GraduationCap, Building2,
   TrendingUp, TrendingDown, Minus, Scale, Wheat
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 // --- Types ---
 interface OrgNode {
@@ -341,19 +341,18 @@ export default function AgencyAnalysis() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-[200px] w-full">
+                    <div className="h-[380px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
+                        <PieChart margin={{ top: 50, right: 30, bottom: 60, left: 30 }}>
                           <Pie
                             data={budgetChartData}
                             cx="50%"
                             cy="50%"
-                            innerRadius={40}
-                            outerRadius={80}
+                            innerRadius={60}
+                            outerRadius={90}
                             paddingAngle={2}
                             dataKey="value"
-                            label={({ name, value }) => `${name}: ${value}%`}
-                            labelLine={false}
+                            label={({ value }) => `${value}%`}
                           >
                             {budgetChartData.map((_, index) => (
                               <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
@@ -362,6 +361,12 @@ export default function AgencyAnalysis() {
                           <Tooltip 
                             formatter={(value: number, name: string, props: any) => [`${value}% (${props.payload.amount || 'N/A'})`, name]}
                             contentStyle={{ backgroundColor: '#1E293B', border: 'none', borderRadius: '8px' }}
+                          />
+                          <Legend 
+                            layout="horizontal" 
+                            verticalAlign="bottom" 
+                            align="center"
+                            wrapperStyle={{ paddingTop: '40px', fontSize: '11px' }}
                           />
                         </PieChart>
                       </ResponsiveContainer>

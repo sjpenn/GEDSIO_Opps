@@ -13,6 +13,7 @@ import { ThemeProvider } from './components/theme-provider';
 import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import AboutPage from './pages/About';
+import ResumeManager from './pages/ResumeManager';
 
 function App() {
   return (
@@ -75,6 +76,11 @@ function App() {
             } />
             <Route path="/proposal-workspace/:opportunityId" element={
               <ProposalWorkspace />
+            } />
+            <Route path="/resumes" element={
+              <PageTransition>
+                <ResumeManager />
+              </PageTransition>
             } />
 
           </Routes>

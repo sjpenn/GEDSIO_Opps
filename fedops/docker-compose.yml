@@ -9,7 +9,7 @@ services:
       - .env
     environment:
       - TZ=America/New_York
-      - DATABASE_URL=postgresql+asyncpg://fedops:fedops@db:5432/fedops
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/fedops
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:

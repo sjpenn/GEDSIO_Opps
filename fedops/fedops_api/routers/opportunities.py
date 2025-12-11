@@ -637,7 +637,7 @@ async def get_naics_stats(request: NaicsStatsRequest, db: AsyncSession = Depends
         select(OpportunityModel.naics_code, func.count(OpportunityModel.id))
         .where(
             OpportunityModel.naics_code.in_(codes),
-            OpportunityModel.active == True
+            OpportunityModel.active == "Yes"
         )
         .group_by(OpportunityModel.naics_code)
     )

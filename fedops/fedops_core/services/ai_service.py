@@ -321,8 +321,12 @@ class AIService:
         try:
             return schema(**data)
         except ValidationError as e:
-            logger.error(f"Schema validation failed: {e}")
-            logger.debug(f"Failed data: {json.dumps(data, indent=2)}")
+            logger.error(f"Schema validation failed: {e.error_count()} validation errors for {schema.__name__}")
+            for error in e.errors():
+                logger.error(f"  {error['loc']}")
+                logger.error(f"    {error['msg']} [type={error['type']}, input_value={error.get('input', 'N/A')}, input_type={type(error.get('input', None)).__name__}]")
+            logger.debug(f"Failed data keys: {list(data.keys())}")
+            logger.debug(f"Full data: {json.dumps(data, indent=2, default=str)}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error in validation: {e}")

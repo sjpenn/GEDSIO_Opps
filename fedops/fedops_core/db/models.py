@@ -412,3 +412,30 @@ class SavedAgencySearch(Base):
     last_refreshed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Resume(Base):
+    """
+    Stores structured resume data and formatting preferences.
+    """
+    __tablename__ = "resumes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=True, index=True) # ID of user who uploaded
+    
+    stored_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=False)
+    
+    # Structured Data
+    parsed_data = Column(JSONB, nullable=True) # Full ResumeData structure
+    
+    # Text content (raw extraction)
+    raw_text = Column(Text, nullable=True)
+    
+    # Parsing Status
+    status = Column(String, default="UPLOADED") # UPLOADED, PROCESSING, PARSED, FAILED
+    error_message = Column(String, nullable=True)
+    
+    # Formatting
+    formatted_content_html = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

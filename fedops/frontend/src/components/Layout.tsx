@@ -16,6 +16,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { path: "/entities", label: "Entity Search", icon: Search },
     { path: "/teams", label: "Partner Teams", icon: Users },
     { path: "/profile", label: "Company Profile", icon: Building2 },
+    { path: "/resumes", label: "Resume Manager", icon: FileText },
     { path: "/files", label: "Files & AI", icon: FileText },
     { path: "/", label: "About", icon: Info },
   ];

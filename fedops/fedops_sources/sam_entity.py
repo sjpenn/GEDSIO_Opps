@@ -1,10 +1,7 @@
 import httpx
-import asyncio
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from fedops_core.settings import settings
 from fedops_sources.fuzzy_search import (
-    generate_sam_search_queries,
     deduplicate_entities,
     filter_by_similarity,
     generate_cache_key,
@@ -68,8 +65,7 @@ class SamEntityClient:
         
         Strategy:
         1. Make ONE exact API call to SAM.gov
-        2. Store results in local database
-        3. Apply fuzzy matching to ALL locally stored entities
+        2. Apply fuzzy matching to returned entities (no database persistence)
         
         Args:
             legal_business_name: Business name to search for
@@ -84,8 +80,8 @@ class SamEntityClient:
             Dictionary with entityData list and search metadata
         """
         if not self.api_key:
-            print("Warning: SAM_API_KEY not set")
-            return {}
+            # Surface a clear error instead of silently returning nothing
+            raise ValueError("SAM_API_KEY not set; configure it in .env for entity search to work.")
         
         # Generate cache key
         cache_key = generate_cache_key(
@@ -114,6 +110,7 @@ class SamEntityClient:
         }
         
         api_entities = []
+        api_error: Optional[str] = None
         async with httpx.AsyncClient() as client:
             try:
                 print(f"Making single API call for: {legal_business_name}")
@@ -126,79 +123,19 @@ class SamEntityClient:
                     data = response.json()
                     api_entities = data.get("entityData", []) if isinstance(data, dict) else []
                     print(f"API returned {len(api_entities)} results")
-                    
-                    # Store API results in database for future fuzzy searches
-                    from fedops_core.db.engine import AsyncSessionLocal
-                    from fedops_core.db.models import Entity as DBEntity
-                    from sqlalchemy import select
-                    
-                    async with AsyncSessionLocal() as db:
-                        for entity_data in api_entities:
-                            reg = entity_data.get("entityRegistration", {})
-                            uei = reg.get("ueiSAM")
-                            if not uei:
-                                continue
-                            
-                            # Check if exists
-                            result = await db.execute(select(DBEntity).where(DBEntity.uei == uei))
-                            existing = result.scalars().first()
-                            
-                            if not existing:
-                                # Create new entity
-                                new_entity = DBEntity(
-                                    uei=uei,
-                                    legal_business_name=reg.get("legalBusinessName", ""),
-                                    cage_code=reg.get("cageCode"),
-                                    full_response=entity_data,
-                                    last_synced_at=datetime.utcnow()
-                                )
-                                db.add(new_entity)
                         
-                        await db.commit()
-                        
+            except httpx.HTTPStatusError as e:
+                api_error = f"SAM.gov API error {e.response.status_code}: {e.response.text[:200]}"
+                print(api_error)
             except Exception as e:
-                print(f"Error calling SAM.gov API: {e}")
-                # Continue with local search even if API fails
+                api_error = f"Error calling SAM.gov API: {e}"
+                print(api_error)
         
-        # Now apply fuzzy matching to ALL locally stored entities
+        # Apply fuzzy matching to returned entities
         if fuzzy:
-            from fedops_core.db.engine import AsyncSessionLocal
-            from fedops_core.db.models import Entity as DBEntity
-            from sqlalchemy import select
-            
-            all_local_entities = []
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(select(DBEntity))
-                db_entities = result.scalars().all()
-                
-                # Convert DB entities to API format for fuzzy matching
-                for db_entity in db_entities:
-                    if db_entity.full_response:
-                        # Handle case where full_response is the root wrapper
-                        if isinstance(db_entity.full_response, dict) and "entityData" in db_entity.full_response:
-                            data_list = db_entity.full_response["entityData"]
-                            if isinstance(data_list, list) and len(data_list) > 0:
-                                all_local_entities.append(data_list[0])
-                            else:
-                                # Fallback or skip if empty
-                                continue
-                        else:
-                            all_local_entities.append(db_entity.full_response)
-                    else:
-                        # Create minimal entity structure
-                        all_local_entities.append({
-                            "entityRegistration": {
-                                "ueiSAM": db_entity.uei,
-                                "legalBusinessName": db_entity.legal_business_name,
-                                "cageCode": db_entity.cage_code
-                            }
-                        })
-            
-            print(f"Applying fuzzy matching to {len(all_local_entities)} local entities")
-            
-            # Deduplicate and score
+            # Deduplicate and score against the current API response
             unique_entities = deduplicate_entities(
-                all_local_entities,
+                api_entities,
                 legal_business_name,
                 use_phonetic=use_phonetic
             )
@@ -206,13 +143,16 @@ class SamEntityClient:
             # Filter by similarity threshold
             filtered_entities = filter_by_similarity(unique_entities, min_similarity)
             print(f"Found {len(filtered_entities)} matches after fuzzy filtering")
+
+            # If the external call failed and we also have no data, surface the error
+            if api_error and len(api_entities) == 0 and len(filtered_entities) == 0:
+                raise ValueError(api_error)
             
             result = {
                 "entityData": filtered_entities,
                 "searchMetadata": {
                     "originalQuery": legal_business_name,
                     "apiResults": len(api_entities),
-                    "localEntities": len(all_local_entities),
                     "filteredResults": len(filtered_entities),
                     "minSimilarity": min_similarity,
                     "fuzzyEnabled": True,
@@ -225,6 +165,8 @@ class SamEntityClient:
             }
         else:
             # Non-fuzzy: just return API results
+            if api_error and len(api_entities) == 0:
+                raise ValueError(api_error)
             result = {
                 "entityData": api_entities,
                 "searchMetadata": {
@@ -240,4 +182,3 @@ class SamEntityClient:
             cache_results(cache_key, result)
         
         return result
-

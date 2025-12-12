@@ -105,32 +105,46 @@ export default function CompanyProfilePage() {
     }
   }, [profile]);
 
+  const [suggestedEntity, setSuggestedEntity] = useState<Entity | null>(null);
+
   const fetchProfile = async () => {
     setLoading(true);
     try {
+      // 1. Fetch Profile
       const res = await fetch('/api/v1/company/');
+      let profileData = null;
+
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          const profileData = data[0];
-          
-          // Fetch entity details to get logo
-          try {
-            const entityRes = await fetch(`/api/v1/entities/primary`);
-            if (entityRes.ok) {
-              const entityData = await entityRes.json();
-              if (entityData && entityData.logo_url) {
-                profileData.logo_url = entityData.logo_url;
-              }
-            }
-          } catch (e) {
-            console.error("Failed to fetch entity logo", e);
-          }
-          
+          profileData = data[0];
           setProfile(profileData);
           setFormData(profileData);
         }
       }
+
+      // 2. Fetch Primary Entity (always, to check if we can suggest or enrich)
+      try {
+        const entityRes = await fetch(`/api/v1/entities/primary`);
+        if (entityRes.ok) {
+          const entityData = await entityRes.json();
+
+          if (entityData) {
+            // Case A: Profile exists - enrich with logo if missing
+            if (profileData && !profileData.logo_url && entityData.logo_url) {
+              setProfile(prev => prev ? ({ ...prev, logo_url: entityData.logo_url }) : null);
+            }
+
+            // Case B: No Profile - suggest this entity
+            if (!profileData) {
+              setSuggestedEntity(entityData);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch entity info", e);
+      }
+
     } catch (err) {
       setError('Failed to fetch profile');
     } finally {
@@ -172,7 +186,7 @@ export default function CompanyProfilePage() {
 
   const searchEntities = async () => {
     if (!entitySearchQuery.trim()) return;
-    
+
     setEntitySearchLoading(true);
     try {
       const res = await fetch(`/api/v1/entities/search?q=${encodeURIComponent(entitySearchQuery)}`);
@@ -212,7 +226,7 @@ export default function CompanyProfilePage() {
 
   const switchEntity = async () => {
     if (!selectedEntity || !profile) return;
-    
+
     setLoading(true);
     try {
       const res = await fetch(`/api/v1/company/${profile.uei}/switch-entity/${selectedEntity.uei}`, {
@@ -238,7 +252,7 @@ export default function CompanyProfilePage() {
 
   const handleUploadDocument = async () => {
     if (!uploadFile || !profile) return;
-    
+
     setUploading(true);
     try {
       const formData = new FormData();
@@ -246,12 +260,12 @@ export default function CompanyProfilePage() {
       formData.append('document_type', uploadType);
       formData.append('title', uploadTitle);
       formData.append('description', uploadDescription);
-      
+
       const res = await fetch(`/api/v1/company/${profile.uei}/documents`, {
         method: 'POST',
         body: formData
       });
-      
+
       if (res.ok) {
         setUploadFile(null);
         setUploadTitle('');
@@ -271,7 +285,7 @@ export default function CompanyProfilePage() {
 
   const deleteDocument = async (docId: number) => {
     if (!profile) return;
-    
+
     try {
       const res = await fetch(`/api/v1/company/${profile.uei}/documents/${docId}`, {
         method: 'DELETE'
@@ -288,14 +302,14 @@ export default function CompanyProfilePage() {
 
   const handleAddLink = async () => {
     if (!profile || !newLink.title || !newLink.url) return;
-    
+
     try {
       const res = await fetch(`/api/v1/company/${profile.uei}/links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newLink, company_uei: profile.uei })
       });
-      
+
       if (res.ok) {
         setNewLink({ link_type: 'SOW', title: '', url: '', description: '' });
         setShowAddLink(false);
@@ -312,7 +326,7 @@ export default function CompanyProfilePage() {
 
   const deleteLink = async (linkId: number) => {
     if (!profile) return;
-    
+
     try {
       const res = await fetch(`/api/v1/company/${profile.uei}/links/${linkId}`, {
         method: 'DELETE'
@@ -329,21 +343,21 @@ export default function CompanyProfilePage() {
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0] || !profile) return;
-    
+
     const file = e.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
-    
+
     setLoading(true);
     try {
       const res = await fetch(`/api/v1/entities/${profile.uei}/logo`, {
         method: 'POST',
         body: formData
       });
-      
+
       if (res.ok) {
         const data = await res.json();
-        setProfile(prev => prev ? ({...prev, logo_url: data.logo_url}) : null);
+        setProfile(prev => prev ? ({ ...prev, logo_url: data.logo_url }) : null);
         setSuccess('Logo uploaded successfully!');
         setTimeout(() => setSuccess(null), 3000);
       } else {
@@ -362,7 +376,7 @@ export default function CompanyProfilePage() {
     try {
       const method = profile ? 'PUT' : 'POST';
       const url = profile ? `/api/v1/company/${profile.uei}` : '/api/v1/company/';
-      
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -370,7 +384,7 @@ export default function CompanyProfilePage() {
       });
 
       if (!res.ok) throw new Error('Failed to save profile');
-      
+
       const savedProfile = await res.json();
       setProfile(savedProfile);
       setIsEditing(false);
@@ -423,7 +437,7 @@ export default function CompanyProfilePage() {
           <AlertDescription className="text-green-700">{success}</AlertDescription>
         </Alert>
       )}
-      
+
       {error && (
         <Alert className="border-destructive/50 bg-destructive/10">
           <AlertCircle className="h-4 w-4 text-destructive" />
@@ -444,6 +458,44 @@ export default function CompanyProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+
+            {/* Suggestion Card */}
+            {suggestedEntity && !entitySearchQuery && (
+              <div className="mb-6 p-4 border border-blue-200 bg-blue-50/50 rounded-lg animate-in slide-in-from-top-2">
+                <div className="flex items-start gap-4">
+                  {suggestedEntity.logo_url ? (
+                    <img src={suggestedEntity.logo_url} alt="Logo" className="h-12 w-12 object-contain bg-white rounded border" />
+                  ) : (
+                    <div className="h-12 w-12 bg-blue-100 rounded flex items-center justify-center text-blue-600">
+                      <Building2 className="h-6 w-6" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-blue-900">Found Primary Entity: {suggestedEntity.legal_business_name}</h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      We found a primary entity configured in your system. Would you like to use this for your company profile?
+                    </p>
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        onClick={() => setEntityAsProfile(suggestedEntity)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        Yes, Use {suggestedEntity.legal_business_name}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSuggestedEntity(null)}
+                        className="text-blue-700 hover:text-blue-900 hover:bg-blue-100"
+                      >
+                        No, Search for Another
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Input
                 placeholder="Enter company name..."
@@ -527,7 +579,7 @@ export default function CompanyProfilePage() {
                         id="company-name"
                         required
                         value={formData.company_name}
-                        onChange={e => setFormData({...formData, company_name: e.target.value})}
+                        onChange={e => setFormData({ ...formData, company_name: e.target.value })}
                         placeholder="e.g. Acme Corp"
                       />
                     </div>
@@ -538,7 +590,7 @@ export default function CompanyProfilePage() {
                         required
                         disabled={!!profile}
                         value={formData.uei}
-                        onChange={e => setFormData({...formData, uei: e.target.value})}
+                        onChange={e => setFormData({ ...formData, uei: e.target.value })}
                         placeholder="e.g. ABC123DEF456"
                         className="font-mono"
                       />
@@ -574,20 +626,20 @@ export default function CompanyProfilePage() {
                     <div className="flex items-start gap-4">
                       {profile?.logo_url ? (
                         <div className="relative group shrink-0">
-                          <img 
-                            src={profile.logo_url} 
-                            alt="Company Logo" 
+                          <img
+                            src={profile.logo_url}
+                            alt="Company Logo"
                             className="h-16 w-16 object-contain rounded border bg-white"
                           />
-                          <label 
-                            htmlFor="logo-upload" 
+                          <label
+                            htmlFor="logo-upload"
                             className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded cursor-pointer"
                           >
                             <Upload className="h-4 w-4 text-white" />
                           </label>
                         </div>
                       ) : (
-                        <label 
+                        <label
                           htmlFor="logo-upload"
                           className="h-16 w-16 flex shrink-0 items-center justify-center rounded border border-dashed bg-muted hover:bg-muted/80 cursor-pointer transition-colors"
                           title="Upload Logo"
@@ -595,15 +647,15 @@ export default function CompanyProfilePage() {
                           <Upload className="h-6 w-6 text-muted-foreground" />
                         </label>
                       )}
-                      <input 
-                        id="logo-upload" 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
                         onChange={handleLogoUpload}
                         disabled={loading}
                       />
-                      
+
                       <div>
                         <h3 className="text-sm font-medium text-muted-foreground uppercase mb-1">Company Name</h3>
                         <p className="text-2xl font-bold tracking-tight">{profile?.company_name}</p>
@@ -653,8 +705,8 @@ export default function CompanyProfilePage() {
             </CardContent>
             {isEditing && (
               <CardFooter className="flex justify-end gap-3 border-t bg-muted/10 p-4">
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => {
                     setIsEditing(false);
                     if (profile) setFormData(profile);
@@ -662,8 +714,8 @@ export default function CompanyProfilePage() {
                 >
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   form="profile-form"
                   disabled={loading}
                   className="gap-2"
@@ -905,7 +957,7 @@ export default function CompanyProfilePage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="link-type">Link Type</Label>
-              <Select value={newLink.link_type} onValueChange={(v) => setNewLink({...newLink, link_type: v})}>
+              <Select value={newLink.link_type} onValueChange={(v) => setNewLink({ ...newLink, link_type: v })}>
                 <SelectTrigger id="link-type">
                   <SelectValue />
                 </SelectTrigger>
@@ -922,7 +974,7 @@ export default function CompanyProfilePage() {
               <Input
                 id="link-title"
                 value={newLink.title}
-                onChange={(e) => setNewLink({...newLink, title: e.target.value})}
+                onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
                 placeholder="e.g. Company Capability Statement"
               />
             </div>
@@ -932,7 +984,7 @@ export default function CompanyProfilePage() {
                 id="link-url"
                 type="url"
                 value={newLink.url}
-                onChange={(e) => setNewLink({...newLink, url: e.target.value})}
+                onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
                 placeholder="https://..."
               />
             </div>
@@ -941,7 +993,7 @@ export default function CompanyProfilePage() {
               <Textarea
                 id="link-desc"
                 value={newLink.description}
-                onChange={(e) => setNewLink({...newLink, description: e.target.value})}
+                onChange={(e) => setNewLink({ ...newLink, description: e.target.value })}
                 placeholder="Brief description"
                 className="min-h-[60px]"
               />

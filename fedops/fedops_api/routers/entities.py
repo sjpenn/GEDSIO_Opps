@@ -1,7 +1,8 @@
+from collections import deque
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List, Any, Optional
+from typing import List, Optional
 
 from fedops_core.db.engine import get_db
 from fedops_core.db.models import Entity, EntityAward
@@ -12,6 +13,10 @@ from fedops_sources.usaspending import USASpendingClient
 router = APIRouter()
 
 from datetime import datetime
+
+# Store recent search terms without persisting full entity results
+RECENT_ENTITY_SEARCHES = deque(maxlen=50)
+ALLOWED_ENTITY_TYPES = {"PARTNER", "COMPETITOR", "OBSERVING", "OTHER"}
 
 def get_sam_client():
     return SamEntityClient()
@@ -55,64 +60,63 @@ async def search_entities(
         if search_metadata:
             logger.info(f"Fuzzy search metadata: {search_metadata}")
 
+        # Track the search term and hit count without storing entities
+        RECENT_ENTITY_SEARCHES.appendleft({
+            "term": q,
+            "searched_at": datetime.utcnow(),
+            "result_count": len(entities_data)
+        })
+
+        # Build lookup of already-saved entities (partners/competitors/observing)
+        ueis = []
+        for item in entities_data:
+            if not isinstance(item, dict):
+                continue
+            reg = item.get("entityRegistration", {})
+            uei = reg.get("ueiSAM")
+            if uei:
+                ueis.append(uei)
+
+        existing_map = {}
+        if ueis:
+            existing_result = await db.execute(select(Entity).where(Entity.uei.in_(ueis)))
+            for ent in existing_result.scalars():
+                existing_map[ent.uei] = ent
+
         results = []
         for item in entities_data:
             if not isinstance(item, dict):
                 logger.warning(f"Skipping non-dict item: {item}")
                 continue
                 
-            # Extract fields
-            # Structure: item['entityRegistration']['ueiSAM'], item['entityRegistration']['legalBusinessName']
             reg = item.get("entityRegistration", {})
             uei = reg.get("ueiSAM")
             name = reg.get("legalBusinessName")
             cage = reg.get("cageCode")
             
-            # Extract fuzzy match metadata
             fuzzy_match = item.get("_fuzzy_match", {})
             similarity_score = fuzzy_match.get("similarity_score", 1.0)
             
             if not uei or not name:
                 continue
-                
-            # Upsert
-            result = await db.execute(select(Entity).where(Entity.uei == uei))
-            existing = result.scalars().first()
             
-            if existing:
-                existing.legal_business_name = name
-                existing.cage_code = cage
-                existing.full_response = item
-                existing.last_synced_at = datetime.utcnow()
-                # Don't overwrite entity_type or notes if they exist
-                
-                # Add similarity score to the entity object for frontend display
-                # Note: This is not persisted to DB, just for the response
-                existing.similarity_score = similarity_score
-                results.append(existing)
-            else:
-                new_entity = Entity(
-                    uei=uei,
-                    legal_business_name=name,
-                    cage_code=cage,
-                    full_response=item,
-                    entity_type="OTHER",
-                    last_synced_at=datetime.utcnow()
-                )
-                db.add(new_entity)
-                
-                # Add similarity score for response
-                new_entity.similarity_score = similarity_score
-                results.append(new_entity)
+            existing = existing_map.get(uei)
+            results.append({
+                "uei": uei,
+                "legal_business_name": name,
+                "cage_code": cage,
+                "entity_type": existing.entity_type if existing else "OTHER",
+                "is_primary": existing.is_primary if existing else False,
+                "notes": existing.notes if existing else None,
+                "last_synced_at": existing.last_synced_at if existing else None,
+                "created_at": existing.created_at if existing else None,
+                "updated_at": existing.updated_at if existing else None,
+                "similarity_score": similarity_score
+            })
         
-        await db.commit()
-        # Refresh all to get IDs and timestamps
-        for e in results:
-            await db.refresh(e)
-            
         # Sort by similarity score (highest first) if fuzzy search was used
-        if fuzzy and hasattr(results[0] if results else None, 'similarity_score'):
-            results.sort(key=lambda e: getattr(e, 'similarity_score', 0), reverse=True)
+        if fuzzy and results:
+            results.sort(key=lambda e: e.get("similarity_score", 0) or 0, reverse=True)
             
         return results
     except Exception as e:
@@ -132,19 +136,12 @@ async def get_partner_entities(
     )
     return result.scalars().all()
 
-@router.get("/recent", response_model=List[schemas.Entity])
+@router.get("/recent", response_model=List[schemas.EntitySearchTerm])
 async def get_recent_entities(
     limit: int = 25,
-    db: AsyncSession = Depends(get_db)
 ):
-    """Get the most recently synced entities"""
-    from sqlalchemy import desc
-    result = await db.execute(
-        select(Entity)
-        .order_by(desc(Entity.last_synced_at))
-        .limit(limit)
-    )
-    return result.scalars().all()
+    """Get recent search terms (in-memory)"""
+    return list(RECENT_ENTITY_SEARCHES)[:limit]
 
 
 @router.get("/primary", response_model=schemas.Entity)
@@ -167,17 +164,27 @@ async def save_entity(
     db: AsyncSession = Depends(get_db)
 ):
     """Save an entity to the local database (e.g. as Partner or Competitor)"""
+    def normalize_entity_type(raw_type: Optional[str]) -> str:
+        """Ensure entity types are standardized and limited to allowed values"""
+        if not raw_type:
+            return "OTHER"
+        upper_type = raw_type.upper()
+        return upper_type if upper_type in ALLOWED_ENTITY_TYPES else "OTHER"
+
+    payload = entity.model_dump()
+    payload["entity_type"] = normalize_entity_type(payload.get("entity_type"))
+
     result = await db.execute(select(Entity).where(Entity.uei == entity.uei))
     existing = result.scalars().first()
     if existing:
         # Update existing
-        for key, value in entity.model_dump().items():
+        for key, value in payload.items():
             setattr(existing, key, value)
         await db.commit()
         await db.refresh(existing)
         return existing
 
-    db_entity = Entity(**entity.model_dump())
+    db_entity = Entity(**payload)
     db.add(db_entity)
     await db.commit()
     await db.refresh(db_entity)
@@ -192,20 +199,33 @@ async def get_entity_awards(
 ):
     """Fetch awards for an entity from USASpending.gov"""
     try:
-        # 1. Get the entity name from the database
+        # 1. Get the entity name (prefer DB, fallback to SAM)
         result = await db.execute(select(Entity).where(Entity.uei == uei))
         entity = result.scalars().first()
+        persist_awards = entity is not None  # Only persist if entity already saved (partner/competitor/observing)
+
+        entity_name = entity.legal_business_name if entity else None
+        if not entity_name:
+            sam_client = SamEntityClient()
+            sam_entity = await sam_client.get_entity(uei)
+            reg = {}
+            if isinstance(sam_entity, dict):
+                if "entityRegistration" in sam_entity:
+                    reg = sam_entity.get("entityRegistration", {})
+                elif "entityData" in sam_entity and isinstance(sam_entity["entityData"], list) and sam_entity["entityData"]:
+                    reg = sam_entity["entityData"][0].get("entityRegistration", {})
+            entity_name = reg.get("legalBusinessName")
         
-        if not entity:
+        if not entity_name:
             print(f"Entity with UEI {uei} not found")
             return []
         
         # 2. Fetch from USASpending using entity name (not UEI)
         # Fetch Prime Awards
-        prime_awards = await usaspending.get_awards_by_name(entity.legal_business_name, limit=limit)
+        prime_awards = await usaspending.get_awards_by_name(entity_name, limit=limit)
         
         # Fetch Sub-Awards
-        sub_awards = await usaspending.get_subawards_by_name(entity.legal_business_name, limit=limit)
+        sub_awards = await usaspending.get_subawards_by_name(entity_name, limit=limit)
         
         all_awards = []
         
@@ -219,21 +239,22 @@ async def get_entity_awards(
             award["award_type"] = "Prime"
             all_awards.append(award)
                 
-            # Check if exists
-            result = await db.execute(select(EntityAward).where(EntityAward.award_id == award_id))
-            if not result.scalars().first():
-                db_award = EntityAward(
-                    award_id=award_id,
-                    recipient_uei=uei,
-                    total_obligation=award.get("Award Amount"),
-                    description=award.get("Description"),
-                    award_date=datetime.strptime(award.get("Start Date"), "%Y-%m-%d").date() if award.get("Start Date") else None,
-                    awarding_agency=award.get("Awarding Agency"),
-                    naics_code=award.get("NAICS Code"),
-                    solicitation_id=award.get("Solicitation ID"),
-                    award_type="Prime"
-                )
-                db.add(db_award)
+            if persist_awards:
+                # Check if exists
+                result = await db.execute(select(EntityAward).where(EntityAward.award_id == award_id))
+                if not result.scalars().first():
+                    db_award = EntityAward(
+                        award_id=award_id,
+                        recipient_uei=uei,
+                        total_obligation=award.get("Award Amount"),
+                        description=award.get("Description"),
+                        award_date=datetime.strptime(award.get("Start Date"), "%Y-%m-%d").date() if award.get("Start Date") else None,
+                        awarding_agency=award.get("Awarding Agency"),
+                        naics_code=award.get("NAICS Code"),
+                        solicitation_id=award.get("Solicitation ID"),
+                        award_type="Prime"
+                    )
+                    db.add(db_award)
 
         # Process Sub-Awards
         for award in sub_awards:
@@ -255,23 +276,25 @@ async def get_entity_awards(
             }
             all_awards.append(normalized_award)
             
-            # Check if exists
-            # Note: Sub-Award IDs might clash with Prime IDs? Unlikely but possible.
-            # Usually Sub-Award IDs are distinct.
-            result = await db.execute(select(EntityAward).where(EntityAward.award_id == sub_id))
-            if not result.scalars().first():
-                db_award = EntityAward(
-                    award_id=sub_id,
-                    recipient_uei=uei,
-                    total_obligation=award.get("Sub-Award Amount"),
-                    description=award.get("Sub-Award Description"),
-                    award_date=datetime.strptime(award.get("Sub-Award Date"), "%Y-%m-%d").date() if award.get("Sub-Award Date") else None,
-                    awarding_agency=award.get("Awarding Agency"),
-                    award_type="Sub"
-                )
-                db.add(db_award)
+            if persist_awards:
+                # Check if exists
+                # Note: Sub-Award IDs might clash with Prime IDs? Unlikely but possible.
+                # Usually Sub-Award IDs are distinct.
+                result = await db.execute(select(EntityAward).where(EntityAward.award_id == sub_id))
+                if not result.scalars().first():
+                    db_award = EntityAward(
+                        award_id=sub_id,
+                        recipient_uei=uei,
+                        total_obligation=award.get("Sub-Award Amount"),
+                        description=award.get("Sub-Award Description"),
+                        award_date=datetime.strptime(award.get("Sub-Award Date"), "%Y-%m-%d").date() if award.get("Sub-Award Date") else None,
+                        awarding_agency=award.get("Awarding Agency"),
+                        award_type="Sub"
+                    )
+                    db.add(db_award)
         
-        await db.commit()
+        if persist_awards:
+            await db.commit()
         
         # Return the merged data
         return all_awards
@@ -288,11 +311,30 @@ async def set_primary_entity(
     db: AsyncSession = Depends(get_db)
 ):
     """Set an entity as the primary entity. If is_primary is True, unsets others."""
-    # 1. Find the entity
+    # 1. Find or create the entity (fetch from SAM if missing)
     result = await db.execute(select(Entity).where(Entity.uei == uei))
     entity = result.scalars().first()
     if not entity:
-        raise HTTPException(status_code=404, detail="Entity not found")
+        client = SamEntityClient()
+        sam_entity = await client.get_entity(uei)
+        if not sam_entity:
+            raise HTTPException(status_code=404, detail="Entity not found")
+        reg = {}
+        if isinstance(sam_entity, dict):
+            if "entityRegistration" in sam_entity:
+                reg = sam_entity.get("entityRegistration", {})
+            elif "entityData" in sam_entity and isinstance(sam_entity["entityData"], list) and sam_entity["entityData"]:
+                reg = sam_entity["entityData"][0].get("entityRegistration", {})
+        entity = Entity(
+            uei=uei,
+            legal_business_name=reg.get("legalBusinessName", "Unknown"),
+            cage_code=reg.get("cageCode"),
+            full_response=sam_entity,
+            entity_type="OTHER",
+            last_synced_at=datetime.utcnow()
+        )
+        db.add(entity)
+        await db.flush()
     
     # 2. If setting to True, unset others
     if is_primary:
@@ -399,27 +441,73 @@ async def get_contract_documents(
     )
     result = await db.execute(stmt)
     awards = result.scalars().all()
+    awards_data = [
+        {
+            "award_id": award.award_id,
+            "solicitation_id": award.solicitation_id,
+            "description": award.description,
+            "award_amount": award.total_obligation,
+            "opportunity_title": None
+        }
+        for award in awards
+        if award.solicitation_id
+    ]
+
+    # If there are no stored awards (likely because the entity hasn't been saved),
+    # fetch them on the fly without persisting.
+    if not awards_data:
+        entity_name = None
+        entity_result = await db.execute(select(Entity).where(Entity.uei == uei))
+        entity_obj = entity_result.scalars().first()
+        if entity_obj:
+            entity_name = entity_obj.legal_business_name
+        else:
+            sam_entity_client = SamEntityClient()
+            sam_entity = await sam_entity_client.get_entity(uei)
+            reg = {}
+            if isinstance(sam_entity, dict):
+                if "entityRegistration" in sam_entity:
+                    reg = sam_entity.get("entityRegistration", {})
+                elif "entityData" in sam_entity and isinstance(sam_entity["entityData"], list) and sam_entity["entityData"]:
+                    reg = sam_entity["entityData"][0].get("entityRegistration", {})
+            entity_name = reg.get("legalBusinessName")
+
+        if entity_name:
+            usaspending_client = USASpendingClient()
+            prime_awards = await usaspending_client.get_awards_by_name(entity_name, limit=20)
+            for award in prime_awards:
+                solicitation_id = award.get("Solicitation ID")
+                if not solicitation_id:
+                    continue
+                awards_data.append({
+                    "award_id": award.get("Award ID"),
+                    "solicitation_id": solicitation_id,
+                    "description": award.get("Description"),
+                    "award_amount": award.get("Award Amount"),
+                    "opportunity_title": award.get("Opportunity Title") or award.get("Description")
+                })
     
     sam_client = SamOpportunitiesClient()
     documents = []
     
-    for award in awards:
-        if not award.solicitation_id:
+    for award in awards_data:
+        solicitation_id = award.get("solicitation_id")
+        if not solicitation_id:
             continue
             
         try:
             # Fetch opportunity from SAM.gov
-            opp = await sam_client.get_opportunity_by_solicitation_id(award.solicitation_id)
+            opp = await sam_client.get_opportunity_by_solicitation_id(solicitation_id)
             
             if not opp:
-                logger.warning(f"No opportunity found for solicitation ID: {award.solicitation_id}")
+                logger.warning(f"No opportunity found for solicitation ID: {solicitation_id}")
                 continue
                 
             # Extract resource links from the opportunity
             resource_links = opp.get("resourceLinks", [])
             
             if not resource_links:
-                logger.info(f"No resource links found for solicitation ID: {award.solicitation_id}")
+                logger.info(f"No resource links found for solicitation ID: {solicitation_id}")
                 continue
             
             # Process each resource link to resolve filename
@@ -486,20 +574,20 @@ async def get_contract_documents(
                             doc_type = "Amendment"
                         
                         documents.append({
-                            "award_id": award.award_id,
-                            "solicitation_id": award.solicitation_id,
-                            "opportunity_title": opp.get("title"),
+                            "award_id": award.get("award_id"),
+                            "solicitation_id": solicitation_id,
+                            "opportunity_title": opp.get("title") or award.get("opportunity_title"),
                             "document_url": url,
                             "document_filename": filename,
                             "document_type": doc_type,
-                            "award_description": award.description,
-                            "award_amount": award.total_obligation
+                            "award_description": award.get("description"),
+                            "award_amount": award.get("award_amount")
                         })
                     except Exception as e:
                         logger.error(f"Error processing resource link {link}: {e}")
                         continue
         except Exception as e:
-            logger.error(f"Error fetching documents for solicitation {award.solicitation_id}: {e}")
+            logger.error(f"Error fetching documents for solicitation {solicitation_id}: {e}")
             continue
             
     return documents

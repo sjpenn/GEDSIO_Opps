@@ -115,7 +115,7 @@ class Entity(Base):
     uei = Column(String, primary_key=True, index=True)
     legal_business_name = Column(String, nullable=False)
     cage_code = Column(String, nullable=True)
-    entity_type = Column(String, default="OTHER") # PARTNER, COMPETITOR, OTHER
+    entity_type = Column(String, default="OTHER") # PARTNER, COMPETITOR, OBSERVING, OTHER
     notes = Column(Text, nullable=True)
     full_response = Column(JSONB, nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
@@ -481,4 +481,3 @@ class PastPerformance(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-

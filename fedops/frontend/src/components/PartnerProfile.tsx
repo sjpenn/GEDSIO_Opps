@@ -45,7 +45,16 @@ export function PartnerProfile({ entity }: PartnerProfileProps) {
           </div>
         </div>
         <div className="text-right">
-          <Badge variant={entity.entity_type === 'PARTNER' ? 'default' : 'secondary'}>
+          <Badge
+            variant={
+              entity.entity_type === 'PARTNER'
+                ? 'default'
+                : entity.entity_type === 'COMPETITOR'
+                  ? 'destructive'
+                  : 'outline'
+            }
+            className={entity.entity_type === 'OBSERVING' ? 'bg-amber-50 text-amber-700 border-amber-200' : undefined}
+          >
             {entity.entity_type || 'OTHER'}
           </Badge>
         </div>

@@ -81,8 +81,8 @@ class EntityCreate(EntityBase):
 class Entity(EntityBase):
     full_response: Optional[dict] = None
     last_synced_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     similarity_score: Optional[float] = None
     
     # Partner Search Fields
@@ -110,3 +110,10 @@ class EntityAward(EntityAwardBase):
 
     class Config:
         from_attributes = True
+
+
+class EntitySearchTerm(BaseModel):
+    """Lightweight record of an entity search term"""
+    term: str
+    searched_at: datetime
+    result_count: Optional[int] = None

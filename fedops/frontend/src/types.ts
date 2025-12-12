@@ -56,7 +56,7 @@ export interface Entity {
   uei: string
   legal_business_name: string
   cage_code?: string
-  entity_type?: string
+  entity_type?: 'PARTNER' | 'COMPETITOR' | 'OBSERVING' | 'OTHER'
   is_primary?: boolean
   notes?: string
   logo_url?: string
@@ -81,4 +81,10 @@ export interface Entity {
     code: string
     description: string
   }[]
+}
+
+export interface EntitySearchTerm {
+  term: string
+  searched_at: string
+  result_count?: number
 }

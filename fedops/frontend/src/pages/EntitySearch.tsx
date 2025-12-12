@@ -641,6 +641,18 @@ export default function EntitySearchPage() {
                         <Target className="h-4 w-4 mr-2" />
                         {showCompetitorAnalysis ? "Hide Analysis" : "Research Competitor"}
                       </Button>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Navigate to past performance page with entity context
+                          window.location.href = `/past-performance?entity=${selectedEntity.uei}`;
+                        }}
+                        className="text-amber-600 border-amber-200 hover:bg-amber-50"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Past Performance
+                      </Button>
                       {!selectedEntity.is_primary && (
                           <Button 
                               variant="outline"

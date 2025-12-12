@@ -14,6 +14,7 @@ import Layout from './components/Layout';
 import PageTransition from './components/PageTransition';
 import AboutPage from './pages/About';
 import ResumeManager from './pages/ResumeManager';
+import PastPerformancePage from './pages/PastPerformance';
 
 function App() {
   return (
@@ -80,6 +81,11 @@ function App() {
             <Route path="/resumes" element={
               <PageTransition>
                 <ResumeManager />
+              </PageTransition>
+            } />
+            <Route path="/past-performance" element={
+              <PageTransition>
+                <PastPerformancePage />
               </PageTransition>
             } />
 

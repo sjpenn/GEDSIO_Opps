@@ -204,6 +204,94 @@ Return ONLY valid JSON."""
         prompt = self._build_co_prompt(co_name, agency)
         return await self._execute_research(prompt, co_name, "co")
 
+    async def generate_past_performance_section(
+        self,
+        section_name: str,
+        context: str
+    ) -> str:
+        """Generate content for a past performance questionnaire section"""
+        if not self.api_key:
+            raise ValueError("PERPLEXITY_API_KEY not configured")
+        
+        # Section-specific prompts
+        section_prompts = {
+            "project_overview": "Provide a concise project overview including contract number, period of performance, contract value, and client agency. Format as a professional paragraph.",
+            "scope_of_work": "Describe the scope of work performed under this contract. Include key deliverables, services provided, and project objectives. Be specific and detailed.",
+            "technical_approach": "Explain the technical approach, methodologies, tools, and technologies used. Highlight innovative solutions and best practices employed.",
+            "challenges_solutions": "Describe key challenges encountered during the project and the innovative solutions implemented to overcome them. Focus on problem-solving capabilities.",
+            "results_outcomes": "Provide measurable results and outcomes. Include quantifiable achievements such as cost savings, performance improvements, efficiency gains, or other metrics.",
+            "relevance": "Explain how this past performance is relevant to the current opportunity. Draw specific parallels between past work and current requirements.",
+            "references": "Provide client reference information including name, title, organization, phone number, and email address. Include a brief statement about the working relationship."
+        }
+        
+        section_guidance = section_prompts.get(section_name, "Provide detailed information for this section.")
+        
+        prompt = f"""Based on the following context, generate professional content for the '{section_name.replace('_', ' ').title()}' section of a past performance questionnaire.
+
+Context:
+{context}
+
+Instructions:
+{section_guidance}
+
+Requirements:
+- Write in a professional, third-person narrative style
+- Be specific and detailed, avoiding generic statements
+- Use concrete examples and data where possible
+- Keep the response focused and relevant
+- Length: 150-300 words
+
+Generate ONLY the content for this section, no additional commentary or formatting."""
+
+        payload = {
+            "model": self.DEFAULT_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a professional proposal writer specializing in federal government past performance questionnaires. Write clear, compelling, and factual content."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.3,  # Lower temperature for more focused, factual content
+            "web_search_options": {
+                "search_context_size": "medium"
+            }
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            logger.info(f"Generating past performance section: {section_name}")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    self.BASE_URL,
+                    json=payload,
+                    headers=headers
+                )
+                response.raise_for_status()
+                data = response.json()
+            
+            choices = data.get("choices", [])
+            if not choices:
+                raise ValueError("No response content from Perplexity")
+            
+            content = choices[0].get("message", {}).get("content", "")
+            return content.strip()
+            
+        except httpx.TimeoutException:
+            logger.error(f"Perplexity API timed out for section: {section_name}")
+            raise ValueError("Content generation timed out. Please try again.")
+        except Exception as e:
+            logger.error(f"Error generating section {section_name}: {e}")
+            raise
+
+
 
 
     async def _execute_research(

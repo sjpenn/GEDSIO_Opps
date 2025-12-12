@@ -413,6 +413,7 @@ class SavedAgencySearch(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
 class Resume(Base):
     """
     Stores structured resume data and formatting preferences.
@@ -439,3 +440,45 @@ class Resume(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PastPerformance(Base):
+    """
+    Past Performance Questionnaire for proposal submissions.
+    Links to entities (primary or partner) and their awards to create
+    structured past performance documentation with AI-assisted content generation.
+    """
+    __tablename__ = "past_performances"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Entity and Award Relationships
+    entity_uei = Column(String, ForeignKey("entities.uei"), nullable=False, index=True)
+    award_id = Column(String, ForeignKey("entity_awards.award_id"), nullable=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
+    
+    # Basic Information
+    title = Column(String, nullable=False)  # e.g., "IT Infrastructure Support for DoD"
+    status = Column(String, default="DRAFT", index=True)  # DRAFT, IN_PROGRESS, COMPLETE, APPROVED
+    
+    # Questionnaire Data - Structured JSON with sections
+    # Each section: {"content": "...", "generated": bool, "last_generated_at": "...", "model_used": "..."}
+    questionnaire_data = Column(JSONB, nullable=False, default={
+        "project_overview": {"content": "", "generated": False},
+        "scope_of_work": {"content": "", "generated": False},
+        "technical_approach": {"content": "", "generated": False},
+        "challenges_solutions": {"content": "", "generated": False},
+        "results_outcomes": {"content": "", "generated": False},
+        "relevance": {"content": "", "generated": False},
+        "references": {"content": "", "generated": False}
+    })
+    
+    # Metadata
+    created_by = Column(String, nullable=True)
+    approved_by = Column(String, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

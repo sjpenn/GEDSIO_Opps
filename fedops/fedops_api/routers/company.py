@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
@@ -10,6 +10,7 @@ from fedops_core.db.engine import get_db
 from fedops_core.db.models import CompanyProfile, CompanyProfileDocument, CompanyProfileLink, Entity
 from fedops_core.schemas import company as schemas
 from fedops_sources.sam_entity import SamEntityClient
+from fedops_core.services.entity_enrichment_service import entity_enrichment_service
 
 router = APIRouter()
 
@@ -86,6 +87,7 @@ async def create_company_profile(
     db.add(db_profile)
     await db.commit()
     await db.refresh(db_profile)
+    db_profile.awards = []  # Initialize awards for response schema
     return db_profile
 
 @router.get("/", response_model=List[schemas.CompanyProfile])
@@ -107,6 +109,18 @@ async def get_company_profiles(
         # Sort profiles: primary first
         profiles = sorted(profiles, key=lambda p: p.uei != primary_uei)
         
+    # Initialize awards for all profiles to satisfy schema
+    # Initialize awards for all profiles
+    from fedops_core.db.models import EntityAward
+    for p in profiles:
+        awards_res = await db.execute(
+            select(EntityAward)
+            .where(EntityAward.recipient_uei == p.uei)
+            .order_by(EntityAward.award_date.desc().nulls_last())
+            .limit(50) # Limit to avoid massive payloads for list view
+        )
+        p.awards = awards_res.scalars().all()
+        
     return profiles
 
 @router.get("/{uei}", response_model=schemas.CompanyProfile)
@@ -115,6 +129,13 @@ async def get_company_profile(uei: str, db: AsyncSession = Depends(get_db)):
     profile = result.scalars().first()
     if not profile:
         raise HTTPException(status_code=404, detail="Company Profile not found")
+        
+    # Fetch awards manually since we don't have a relationship yet (or just query them)
+    # Using explicit query for now 
+    from fedops_core.db.models import EntityAward
+    awards_res = await db.execute(select(EntityAward).where(EntityAward.recipient_uei == uei).order_by(EntityAward.award_date.desc().nulls_last()))
+    profile.awards = awards_res.scalars().all()
+    
     return profile
 
 @router.put("/{uei}", response_model=schemas.CompanyProfile)
@@ -134,6 +155,12 @@ async def update_company_profile(
 
     await db.commit()
     await db.refresh(db_profile)
+    
+    # Fetch awards to maintain consistency in response
+    from fedops_core.db.models import EntityAward
+    awards_res = await db.execute(select(EntityAward).where(EntityAward.recipient_uei == uei).order_by(EntityAward.award_date.desc().nulls_last()))
+    db_profile.awards = awards_res.scalars().all()
+    
     return db_profile
 
 # ============ Entity Selection Endpoints ============
@@ -160,6 +187,7 @@ async def _set_primary_entity(db: AsyncSession, entity_uei: str):
 @router.post("/set-entity/{entity_uei}", response_model=schemas.CompanyProfile)
 async def set_entity_as_profile(
     entity_uei: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Set an entity from SAM.gov as the ACTIVE company profile. Creates profile if needed."""
@@ -186,6 +214,9 @@ async def set_entity_as_profile(
     # 2. Set as primary entity
     await _set_primary_entity(db, entity_uei)
     
+    # 2.5 Trigger enrichment (Awards, Opportunities)
+    background_tasks.add_task(entity_enrichment_service.enrich_entity, entity_uei)
+    
     # 3. Check if a company profile already exists for THIS entity
     result = await db.execute(select(CompanyProfile).where(CompanyProfile.uei == entity_uei))
     existing_profile = result.scalars().first()
@@ -194,6 +225,12 @@ async def set_entity_as_profile(
         # Profile exists, just return it (it's now the active one because we set is_primary)
         await db.commit()
         await db.refresh(existing_profile)
+        
+        # Attach awards
+        from fedops_core.db.models import EntityAward
+        awards_res = await db.execute(select(EntityAward).where(EntityAward.recipient_uei == entity_uei).order_by(EntityAward.award_date.desc().nulls_last()))
+        existing_profile.awards = awards_res.scalars().all()
+        
         return existing_profile
     else:
         # 4. Extract metadata from entity
@@ -211,18 +248,20 @@ async def set_entity_as_profile(
         db.add(new_profile)
         await db.commit()
         await db.refresh(new_profile)
+        new_profile.awards = [] # New profile, no awards yet
         return new_profile
 
 @router.put("/{company_uei}/switch-entity/{new_entity_uei}", response_model=schemas.CompanyProfile)
 async def switch_company_entity(
     company_uei: str,
     new_entity_uei: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Switch the ACTIVE company profile to a different entity. Creates profile if needed."""
     # This is effectively the same as set_entity_as_profile, but we might want to validate company_uei was the previous one
     # For now, just delegate to the same logic
-    return await set_entity_as_profile(new_entity_uei, db)
+    return await set_entity_as_profile(new_entity_uei, background_tasks, db)
 
 # ============ Document Management Endpoints ============
 

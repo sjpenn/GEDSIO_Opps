@@ -208,10 +208,21 @@ export default function EntitySearchPage() {
 
       const res = await fetch(`/api/v1/entities/search?${params.toString()}`);
       if (!res.ok) {
-        if (res.status === 429) {
-          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+        let errorMessage = `Search failed: ${res.statusText}`;
+        try {
+          const errorData = await res.json();
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          }
+        } catch (e) {
+          // Ignore JSON parse error, stick to statusText
         }
-        throw new Error(`Search failed: ${res.statusText}`);
+
+        if (res.status === 429) {
+          errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
+        }
+
+        throw new Error(errorMessage);
       }
       const data = await res.json();
       console.log("Search results:", data);

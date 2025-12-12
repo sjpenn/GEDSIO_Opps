@@ -20,10 +20,28 @@ class CompanyProfileUpdate(BaseModel):
     target_keywords: Optional[List[str]] = None
     target_set_asides: Optional[List[str]] = None
 
+# Entity Award Schemas (Moved up for reference)
+class EntityAwardBase(BaseModel):
+    award_id: str
+    recipient_uei: str
+    total_obligation: Optional[float] = None
+    description: Optional[str] = None
+    award_date: Optional[Any] = None # Date
+    awarding_agency: Optional[str] = None
+    award_type: Optional[str] = "Prime"
+    solicitation_id: Optional[str] = None
+
+class EntityAward(EntityAwardBase):
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class CompanyProfile(CompanyProfileBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    awards: List[EntityAward] = []
 
     class Config:
         from_attributes = True
@@ -96,20 +114,7 @@ class Entity(EntityBase):
     class Config:
         from_attributes = True
 
-class EntityAwardBase(BaseModel):
-    award_id: str
-    recipient_uei: str
-    total_obligation: Optional[float] = None
-    description: Optional[str] = None
-    award_date: Optional[Any] = None # Date
-    awarding_agency: Optional[str] = None
-    award_type: Optional[str] = "Prime"
 
-class EntityAward(EntityAwardBase):
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class EntitySearchTerm(BaseModel):

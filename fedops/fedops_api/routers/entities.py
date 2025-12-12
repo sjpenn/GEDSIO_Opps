@@ -21,6 +21,8 @@ ALLOWED_ENTITY_TYPES = {"PARTNER", "COMPETITOR", "OBSERVING", "OTHER"}
 def get_sam_client():
     return SamEntityClient()
 
+
+    
 @router.get("/search", response_model=List[schemas.Entity])
 async def search_entities(
     q: str = Query(..., min_length=3, description="Legal Business Name to search"),
@@ -32,10 +34,16 @@ async def search_entities(
     bypass_cache: bool = Query(False, description="Skip cache and fetch fresh results"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Search for entities on SAM.gov with advanced fuzzy matching and save them to DB"""
+    """Search for entities on SAM.gov with advanced fuzzy matching OR local database fallback."""
     import logging
     logger = logging.getLogger(__name__)
     
+    api_entities_data = []
+    api_worked = False
+    api_error_detail = None
+    api_status_code = 500
+    
+    # 1. Try SAM.gov API Search
     try:
         client = SamEntityClient()
         data = await client.search_entities(
@@ -48,80 +56,96 @@ async def search_entities(
             bypass_cache=bypass_cache
         )
         
-        logger.info(f"SAM Search response type: {type(data)}")
+        raw_list = data.get("entityData", []) if isinstance(data, dict) else data
+        api_entities_data = raw_list if isinstance(raw_list, list) else []
+        api_worked = True
         
-        # SAM API V3 structure: {'entityData': [...], 'searchMetadata': {...}}
-        entities_data = data.get("entityData", []) if isinstance(data, dict) else data
-        search_metadata = data.get("searchMetadata", {}) if isinstance(data, dict) else {}
-        
-        if not isinstance(entities_data, list):
-            entities_data = []
-        
-        if search_metadata:
-            logger.info(f"Fuzzy search metadata: {search_metadata}")
-
-        # Track the search term and hit count without storing entities
-        RECENT_ENTITY_SEARCHES.appendleft({
-            "term": q,
-            "searched_at": datetime.utcnow(),
-            "result_count": len(entities_data)
-        })
-
-        # Build lookup of already-saved entities (partners/competitors/observing)
-        ueis = []
-        for item in entities_data:
-            if not isinstance(item, dict):
-                continue
-            reg = item.get("entityRegistration", {})
-            uei = reg.get("ueiSAM")
-            if uei:
-                ueis.append(uei)
-
-        existing_map = {}
-        if ueis:
-            existing_result = await db.execute(select(Entity).where(Entity.uei.in_(ueis)))
-            for ent in existing_result.scalars():
-                existing_map[ent.uei] = ent
-
-        results = []
-        for item in entities_data:
-            if not isinstance(item, dict):
-                logger.warning(f"Skipping non-dict item: {item}")
-                continue
+        # 1.1 Persist (Cache) API Results to DB
+        if api_entities_data:
+            logger.info(f"Persisting {len(api_entities_data)} entities from API to DB")
+            for item in api_entities_data:
+                if not isinstance(item, dict): continue
+                reg = item.get("entityRegistration", {})
+                uei = reg.get("ueiSAM")
+                name = reg.get("legalBusinessName")
+                cage = reg.get("cageCode")
                 
-            reg = item.get("entityRegistration", {})
-            uei = reg.get("ueiSAM")
-            name = reg.get("legalBusinessName")
-            cage = reg.get("cageCode")
+                if not uei or not name: continue
+                
+                res = await db.execute(select(Entity).where(Entity.uei == uei))
+                existing = res.scalars().first()
+                
+                if existing:
+                    existing.legal_business_name = name
+                    existing.cage_code = cage
+                    existing.full_response = item
+                    existing.last_synced_at = datetime.utcnow()
+                else:
+                    new_ent = Entity(
+                        uei=uei,
+                        legal_business_name=name,
+                        cage_code=cage,
+                        entity_type="OTHER",
+                        full_response=item,
+                        last_synced_at=datetime.utcnow()
+                    )
+                    db.add(new_ent)
             
-            fuzzy_match = item.get("_fuzzy_match", {})
-            similarity_score = fuzzy_match.get("similarity_score", 1.0)
+            await db.commit()
             
-            if not uei or not name:
-                continue
-            
-            existing = existing_map.get(uei)
-            results.append({
-                "uei": uei,
-                "legal_business_name": name,
-                "cage_code": cage,
-                "entity_type": existing.entity_type if existing else "OTHER",
-                "is_primary": existing.is_primary if existing else False,
-                "notes": existing.notes if existing else None,
-                "last_synced_at": existing.last_synced_at if existing else None,
-                "created_at": existing.created_at if existing else None,
-                "updated_at": existing.updated_at if existing else None,
-                "similarity_score": similarity_score
-            })
-        
-        # Sort by similarity score (highest first) if fuzzy search was used
-        if fuzzy and results:
-            results.sort(key=lambda e: e.get("similarity_score", 0) or 0, reverse=True)
-            
-        return results
     except Exception as e:
-        logger.error(f"Error in search_entities: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        logger.warning(f"SAM.gov API Search failed (using local fallback): {error_msg}")
+        api_worked = False
+        api_error_detail = error_msg
+        # Check if it's a rate limit error string (hacky but effective if client doesn't expose status)
+        if "429" in error_msg or "Rate limit" in error_msg:
+            api_status_code = 429
+        else:
+            api_status_code = 502 # Bad Gateway / Upstream Error
+
+    # 2. Local Fallback / Hybrid Search
+    search_ueis = []
+    for item in api_entities_data:
+        if isinstance(item, dict):
+            u = item.get("entityRegistration", {}).get("ueiSAM")
+            if u: search_ueis.append(u)
+    
+    from sqlalchemy import or_
+    
+    # Always query local DB to fulfill the request
+    query_stmt = select(Entity).where(
+        or_(
+            Entity.uei.in_(search_ueis) if search_ueis else False,
+            Entity.legal_business_name.ilike(f"%{q}%")
+        )
+    )
+    
+    final_db_res = await db.execute(query_stmt)
+    all_db_entities = final_db_res.scalars().all()
+    
+    final_results = []
+    from difflib import SequenceMatcher
+    
+    for entity in all_db_entities:
+        similarity = SequenceMatcher(None, q.lower(), entity.legal_business_name.lower()).ratio()
+        entity.similarity_score = similarity
+        final_results.append(entity)
+        
+    final_results.sort(key=lambda x: x.similarity_score, reverse=True)
+    
+    # CRITICAL: If API failed AND we have NO local results, expose the error to the user
+    if not api_worked and not final_results:
+        # Raise the error so the frontend displays it instead of "No results"
+        raise HTTPException(
+            status_code=api_status_code, 
+            detail=f"SAM.gov API Error: {api_error_detail}. No local records found."
+        )
+        
+    if not api_worked:
+        logger.info(f"Fallback: Found {len(final_results)} local entities matching '{q}'")
+        
+    return final_results
 
 
 @router.get("/partners", response_model=List[schemas.Entity])
@@ -402,13 +426,7 @@ async def upload_entity_logo(
     return {"logo_url": logo_url}
 
 
-@router.get("/primary", response_model=Optional[schemas.Entity])
-async def get_primary_entity(db: AsyncSession = Depends(get_db)):
-    """Get the current primary entity"""
-    result = await db.execute(select(Entity).where(Entity.is_primary == True))
-    return result.scalars().first()
 
-    return matches
 
 @router.get("/{uei}/contract-documents")
 async def get_contract_documents(

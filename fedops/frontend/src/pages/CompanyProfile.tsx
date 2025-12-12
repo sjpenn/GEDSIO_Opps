@@ -10,6 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+interface EntityAward {
+  award_id: string;
+  recipient_uei: string;
+  total_obligation?: number;
+  description?: string;
+  award_date?: string;
+  awarding_agency?: string;
+  award_type?: string; // Prime or Sub
+  solicitation_id?: string;
+}
 
 interface CompanyProfile {
   uei: string;
@@ -19,8 +29,8 @@ interface CompanyProfile {
   target_keywords: string[];
   target_set_asides: string[];
   logo_url?: string;
+  awards?: EntityAward[];
 }
-
 interface Entity {
   uei: string;
   legal_business_name: string;
@@ -725,6 +735,81 @@ export default function CompanyProfilePage() {
                 </Button>
               </CardFooter>
             )}
+          </Card>
+
+          {/* Awards Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Contracts & Awards
+              </CardTitle>
+              <CardDescription>
+                Recent Prime and Sub-Awards fetched from USASpending.gov
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {profile?.awards && profile.awards.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-muted/50 text-xs uppercase">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-muted-foreground rounded-tl-lg">Award ID</th>
+                        <th className="px-4 py-3 font-medium text-muted-foreground">Type</th>
+                        <th className="px-4 py-3 font-medium text-muted-foreground">Date</th>
+                        <th className="px-4 py-3 font-medium text-muted-foreground">Agency</th>
+                        <th className="px-4 py-3 font-medium text-muted-foreground">Value</th>
+                        <th className="px-4 py-3 font-medium text-muted-foreground rounded-tr-lg">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {profile.awards.slice(0, 50).map((award) => ( // Show max 50 for now
+                        <tr key={award.award_id} className="hover:bg-muted/30 transition-colors group">
+                          <td className="px-4 py-3 font-mono font-medium">
+                            {award.award_id}
+                            {award.solicitation_id && (
+                              <div className="flex items-center gap-1 mt-1 text-xs text-blue-600">
+                                <LinkIcon className="h-3 w-3" />
+                                <span title="Linked Solicitation">{award.solicitation_id}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={award.award_type === 'Prime' ? 'default' : 'secondary'} className="text-[10px] px-2 h-5">
+                              {award.award_type}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                            {award.award_date ? new Date(award.award_date).toLocaleDateString() : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground max-w-[150px] truncate" title={award.awarding_agency || ''}>
+                            {award.awarding_agency || '-'}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-green-700 whitespace-nowrap">
+                            {award.total_obligation ?
+                              new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(award.total_obligation)
+                              : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground max-w-[300px]">
+                            <p className="truncate group-hover:whitespace-normal group-hover:break-words group-hover:bg-popover group-hover:p-2 group-hover:absolute group-hover:z-10 group-hover:shadow-lg group-hover:border group-hover:rounded-md group-hover:max-w-md">
+                              {award.description}
+                            </p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-lg bg-muted/10">
+                  <FileText className="h-10 w-10 text-muted-foreground mb-3 opacity-50" />
+                  <h3 className="text-lg font-medium text-muted-foreground">No awards found</h3>
+                  <p className="text-sm text-muted-foreground/80 max-w-sm mt-1">
+                    We couldn't find any recent contract awards for this entity in USASpending.gov.
+                  </p>
+                </div>
+              )}
+            </CardContent>
           </Card>
 
           {/* Document Upload Section */}

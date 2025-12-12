@@ -204,3 +204,129 @@ class USASpendingClient:
             except Exception as e:
                 print(f"Error fetching sub-awards for {recipient_name}: {e}")
                 return []
+
+    async def get_awards_by_uei(self, uei: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch prime awards by UEI"""
+        endpoint = "/search/spending_by_award/"
+        url = f"{self.BASE_URL}{endpoint}"
+        
+        # Set time period to past 10 years for comprehensive history
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=10*365)
+        
+        payload = {
+            "filters": {
+                "recipient_uei": uei,
+                "award_type_codes": ["A", "B", "C", "D"],  # Contracts
+                "time_period": [
+                    {
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d")
+                    }
+                ]
+            },
+            "fields": [
+                # Basic Information
+                "Award ID",
+                "Recipient Name",
+                "Description",
+                
+                # Financial Fields
+                "Award Amount",
+                "Total Obligation",
+                
+                # Date Fields
+                "Start Date",
+                "End Date",
+                
+                # Contract Details
+                "Award Type",
+                "Contract Award Type",
+                
+                # Agency Information
+                "Awarding Agency",
+                "Awarding Sub Agency",
+                
+                # Classification
+                "NAICS Code",
+                "Product or Service Code",
+                
+                # Identifiers
+                "Solicitation ID",
+                "Parent Award ID",
+                "Recipient UEI",
+            ],
+            "limit": limit,
+            "page": 1
+        }
+
+        print(f"[USASpending] Fetching awards for UEI: {uei}")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("results", [])
+                print(f"[USASpending] Found {len(results)} awards for UEI {uei}")
+                return results
+            except httpx.HTTPStatusError as e:
+                print(f"Error fetching awards for UEI {uei}: {e}")
+                return []
+            except Exception as e:
+                print(f"Unexpected error fetching awards for UEI {uei}: {e}")
+                return []
+
+    async def get_subawards_by_uei(self, uei: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch sub-awards by UEI"""
+        endpoint = "/search/spending_by_award/"
+        url = f"{self.BASE_URL}{endpoint}"
+        
+        # Set time period to past 10 years
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=10*365)
+        
+        payload = {
+            "filters": {
+                "recipient_uei": uei, # Note: USASpending might use different filter for subawardee UEI, checking docs usually implies recipient_uei works if subawards=True? 
+                # Actually, specialized filter for subawards is tricky. Let's try strictly recipient_uei first.
+                # If that fails, we might need to search by name or verify if recipient_uei applies to sub-awardees.
+                # Based on USASpending API docs, when subawards=True, recipient_filter applies to the sub-awardee.
+                "award_type_codes": ["A", "B", "C", "D"],
+                "time_period": [
+                    {
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "end_date": end_date.strftime("%Y-%m-%d")
+                    }
+                ]
+            },
+            "subawards": True,
+            "fields": [
+                "Sub-Award ID", 
+                "Sub-Awardee Name", 
+                "Sub-Award Date", 
+                "Sub-Award Amount", 
+                "Prime Recipient Name", 
+                "Prime Award ID",
+                "Sub-Award Description",
+                "Awarding Agency",
+                "Awarding Sub Agency",
+                "Prime Award Solicitation ID" # If available
+            ],
+            "limit": limit,
+            "page": 1
+        }
+
+        print(f"[USASpending] Fetching sub-awards for UEI: {uei}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("results", [])
+                print(f"[USASpending] Found {len(results)} sub-awards for UEI {uei}")
+                return results
+            except Exception as e:
+                print(f"Error fetching sub-awards for UEI {uei}: {e}")
+                return []

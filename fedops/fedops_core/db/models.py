@@ -91,6 +91,8 @@ class CompanyProfileDocument(Base):
     description = Column(Text, nullable=True)
     file_path = Column(String, nullable=False)
     file_size = Column(Integer, nullable=True)
+    parsed_content = Column(Text, nullable=True)
+    status = Column(String, default="COMPLETED") # PROCESSING, COMPLETED, FAILED
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -456,6 +458,7 @@ class PastPerformance(Base):
     entity_uei = Column(String, ForeignKey("entities.uei"), nullable=False, index=True)
     award_id = Column(String, ForeignKey("entity_awards.award_id"), nullable=True, index=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)
+    source_document_id = Column(Integer, ForeignKey("company_profile_documents.id"), nullable=True, index=True)
     
     # Basic Information
     title = Column(String, nullable=False)  # e.g., "IT Infrastructure Support for DoD"

@@ -1,66 +1,59 @@
-import { useState, useEffect } from 'react';
-import { Loader2, Building2, Target, Key, FileText, Download, Edit2, Save, Search, Upload, Link as LinkIcon, ExternalLink, Trash2, Check, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Building2,
+  MapPin,
+  Globe,
+  Users,
+  Calendar,
+  FileText,
+  AlertCircle,
+  Loader2,
+  Trash2,
+  Download,
+  CheckCircle,
+  Clock,
+  ExternalLink,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Search,
+  Edit2,
+  Check,
+  Upload,
+  Target,
+  Key,
+  Save,
+  Link as LinkIcon
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useNavigate } from 'react-router-dom';
+
+// import { toast } from 'sonner';
+const toast = {
+  success: (msg: string) => console.log('Success:', msg),
+  error: (msg: string) => console.error('Error:', msg),
+  info: (msg: string) => console.log('Info:', msg),
+  warning: (msg: string) => console.warn('Warning:', msg)
+};
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { BulkUploadDropzone } from '../components/ui/BulkUploadDropzone';
+import type { CompanyProfile, CompanyProfileDocument, CompanyProfileLink, Entity, PastPerformance, ContractDocument } from '../types';
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-interface EntityAward {
-  award_id: string;
-  recipient_uei: string;
-  total_obligation?: number;
-  description?: string;
-  award_date?: string;
-  awarding_agency?: string;
-  award_type?: string; // Prime or Sub
-  solicitation_id?: string;
-}
 
-interface CompanyProfile {
-  uei: string;
-  company_name: string;
-  entity_uei?: string;
-  target_naics: string[];
-  target_keywords: string[];
-  target_set_asides: string[];
-  logo_url?: string;
-  awards?: EntityAward[];
-}
-interface Entity {
-  uei: string;
-  legal_business_name: string;
-  cage_code?: string;
-  similarity_score?: number;
-  logo_url?: string;
-}
 
-interface ProfileDocument {
-  id: number;
-  company_uei: string;
-  document_type: string;
-  title: string;
-  description?: string;
-  file_path: string;
-  file_size?: number;
-  created_at: string;
-}
 
-interface ProfileLink {
-  id: number;
-  company_uei: string;
-  link_type: string;
-  title: string;
-  url: string;
-  description?: string;
-  created_at: string;
-}
 
 export default function CompanyProfilePage() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,16 +78,18 @@ export default function CompanyProfilePage() {
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
 
   // Documents state
-  const [documents, setDocuments] = useState<ProfileDocument[]>([]);
+  const [documents, setDocuments] = useState<CompanyProfileDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadType, setUploadType] = useState('Capability');
-  const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadDescription, setUploadDescription] = useState('');
+  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  // Unused single upload state removed
+  // const [uploadFile, setUploadFile] = useState<File | null>(null);
+  // ...
+
+
   // Links state
-  const [links, setLinks] = useState<ProfileLink[]>([]);
+  const [links, setLinks] = useState<CompanyProfileLink[]>([]);
   const [linksLoading, setLinksLoading] = useState(false);
   const [showAddLink, setShowAddLink] = useState(false);
   const [newLink, setNewLink] = useState({
@@ -104,9 +99,69 @@ export default function CompanyProfilePage() {
     description: ''
   });
 
+  // SOW Scan State
+  const [contractDocuments, setContractDocuments] = useState<ContractDocument[]>([]);
+  const [scanningSOWs, setScanningSOWs] = useState(false);
+  const [sowScanComplete, setSowScanComplete] = useState(false);
+
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  const handleBulkUpload = async () => {
+    if (!profile?.uei || filesToUpload.length === 0) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      filesToUpload.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const res = await fetch(`/api/v1/company/${profile.uei}/documents/bulk`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        setSuccess(`Successfully uploaded ${filesToUpload.length} documents for processing.`);
+        setFilesToUpload([]);
+        fetchDocuments();
+      } else {
+        const err = await res.json();
+        setError(err.detail || 'Failed to upload documents');
+      }
+    } catch (e) {
+      console.error(e);
+      setError('Error uploading documents');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ... (keeping existing useEffects)
+
+  const scanForSOWs = async () => {
+    if (!profile?.uei) return;
+
+    setScanningSOWs(true);
+    setSowScanComplete(false);
+    try {
+      const res = await fetch(`/api/v1/entities/${profile.uei}/contract-documents`);
+      if (res.ok) {
+        const data = await res.json();
+        setContractDocuments(data);
+        setSowScanComplete(true);
+      } else {
+        setError('Failed to scan for SOWs');
+      }
+    } catch (e) {
+      console.error("SOW scan error", e);
+      setError('Error scanning for SOWs');
+    } finally {
+      setScanningSOWs(false);
+    }
+  };
 
   useEffect(() => {
     if (profile?.uei) {
@@ -116,24 +171,35 @@ export default function CompanyProfilePage() {
   }, [profile]);
 
   const [suggestedEntity, setSuggestedEntity] = useState<Entity | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
+  const handleFileChange = (file: File | null) => {
+    setFile(file);
+    setError(null);
+  };
   const fetchProfile = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Profile
-      const res = await fetch('/api/v1/company/');
+      // 1. Fetch all profiles to get the first one's UEI
+      const listRes = await fetch('/api/v1/company/');
       let profileData = null;
 
-      if (res.ok) {
-        const data = await res.json();
+      if (listRes.ok) {
+        const data = await listRes.json();
         if (data && data.length > 0) {
-          profileData = data[0];
-          setProfile(profileData);
-          setFormData(profileData);
+          const firstProfile = data[0];
+
+          // 2. Fetch the FULL profile with past_performances using the UEI
+          const profileRes = await fetch(`/api/v1/company/${firstProfile.uei}`);
+          if (profileRes.ok) {
+            profileData = await profileRes.json();
+            setProfile(profileData);
+            setFormData(profileData);
+          }
         }
       }
 
-      // 2. Fetch Primary Entity (always, to check if we can suggest or enrich)
+      // 3. Fetch Primary Entity (always, to check if we can suggest or enrich)
       try {
         const entityRes = await fetch(`/api/v1/entities/primary`);
         if (entityRes.ok) {
@@ -193,6 +259,15 @@ export default function CompanyProfilePage() {
       setLinksLoading(false);
     }
   };
+
+  // Poll for document updates if any are processing
+  useEffect(() => {
+    const processingDocs = documents.some((doc: CompanyProfileDocument) => doc.status === 'PROCESSING');
+    if (processingDocs) {
+      const interval = setInterval(fetchDocuments, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [documents, profile?.uei]);
 
   const searchEntities = async () => {
     if (!entitySearchQuery.trim()) return;
@@ -260,38 +335,7 @@ export default function CompanyProfilePage() {
     }
   };
 
-  const handleUploadDocument = async () => {
-    if (!uploadFile || !profile) return;
 
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('document_type', uploadType);
-      formData.append('title', uploadTitle);
-      formData.append('description', uploadDescription);
-
-      const res = await fetch(`/api/v1/company/${profile.uei}/documents`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
-        setUploadFile(null);
-        setUploadTitle('');
-        setUploadDescription('');
-        fetchDocuments();
-        setSuccess('Document uploaded successfully!');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        throw new Error('Failed to upload document');
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const deleteDocument = async (docId: number) => {
     if (!profile) return;
@@ -307,6 +351,62 @@ export default function CompanyProfilePage() {
       }
     } catch (err) {
       setError('Failed to delete document');
+    }
+  };
+
+  const handleReanalyze = async (docId: number) => {
+    if (!profile) return;
+    try {
+      const res = await fetch(`/api/v1/company/${profile.uei}/documents/${docId}/reanalyze`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        setSuccess('Document re-analysis triggered!');
+        fetchDocuments();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        const err = await res.json();
+        setError(err.detail || 'Failed to reanalyze document');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Failed to trigger re-analysis');
+    }
+  };
+
+  // Map of docId -> boolean for tracking generation status
+  const [generating, setGenerating] = useState<Record<number, boolean>>({});
+
+  // Handle input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev: CompanyProfile) => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  const handleGeneratePP = async (docId: number) => {
+    if (!profile?.uei) return;
+
+    setGenerating(prev => ({ ...prev, [docId]: true }));
+    try {
+      const res = await fetch(`/api/v1/company/${profile.uei}/documents/${docId}/generate-pp`, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        setSuccess('Past Performance generation started successfully. This may take a moment.');
+        // Brief delay before refresh to allow backend to initialize the task/record
+        setTimeout(fetchProfile, 2000);
+      } else {
+        const err = await res.json();
+        setError(err.detail || 'Failed to generate Past Performance');
+      }
+    } catch (err: any) {
+      console.error("Fetch Error:", err);
+      setError(`Failed to generate Past Performance: ${err.message}`);
+    } finally {
+      setGenerating(prev => ({ ...prev, [docId]: false }));
     }
   };
 
@@ -750,9 +850,9 @@ export default function CompanyProfilePage() {
             </CardHeader>
             <CardContent>
               {profile?.awards && profile.awards.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="max-h-[600px] overflow-y-auto border rounded-lg">
                   <table className="w-full text-sm text-left">
-                    <thead className="bg-muted/50 text-xs uppercase">
+                    <thead className="bg-muted/50 text-xs uppercase sticky top-0 z-10">
                       <tr>
                         <th className="px-4 py-3 font-medium text-muted-foreground rounded-tl-lg">Award ID</th>
                         <th className="px-4 py-3 font-medium text-muted-foreground">Type</th>
@@ -801,212 +901,356 @@ export default function CompanyProfilePage() {
                   </table>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-lg bg-muted/10">
-                  <FileText className="h-10 w-10 text-muted-foreground mb-3 opacity-50" />
-                  <h3 className="text-lg font-medium text-muted-foreground">No awards found</h3>
-                  <p className="text-sm text-muted-foreground/80 max-w-sm mt-1">
-                    We couldn't find any recent contract awards for this entity in USASpending.gov.
-                  </p>
+                <div className="text-center py-12 text-muted-foreground">
+                  No awards found for this entity.
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Document Upload Section */}
-          {!isEditing && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5 text-primary" />
-                  Company Documents
-                </CardTitle>
-                <CardDescription>
-                  Upload capability statements, past performance, and other documents.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Upload Form */}
-                <div className="border-2 border-dashed rounded-lg p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-file">Select File</Label>
-                      <Input
-                        id="doc-file"
-                        type="file"
-                        onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="doc-type">Document Type</Label>
-                      <Select value={uploadType} onValueChange={setUploadType}>
-                        <SelectTrigger id="doc-type">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Capability">Capability Statement</SelectItem>
-                          <SelectItem value="PastPerformance">Past Performance</SelectItem>
-                          <SelectItem value="SOW">SOW/PWS</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="doc-title">Title</Label>
-                    <Input
-                      id="doc-title"
-                      value={uploadTitle}
-                      onChange={(e) => setUploadTitle(e.target.value)}
-                      placeholder="e.g. 2024 Capability Statement"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="doc-desc">Description (Optional)</Label>
-                    <Textarea
-                      id="doc-desc"
-                      value={uploadDescription}
-                      onChange={(e) => setUploadDescription(e.target.value)}
-                      placeholder="Brief description of the document"
-                      className="min-h-[60px]"
-                    />
-                  </div>
-                  <Button
-                    onClick={handleUploadDocument}
-                    disabled={!uploadFile || !uploadTitle || uploading}
-                    className="gap-2"
-                  >
-                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                    Upload Document
+          {/* SOW / Contract Documents Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Contract Documents (SOW/PWS)
+              </CardTitle>
+              <CardDescription>
+                Scan SAM.gov for Statements of Work linked to these awards.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!contractDocuments.length && !scanningSOWs && !sowScanComplete ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground mb-4">
+                    Scanning for documents involves checking SAM.gov for each solicitation linked to the awards above.
+                    This process may take a minute.
+                  </p>
+                  <Button onClick={scanForSOWs} className="gap-2">
+                    <Search className="h-4 w-4" /> Scan for Documents
                   </Button>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  {scanningSOWs && (
+                    <div className="flex items-center justify-center p-8 text-muted-foreground gap-2 animate-pulse">
+                      <Loader2 className="h-5 w-5 animate-spin" /> Scanning related solicitations...
+                    </div>
+                  )}
 
-                {/* Documents List */}
-                {docsLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  {!scanningSOWs && contractDocuments.length === 0 && sowScanComplete && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No documents found linked to the recent awards.
+                    </div>
+                  )}
+
+                  {contractDocuments.length > 0 && (
+                    <div className="max-h-[600px] overflow-y-auto border rounded-lg">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-muted/50 text-xs uppercase sticky top-0 z-10">
+                          <tr>
+                            <th className="px-4 py-3 font-medium text-muted-foreground">Type</th>
+                            <th className="px-4 py-3 font-medium text-muted-foreground">Filename</th>
+                            <th className="px-4 py-3 font-medium text-muted-foreground">Solicitation</th>
+                            <th className="px-4 py-3 font-medium text-muted-foreground">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {contractDocuments.map((doc, idx) => (
+                            <tr key={idx} className="hover:bg-muted/30">
+                              <td className="px-4 py-3">
+                                <Badge variant="outline" className={cn(
+                                  "font-mono text-xs",
+                                  doc.document_type === 'SOW' || doc.document_type === 'PWS' ? "bg-green-50 text-green-700 border-green-200" : ""
+                                )}>
+                                  {doc.document_type}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 font-medium">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  <span className="truncate max-w-[300px]" title={doc.document_filename}>
+                                    {doc.document_filename}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {doc.solicitation_id}
+                              </td>
+                              <td className="px-4 py-3">
+                                <a
+                                  href={doc.document_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                                >
+                                  <Download className="h-3 w-3" /> Download
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+
+          {/* Document Upload Section */}
+          {
+            !isEditing && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="h-5 w-5 text-primary" />
+                      Company Documents
+                    </CardTitle>
+                    <Button variant="ghost" size="sm" onClick={fetchDocuments} title="Refresh List">
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
                   </div>
-                ) : documents.length > 0 ? (
-                  <div className="space-y-2">
-                    <h4 className="font-semibold text-sm text-muted-foreground uppercase">Uploaded Documents</h4>
-                    {documents.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/30 transition-colors"
-                      >
-                        <div className="flex items-start gap-3">
-                          <FileText className="h-5 w-5 text-primary mt-0.5" />
-                          <div>
-                            <h5 className="font-medium">{doc.title}</h5>
-                            {doc.description && (
-                              <p className="text-sm text-muted-foreground">{doc.description}</p>
-                            )}
-                            <div className="flex gap-2 mt-1">
-                              <Badge variant="secondary" className="text-xs">{doc.document_type}</Badge>
-                              {doc.file_size && (
-                                <span className="text-xs text-muted-foreground">
-                                  {(doc.file_size / 1024).toFixed(0)} KB
-                                </span>
-                              )}
+                  <CardDescription>
+                    Upload capability statements, past performance, and other documents.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Upload Form */}
+                  <div className="space-y-4">
+                    <BulkUploadDropzone
+                      files={filesToUpload}
+                      onFilesChange={setFilesToUpload}
+                    />
+
+                    {filesToUpload.length > 0 && (
+                      <div className="space-y-2">
+                        {/* Classification Preview (simulated for immediate feedback / can be enhanced later) */}
+                        <div className="bg-muted/30 p-4 rounded-lg border text-sm text-muted-foreground">
+                          <p>Ready to upload {filesToUpload.length} file(s). We will automatically classify these documents.</p>
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => setFilesToUpload([])}
+                            disabled={uploading}
+                          >
+                            Clear
+                          </Button>
+                          <Button
+                            onClick={handleBulkUpload}
+                            disabled={uploading}
+                            className="gap-2"
+                          >
+                            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                            Upload {filesToUpload.length} Documents
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+
+                  {/* Documents List */}
+                  {docsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : documents.length > 0 ? (
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-sm text-muted-foreground uppercase">Uploaded Documents</h4>
+                      <div className="max-h-[500px] overflow-y-auto space-y-2 pr-2">
+                        {documents.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/30 transition-colors"
+                          >
+                            <div className="flex items-start gap-3">
+                              <FileText className="h-5 w-5 text-primary mt-0.5" />
+                              <div>
+                                <h5 className="font-medium">{doc.title}</h5>
+                                {doc.description && (
+                                  <p className="text-sm text-muted-foreground">{doc.description}</p>
+                                )}
+                                <div className="flex gap-2 mt-1">
+                                  <Badge variant="secondary" className="text-xs">{doc.document_type}</Badge>
+                                  {doc.file_size && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {(doc.file_size / 1024).toFixed(0)} KB
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Reanalyze Document"
+                                onClick={() => handleReanalyze(doc.id)}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Generate Past Performance"
+                                onClick={() => handleGeneratePP(doc.id)}
+                                disabled={generating[doc.id]}
+                              >
+                                {generating[doc.id] ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-4 w-4 text-amber-500" />
+                                )}
+                              </Button>
+                              <a
+                                href={`/uploads/${doc.file_path.split('/').pop()}`}
+                                download
+                                className="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent transition-colors"
+                                title="Download"
+                              >
+                                <Download className="h-4 w-4" />
+                              </a>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteDocument(doc.id)}
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" asChild>
-                            <a href={`/${doc.file_path}`} download>
-                              <Download className="h-4 w-4" />
-                            </a>
-                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FileText className="h-10 w-10 mx-auto opacity-20 mb-2" />
+                      <p>No documents uploaded yet.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          }
+
+          {/* Links Section */}
+          {
+            !isEditing && (
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <LinkIcon className="h-5 w-5 text-primary" />
+                        External Links
+                      </CardTitle>
+                      <CardDescription>
+                        SOW/PWS links, capability statements, and other external resources.
+                      </CardDescription>
+                    </div>
+                    <Button onClick={() => setShowAddLink(true)} size="sm" className="gap-2">
+                      <LinkIcon className="h-4 w-4" /> Add Link
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {linksLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : links.length > 0 ? (
+                    <div className="space-y-2">
+                      {links.map((link) => (
+                        <div
+                          key={link.id}
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/30 transition-colors"
+                        >
+                          <div>
+                            <h5 className="font-medium">{link.title}</h5>
+                            {link.description && (
+                              <p className="text-sm text-muted-foreground">{link.description}</p>
+                            )}
+                            <div className="flex gap-2 mt-1">
+                              <Badge variant="secondary" className="text-xs">{link.link_type}</Badge>
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                {link.url.substring(0, 50)}...
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                          </div>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => deleteDocument(doc.id)}
+                            onClick={() => deleteLink(link.id)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="h-10 w-10 mx-auto opacity-20 mb-2" />
-                    <p>No documents uploaded yet.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <LinkIcon className="h-10 w-10 mx-auto opacity-20 mb-2" />
+                      <p>No links added yet.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          }
 
-          {/* Links Section */}
-          {!isEditing && (
-            <Card>
+          {/* Past Performance Section */}
+          {!isEditing && profile?.past_performances && profile.past_performances.length > 0 && (
+            <Card className="mt-6">
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <LinkIcon className="h-5 w-5 text-primary" />
-                      External Links
-                    </CardTitle>
-                    <CardDescription>
-                      SOW/PWS links, capability statements, and other external resources.
-                    </CardDescription>
-                  </div>
-                  <Button onClick={() => setShowAddLink(true)} size="sm" className="gap-2">
-                    <LinkIcon className="h-4 w-4" /> Add Link
-                  </Button>
-                </div>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-500" />
+                  Generated Past Performance
+                </CardTitle>
+                <CardDescription>
+                  AI-generated past performance records from uploaded documents.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {linksLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : links.length > 0 ? (
-                  <div className="space-y-2">
-                    {links.map((link) => (
-                      <div
-                        key={link.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/30 transition-colors"
-                      >
+                <div className="space-y-4">
+                  {profile.past_performances.map((pp) => (
+                    <div key={pp.id} className="border rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-2">
                         <div>
-                          <h5 className="font-medium">{link.title}</h5>
-                          {link.description && (
-                            <p className="text-sm text-muted-foreground">{link.description}</p>
-                          )}
-                          <div className="flex gap-2 mt-1">
-                            <Badge variant="secondary" className="text-xs">{link.link_type}</Badge>
-                            <a
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                            >
-                              {link.url.substring(0, 50)}...
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
+                          <h4 className="font-semibold">{pp.title}</h4>
+                          <Badge variant="outline" className="mt-1">{pp.status}</Badge>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => deleteLink(link.id)}
+                          onClick={() => navigate(`/past-performance/${pp.id}`)}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          View Details
                         </Button>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <LinkIcon className="h-10 w-10 mx-auto opacity-20 mb-2" />
-                    <p>No links added yet.</p>
-                  </div>
-                )}
+                      <div className="text-sm text-muted-foreground">
+                        Generated on {new Date(pp.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
         </div>
-      )}
+      )
+      }
 
       {/* Switch Entity Dialog */}
       <Dialog open={showSwitchDialog} onOpenChange={setShowSwitchDialog}>
@@ -1094,6 +1338,6 @@ export default function CompanyProfilePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

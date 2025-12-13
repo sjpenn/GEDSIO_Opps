@@ -63,7 +63,7 @@ export interface Entity {
   last_synced_at?: string
   similarity_score?: number
   full_response?: any
-  
+
   // Partner Search Fields
   revenue?: number
   capabilities?: {
@@ -87,4 +87,70 @@ export interface EntitySearchTerm {
   term: string
   searched_at: string
   result_count?: number
+}
+export interface PastPerformance {
+  id: number;
+  title: string;
+  status: string;
+  questionnaire_data: Record<string, any>;
+  created_at: string;
+  updated_at?: string;
+  entity_uei?: string;
+  source_document_id?: number;
+}
+
+export interface EntityAward {
+  award_id: string;
+  recipient_uei: string;
+  total_obligation?: number;
+  description?: string;
+  award_date?: string;
+  awarding_agency?: string;
+  award_type?: string;
+  solicitation_id?: string;
+}
+
+export interface CompanyProfile {
+  uei: string;
+  company_name: string;
+  entity_uei?: string;
+  target_naics: string[];
+  target_keywords: string[];
+  target_set_asides: string[];
+  logo_url?: string;
+  awards?: EntityAward[];
+  past_performances?: PastPerformance[];
+}
+
+export interface CompanyProfileDocument {
+  id: number;
+  company_uei: string;
+  document_type: string;
+  title: string;
+  description?: string;
+  file_path: string;
+  file_size?: number;
+  created_at: string;
+  parsed_content?: string;
+  status?: string;
+}
+
+export interface CompanyProfileLink {
+  id: number;
+  company_uei: string;
+  link_type: string;
+  title: string;
+  url: string;
+  description?: string;
+  created_at: string;
+}
+
+export interface ContractDocument {
+  award_id: string;
+  solicitation_id: string;
+  opportunity_title: string;
+  document_url: string;
+  document_filename: string;
+  document_type: string;
+  award_description?: string;
 }

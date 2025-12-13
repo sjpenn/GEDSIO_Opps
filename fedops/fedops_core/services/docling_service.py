@@ -148,7 +148,7 @@ class DoclingService:
         try:
             from docling.document_converter import DocumentConverter
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
             
             logger.info(f"Parsing document with Docling: {file_path}")
             
@@ -157,11 +157,12 @@ class DoclingService:
             
             # Enable OCR if requested
             if use_ocr:
-                logger.info("OCR enabled for document parsing")
+                logger.info("OCR enabled for document parsing (EasyOCR)")
                 pipeline_options.do_ocr = True
-                pipeline_options.ocr_options.force_full_page_ocr = True
+                pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=True)
             
             # Initialize converter with options
+            # Enable DOCX support automatically through Docling defaults or explicit format
             converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: pipeline_options
@@ -331,9 +332,13 @@ class DoclingService:
             logger.info(f"Successfully parsed with Docling (OCR: {use_ocr})")
             return result.markdown
         
-        # Fallback to pypdf
-        logger.info("Falling back to pypdf parsing")
-        return await self._fallback_parse_pdf(file_path)
+        # Fallback to pypdf ONLY for PDFs
+        if file_path.lower().endswith('.pdf'):
+            logger.info("Falling back to pypdf parsing")
+            return await self._fallback_parse_pdf(file_path)
+            
+        logger.warning(f"Failed to parse non-PDF file: {file_path}")
+        return ""
     
     async def _fallback_parse_pdf(self, file_path: str) -> Optional[str]:
         """Fallback PDF parsing using pypdf"""

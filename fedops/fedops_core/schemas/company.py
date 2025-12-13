@@ -37,11 +37,14 @@ class EntityAward(EntityAwardBase):
     class Config:
         from_attributes = True
 
+from fedops_core.schemas.past_performance_schemas import PastPerformanceResponse
+
 class CompanyProfile(CompanyProfileBase):
     id: int
     created_at: datetime
     updated_at: datetime
     awards: List[EntityAward] = []
+    past_performances: List[PastPerformanceResponse] = []
 
     class Config:
         from_attributes = True

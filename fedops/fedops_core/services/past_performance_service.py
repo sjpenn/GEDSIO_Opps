@@ -226,6 +226,10 @@ class PastPerformanceService:
             additional_context=request.context
         )
         
+        # Generator switching logic: Use Perplexity for research, AIService for static content
+        # For now, keeping Perplexity as requested in original implementation, 
+        # but adding TODO for future switch.
+        
         # Generate content using Perplexity service
         generated_content = await perplexity_service.generate_past_performance_section(
             section_name=request.section_name,
@@ -254,6 +258,136 @@ class PastPerformanceService:
             "model_used": perplexity_service.DEFAULT_MODEL,
             "generated_at": datetime.utcnow()
         }
+
+    @staticmethod
+    async def generate_from_document(
+        db: AsyncSession,
+        doc_id: int,
+        ai_service: Any  # Typed as Any to avoid circular import, assumed to be AIService instance
+    ) -> PastPerformance:
+        """
+        Generate a full Past Performance record from an uploaded CompanyProfileDocument.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        from fedops_core.db.models import CompanyProfileDocument
+        
+        logger.info(f"generate_from_document called with doc_id={doc_id}")
+        
+        # Fetch the document
+        result = await db.execute(select(CompanyProfileDocument).where(CompanyProfileDocument.id == doc_id))
+        doc = result.scalars().first()
+        
+        if not doc:
+            logger.error(f"Document with ID {doc_id} not found")
+            raise ValueError(f"Document with ID {doc_id} not found")
+        
+        logger.info(f"Found document: title={doc.title}, company_uei={doc.company_uei}")
+        
+        if not doc.parsed_content:
+            logger.error(f"Document {doc_id} has no parsed content")
+            raise ValueError(f"Document {doc_id} has no parsed content. Please ensure it is processed first.")
+            
+        # Get Company Entity via UEI
+        # IMPORTANT: This logic must match the logic in get_company_profile endpoint
+        # to ensure generated PPs are queryable by the same UEI used for fetching.
+        from fedops_core.db.models import CompanyProfile
+        company_result = await db.execute(select(CompanyProfile).where(CompanyProfile.uei == doc.company_uei))
+        company = company_result.scalars().first()
+        
+        logger.info(f"Company lookup: found={company is not None}, entity_uei={company.entity_uei if company else 'N/A'}")
+        
+        # Use the same UEI resolution as get_company_profile:
+        # If company has entity_uei set, use that; otherwise use the company's own UEI
+        entity_uei = company.entity_uei if (company and company.entity_uei) else doc.company_uei
+        
+        logger.info(f"Resolved entity_uei={entity_uei}")
+        
+        # Verify the entity exists in the database
+        entity_check = await db.execute(select(Entity).where(Entity.uei == entity_uei))
+        entity = entity_check.scalars().first()
+        if not entity:
+            logger.error(f"Entity with UEI {entity_uei} not found in database")
+            raise ValueError(f"Entity with UEI {entity_uei} not found. Please ensure the entity is registered in the system.")
+
+
+        # Prompt for extraction
+        prompt = f"""
+        You are an expert Government Contracting Proposal Manager.
+        Analyze the following document text and extract standardized Past Performance information.
+        
+        Return a valid JSON object with the following keys:
+        - title: A professional title for this project (e.g. "Cybersecurity Support for DHS")
+        - project_overview: Brief summary of the engagement.
+        - scope_of_work: Detailed bullet points of tasks performed.
+        - technical_approach: Tools, methodologies, and standards used.
+        - challenges_solutions: Key challenges faced and how they were overcome.
+        - results_outcomes: Quantifiable results and benefits delivered to the client.
+        - relevance: Why this is relevant to future federal contracting (capabilities demonstrated).
+        
+        Text to analyze:
+        {doc.parsed_content[:50000]}
+        """
+        
+        # Call AI Service
+        logger.info(f"Calling AI service to generate PP content from document (length={len(doc.parsed_content)} chars)")
+        try:
+            # Using generate_content assuming it returns string, we might need json enforcement
+            response_text = await ai_service.generate_content(prompt)
+            logger.info(f"AI service returned response (length={len(response_text)} chars)")
+
+            
+            # Extract JSON from response
+            import json
+            import re
+            
+            # Clean markdown code blocks
+            json_str = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            # Find first { and last }
+            start = json_str.find('{')
+            end = json_str.rfind('}') + 1
+            if start != -1 and end != -1:
+                json_str = json_str[start:end]
+            
+            data = json.loads(json_str)
+            
+        except Exception as e:
+            # Fallback for parsing error
+            data = {
+                "title": f"Extracted from {doc.title}",
+                "project_overview": "AI Extraction failed. Please review document content.",
+                "scope_of_work": "",
+                "technical_approach": "",
+                "challenges_solutions": "",
+                "results_outcomes": "",
+                "relevance": ""
+            }
+        
+        # Create PastPerformance Record
+        # Check source_document_id availability (handled by recent migration)
+        # Using default dictionary structure
+        pp = PastPerformance(
+            entity_uei=entity_uei,
+            source_document_id=doc.id,
+            title=data.get("title", f"Project from {doc.title}"),
+            status="DRAFT",
+            questionnaire_data={
+                "project_overview": {"content": data.get("project_overview", ""), "generated": True},
+                "scope_of_work": {"content": data.get("scope_of_work", ""), "generated": True},
+                "technical_approach": {"content": data.get("technical_approach", ""), "generated": True},
+                "challenges_solutions": {"content": data.get("challenges_solutions", ""), "generated": True},
+                "results_outcomes": {"content": data.get("results_outcomes", ""), "generated": True},
+                "relevance": {"content": data.get("relevance", ""), "generated": True},
+                "references": {"content": "", "generated": False}
+            }
+        )
+        
+        db.add(pp)
+        await db.commit()
+        await db.refresh(pp)
+        
+        return pp
     
     @staticmethod
     async def _build_generation_context(

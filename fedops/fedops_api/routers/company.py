@@ -136,6 +136,12 @@ async def get_company_profile(uei: str, db: AsyncSession = Depends(get_db)):
     awards_res = await db.execute(select(EntityAward).where(EntityAward.recipient_uei == uei).order_by(EntityAward.award_date.desc().nulls_last()))
     profile.awards = awards_res.scalars().all()
     
+    # Fetch Past Performances
+    from fedops_core.services.past_performance_service import PastPerformanceService
+    # Use entity_uei if available, otherwise company uei
+    target_uei = profile.entity_uei if profile.entity_uei else uei
+    profile.past_performances = await PastPerformanceService.list_by_entity(db, target_uei)
+    
     return profile
 
 @router.put("/{uei}", response_model=schemas.CompanyProfile)
@@ -323,6 +329,27 @@ async def get_company_documents(
     result = await db.execute(query)
     return result.scalars().all()
 
+@router.post("/{company_uei}/documents/bulk", response_model=List[schemas.CompanyProfileDocument])
+async def upload_company_documents_bulk(
+    company_uei: str,
+    files: List[UploadFile] = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Bulk upload documents for a company profile.
+    Automatically classifies documents and extracts content in the background.
+    """
+    from fedops_core.services.company_document_service import CompanyDocumentService
+    service = CompanyDocumentService(db)
+    
+    # Verify company exists
+    result = await db.execute(select(CompanyProfile).where(CompanyProfile.uei == company_uei))
+    if not result.scalars().first():
+        raise HTTPException(status_code=404, detail="Company Profile not found")
+
+    return await service.process_bulk_upload(company_uei, files, background_tasks)
+
 @router.delete("/{company_uei}/documents/{doc_id}")
 async def delete_company_document(
     company_uei: str,
@@ -353,6 +380,70 @@ async def delete_company_document(
     await db.commit()
     
     return {"message": "Document deleted successfully"}
+    
+@router.post("/{company_uei}/documents/{doc_id}/reanalyze")
+async def reanalyze_document(
+    company_uei: str,
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger re-analysis of a document"""
+    from fedops_core.services.company_document_service import CompanyDocumentService
+    service = CompanyDocumentService(db)
+    
+    success = await service.reanalyze_document(doc_id, background_tasks)
+    if not success:
+        raise HTTPException(status_code=404, detail="Document not found")
+        
+    return {"message": "Re-analysis triggered"}
+
+@router.post("/{company_uei}/documents/{doc_id}/generate-pp")
+async def generate_past_performance(
+    company_uei: str,
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate Past Performance record from a document"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Starting PP generation for company_uei={company_uei}, doc_id={doc_id}")
+    
+    from fedops_core.services.past_performance_service import PastPerformanceService
+    from fedops_core.services.ai_service import AIService
+    
+    # Initialize services
+    ai_service = AIService()
+    
+    try:
+        logger.info(f"Calling PastPerformanceService.generate_from_document...")
+        pp = await PastPerformanceService.generate_from_document(db, doc_id, ai_service)
+        logger.info(f"Successfully generated PP with id={pp.id}, title={pp.title}")
+        return {"message": "Past Performance generation started", "id": pp.id, "title": pp.title}
+    except ValueError as e:
+        logger.error(f"ValueError in PP generation: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in PP generation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating Past Performance: {str(e)}")
+
+@router.get("/past-performance/{pp_id}")
+async def get_past_performance(
+    pp_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific Past Performance record"""
+    from fedops_core.services.past_performance_service import PastPerformanceService
+    
+    pp = await PastPerformanceService.get_past_performance(db, pp_id)
+    if not pp:
+        raise HTTPException(status_code=404, detail="Past Performance record not found")
+        
+    return pp
 
 # ============ Link Management Endpoints ============
 

@@ -136,3 +136,21 @@ class QuestionnaireTemplate(BaseModel):
             "prompt_hint": "Provide client POC names, titles, phone, and email"
         }
     }
+
+class PastPerformanceMatchRequest(BaseModel):
+    """Request to find matching past performance for an opportunity"""
+    opportunity_id: int
+    entity_uei: str
+
+class MatchedProject(BaseModel):
+    """A single matched project with relevance details"""
+    project_id: str
+    title: str
+    relevance_score: float
+    relevance_rationale: str
+    strengths: list[str] = []
+    weaknesses: list[str] = []
+
+class PastPerformanceMatchResponse(BaseModel):
+    """Response containing matched projects"""
+    matches: list[MatchedProject]

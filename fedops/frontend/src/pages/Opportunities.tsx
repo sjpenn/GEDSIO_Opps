@@ -28,7 +28,7 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null)
-  const [resourceFiles, setResourceFiles] = useState<{url: string, filename: string}[]>([])
+  const [resourceFiles, setResourceFiles] = useState<{ url: string, filename: string }[]>([])
   const [loadingResources, setLoadingResources] = useState(false)
   const [showFileManager, setShowFileManager] = useState(false)
   const [comments, setComments] = useState<OpportunityComment[]>([])
@@ -40,21 +40,21 @@ export default function OpportunitiesPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [naicsCounts, setNaicsCounts] = useState<Record<string, number>>({})
-  
+
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
     const today = new Date()
     const thirtyDaysAgo = new Date(today)
     thirtyDaysAgo.setDate(today.getDate() - 30)
-    
+
     return {
       from: thirtyDaysAgo,
       to: today
     }
   }
-  
+
   const { from: thirtyDaysAgo, to: today } = getDefaultDates()
-  
+
   // Helper to strip HTML tags
   const stripHtml = (html: string) => {
     if (!html) return ''
@@ -112,7 +112,7 @@ export default function OpportunitiesPage() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // Create new controller for this request
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -120,7 +120,7 @@ export default function OpportunitiesPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const queryParams = new URLSearchParams();
       if (searchParams.keywords) queryParams.append('keywords', searchParams.keywords);
       if (searchParams.naics) queryParams.append('naics', searchParams.naics);
@@ -136,16 +136,17 @@ export default function OpportunitiesPage() {
       const response = await fetch(`/api/v1/opportunities/?${queryParams.toString()}`, {
         signal: controller.signal
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch opportunities');
       }
       const data = await response.json();
+      console.log(`Successfully fetched ${data.items.length} opportunities`);
       setOpportunities(data.items);
       setTotal(data.total);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        console.log('Fetch aborted');
+        // console.log('Fetch aborted');
         return;
       }
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -237,7 +238,7 @@ export default function OpportunitiesPage() {
     // If we only update keywords/naics, it WON'T trigger fetchOpportunities automatically
     // unless we add searchParams to the dependency array (which might cause loops)
     // or call fetchOpportunities explicitly.
-    
+
     // Actually, the existing useEffect only watches [searchParams.skip].
     // We need to trigger a fetch when filters change.
     // Let's modify the useEffect dependency or call fetchOpportunities manually.
@@ -304,7 +305,7 @@ export default function OpportunitiesPage() {
 
   const handleDeleteComment = async (commentId: number) => {
     if (!selectedOpp) return
-    
+
     if (!confirm('Are you sure you want to delete this comment?')) return
 
     try {
@@ -385,13 +386,13 @@ export default function OpportunitiesPage() {
 
   const handleDeleteOpportunity = async () => {
     if (!selectedOpp) return;
-    
+
     setDeleting(true);
     try {
       const res = await fetch(`/api/v1/opportunities/${selectedOpp.id}`, {
         method: 'DELETE'
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         alert(`Opportunity deleted successfully. Removed ${data.summary.deleted_counts.files} files, ${data.summary.deleted_counts.proposals} proposals, and related data.`);
@@ -472,7 +473,7 @@ export default function OpportunitiesPage() {
                 <Label htmlFor="keywords">Keywords</Label>
                 <div className="relative">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
+                  <Input
                     id="keywords"
                     placeholder="Search keywords..."
                     value={searchParams.keywords}
@@ -484,7 +485,7 @@ export default function OpportunitiesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="naics">NAICS Code</Label>
-                <Input 
+                <Input
                   id="naics"
                   placeholder="e.g. 541511"
                   value={searchParams.naics}
@@ -494,7 +495,7 @@ export default function OpportunitiesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="setAside">Set Aside</Label>
-                <Input 
+                <Input
                   id="setAside"
                   placeholder="e.g. Sba"
                   value={searchParams.setAside}
@@ -546,7 +547,7 @@ export default function OpportunitiesPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-2">
                   <Label htmlFor="posted-from">Posted From</Label>
-                  <Input 
+                  <Input
                     id="posted-from"
                     placeholder="MM/DD/YYYY"
                     value={searchParams.postedFrom}
@@ -556,7 +557,7 @@ export default function OpportunitiesPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="posted-to">Posted To</Label>
-                  <Input 
+                  <Input
                     id="posted-to"
                     placeholder="MM/DD/YYYY"
                     value={searchParams.postedTo}
@@ -564,8 +565,8 @@ export default function OpportunitiesPage() {
                   />
                 </div>
               </div>
-              
-              <Button 
+
+              <Button
                 type="button"
                 variant="ghost"
                 size="sm"
@@ -612,7 +613,7 @@ export default function OpportunitiesPage() {
               </div>
             </div>
           )}
-          
+
           {error && (
             <Card className="border-destructive/50 bg-destructive/10">
               <CardContent className="pt-6 text-center text-destructive">
@@ -620,14 +621,14 @@ export default function OpportunitiesPage() {
               </CardContent>
             </Card>
           )}
-          
+
           {!loading && !error && opportunities.length === 0 && (
-             <Card className="border-dashed">
-               <CardContent className="py-12 text-center text-muted-foreground">
-                 <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                 <p>No opportunities found. Try adjusting your filters.</p>
-               </CardContent>
-             </Card>
+            <Card className="border-dashed">
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                <p>No opportunities found. Try adjusting your filters.</p>
+              </CardContent>
+            </Card>
           )}
 
           <div className="grid gap-4 min-w-0">
@@ -652,7 +653,7 @@ export default function OpportunitiesPage() {
                           </Badge>
                         )}
                       </div>
-                      <h3 
+                      <h3
                         onClick={() => setSelectedOpp(opp)}
                         className="font-semibold text-lg leading-tight group-hover:text-primary transition-colors break-words cursor-pointer"
                       >
@@ -708,8 +709,8 @@ export default function OpportunitiesPage() {
                   </p>
 
                   <div className="flex justify-end">
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
                       onClick={() => setSelectedOpp(opp)}
                       className="text-primary hover:text-primary hover:bg-primary/10"
@@ -750,8 +751,8 @@ export default function OpportunitiesPage() {
       </div>
 
       {/* Details Dialog */}
-      <Dialog 
-        open={!!selectedOpp} 
+      <Dialog
+        open={!!selectedOpp}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedOpp(null);
@@ -769,7 +770,7 @@ export default function OpportunitiesPage() {
                     Detailed information about this opportunity including description, contacts, resources, and analysis
                   </DialogDescription>
                   <div className="flex flex-wrap gap-2 mt-2">
-                     <Badge variant="secondary" className="font-mono">
+                    <Badge variant="secondary" className="font-mono">
                       {selectedOpp.solicitation_number}
                     </Badge>
                     <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
@@ -784,15 +785,15 @@ export default function OpportunitiesPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-6 space-y-8 overflow-y-auto">
                 {/* Actions Bar */}
                 <div className="flex flex-wrap gap-3">
                   <Button onClick={() => setShowFileManager(true)} className="gap-2">
                     <FileText className="h-4 w-4" /> Manage Files & AI
                   </Button>
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     onClick={handleFindPartners}
                     disabled={loadingPartners}
                     className="gap-2"
@@ -800,23 +801,23 @@ export default function OpportunitiesPage() {
                     {loadingPartners ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
                     {loadingPartners ? 'Searching...' : 'Find Partners'}
                   </Button>
-                  <Button 
-                    variant="default" 
+                  <Button
+                    variant="default"
                     onClick={() => navigate(`/teams?opportunityId=${selectedOpp.id}`)}
                     className="gap-2"
                   >
                     <Users className="h-4 w-4" /> Build Team
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={handleWatchOpportunity}
                     className="gap-2"
                   >
                     <Eye className="h-4 w-4" /> Watch Opportunity
                   </Button>
                   {selectedOpp.source && selectedOpp.source !== 'SAM.gov' && (
-                    <Button 
-                      variant="destructive" 
+                    <Button
+                      variant="destructive"
                       onClick={() => setShowDeleteDialog(true)}
                       className="gap-2 ml-auto"
                     >
@@ -951,15 +952,15 @@ export default function OpportunitiesPage() {
                   <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                     <MessageSquare className="h-5 w-5" /> Team Comments
                   </h3>
-                  
+
                   <div className="space-y-4 mb-6">
                     {comments.map(comment => (
                       <div key={comment.id} className="bg-muted/30 p-4 rounded-lg border group relative">
                         <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
                         <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
                           <span>{new Date(comment.created_at).toLocaleString()}</span>
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="icon"
                             onClick={() => handleDeleteComment(comment.id)}
                             className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
@@ -990,9 +991,9 @@ export default function OpportunitiesPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-4 border-t bg-muted/10">
-                 <details className="text-xs">
+                <details className="text-xs">
                   <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View Raw Data</summary>
                   <pre className="mt-2 p-4 bg-black/90 text-white rounded overflow-x-auto">
                     {JSON.stringify(selectedOpp.full_response, null, 2)}
@@ -1011,44 +1012,44 @@ export default function OpportunitiesPage() {
             <DialogTitle>Partner Matches</DialogTitle>
             <DialogDescription>Based on NAICS: {selectedOpp?.naics_code}</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 mt-4">
-             {partnerMatches.length === 0 ? (
-                 <div className="text-center py-8 text-muted-foreground">
-                     <p>No matches found based on NAICS code.</p>
-                     <p className="text-sm mt-2">Try adding more entities with relevant awards to your database.</p>
-                 </div>
-             ) : (
-                 partnerMatches.map((match, i) => (
-                     <Card key={i} className="hover:bg-accent/5 transition-colors">
-                         <CardContent className="p-4">
-                             <div className="flex justify-between items-start mb-2">
-                                 <div>
-                                     <h3 className="font-bold text-lg">{match.entity.legal_business_name}</h3>
-                                     <p className="text-xs font-mono text-muted-foreground">UEI: {match.entity.uei}</p>
-                                 </div>
-                                 <div className="text-right">
-                                     <div className="text-sm font-medium text-green-600">
-                                         ${match.match_details.total_obligation.toLocaleString()}
-                                     </div>
-                                     <div className="text-xs text-muted-foreground">Total Obligation</div>
-                                 </div>
-                             </div>
-                             <div className="bg-secondary/20 p-2 rounded text-sm mb-3">
-                                 <p><strong>Match Reason:</strong> {match.match_details.reason}</p>
-                             </div>
-                             <div className="flex gap-2">
-                                 <Button size="sm" variant="outline" className="h-7 text-xs">View Profile</Button>
-                                 {match.entity.entity_type === 'PARTNER' && (
-                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                                     Existing Partner
-                                   </Badge>
-                                 )}
-                             </div>
-                         </CardContent>
-                     </Card>
-                 ))
-             )}
+            {partnerMatches.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No matches found based on NAICS code.</p>
+                <p className="text-sm mt-2">Try adding more entities with relevant awards to your database.</p>
+              </div>
+            ) : (
+              partnerMatches.map((match, i) => (
+                <Card key={i} className="hover:bg-accent/5 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-bold text-lg">{match.entity.legal_business_name}</h3>
+                        <p className="text-xs font-mono text-muted-foreground">UEI: {match.entity.uei}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-green-600">
+                          ${match.match_details.total_obligation.toLocaleString()}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Total Obligation</div>
+                      </div>
+                    </div>
+                    <div className="bg-secondary/20 p-2 rounded text-sm mb-3">
+                      <p><strong>Match Reason:</strong> {match.match_details.reason}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="h-7 text-xs">View Profile</Button>
+                      {match.entity.entity_type === 'PARTNER' && (
+                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                          Existing Partner
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -1065,7 +1066,7 @@ export default function OpportunitiesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-hidden p-4">
-             {selectedOpp && <FileManagementPage opportunityId={selectedOpp.id} />}
+            {selectedOpp && <FileManagementPage opportunityId={selectedOpp.id} />}
           </div>
         </DialogContent>
       </Dialog>
@@ -1082,7 +1083,7 @@ export default function OpportunitiesPage() {
               This action cannot be undone. This will permanently delete the opportunity and all related data.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-3 py-4">
             <div className="bg-destructive/10 border border-destructive/20 rounded-md p-4 space-y-2">
               <p className="text-sm font-medium">The following will be removed:</p>
@@ -1095,7 +1096,7 @@ export default function OpportunitiesPage() {
                 <li>Scores and analysis data</li>
               </ul>
             </div>
-            
+
             {selectedOpp && (
               <div className="bg-muted p-3 rounded-md">
                 <p className="text-sm font-medium mb-1">Opportunity:</p>
@@ -1104,7 +1105,7 @@ export default function OpportunitiesPage() {
               </div>
             )}
           </div>
-          
+
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"

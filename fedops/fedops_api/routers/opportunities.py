@@ -48,7 +48,7 @@ async def fetch_description(notice_id: str, api_key: str) -> str:
         logger.error(f"Error fetching description for notice {notice_id}: {e}")
         return ""
 
-def parse_date(date_str: str) -> datetime | None:
+def parse_date(date_str: str) -> Optional[datetime]:
     """Parse date string in ISO format or YYYY-MM-DD format"""
     if not date_str:
         return None
@@ -62,7 +62,11 @@ def parse_date(date_str: str) -> datetime | None:
             # Fallback to simple date format
             return datetime.strptime(date_str, "%Y-%m-%d")
         except:
-            return None
+            try:
+                 # Try US format MM/DD/YYYY
+                 return datetime.strptime(date_str, "%m/%d/%Y")
+            except:
+                return None
 
 @router.get("/", response_model=PaginatedResponse[OpportunitySchema])
 async def list_opportunities(
@@ -308,6 +312,18 @@ async def list_opportunities(
                     OpportunityModel.solicitation_number.ilike(search_term)
                 )
             )
+
+        if postedFrom:
+            from_date = parse_date(postedFrom)
+            if from_date:
+                query = query.where(OpportunityModel.posted_date >= from_date)
+        
+        if postedTo:
+            to_date = parse_date(postedTo)
+            if to_date:
+                # Add 23:59:59 time component if needed, or just < next day
+                to_date = to_date.replace(hour=23, minute=59, second=59)
+                query = query.where(OpportunityModel.posted_date <= to_date)
 
         # Calculate total count for pagination
         count_stmt = select(func.count()).select_from(query.subquery())

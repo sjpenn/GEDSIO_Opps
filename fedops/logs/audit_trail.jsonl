@@ -1,0 +1,4 @@
+{"timestamp": "2025-12-14T02:35:17.222912", "event_type": "EXTRACTION_STRUCTURED", "document_id": "TEST_DOC", "details": {"quality_score": 0.85, "sections_found": 1}}
+{"timestamp": "2025-12-14T02:35:17.229782", "event_type": "ANALYSIS_COMPLETE", "document_id": "TEST_DOC", "details": {"requirements_count": 1, "risks_count": 0}}
+{"timestamp": "2025-12-14T02:35:17.234501", "event_type": "REFERENCES_EXTRACTED", "document_id": "TEST_DOC", "details": {"total_found": 1}}
+{"timestamp": "2025-12-14T02:35:17.238800", "event_type": "PROPOSAL_SECTION_GENERATED", "document_id": "TEST_DOC", "details": {"section": "1.0", "readability": 0.9}}

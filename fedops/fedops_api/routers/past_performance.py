@@ -15,9 +15,13 @@ from fedops_core.schemas.past_performance_schemas import (
     GenerateSectionResponse,
     StructuredOutputRequest,
     StructuredOutputResponse,
-    QuestionnaireTemplate
+    QuestionnaireTemplate,
+    PastPerformanceMatchRequest,
+    PastPerformanceMatchResponse
 )
 from fedops_core.services.past_performance_service import PastPerformanceService
+from fedops_core.db.models import OpportunityScore
+from sqlalchemy import select
 
 
 router = APIRouter(
@@ -234,4 +238,53 @@ async def get_citations(
         return citations
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/match", response_model=PastPerformanceMatchResponse)
+async def match_past_performance(
+    request: PastPerformanceMatchRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Identify relevant past performance projects for an opportunity based on analysis.
+    """
+    try:
+        # Fetch Opportunity Analysis
+        score_result = await db.execute(select(OpportunityScore).where(OpportunityScore.opportunity_id == request.opportunity_id))
+        score = score_result.scalar_one_or_none()
+        
+        if not score or not score.details:
+            raise HTTPException(status_code=404, detail="Opportunity analysis not found. Please run analysis first.")
+        
+        # Extract requirements from score.details
+        # We try to extract key sections from the possibly nested JSON structure
+        details = score.details
+        
+        requirements = {
+            "section_m": details.get("evaluation_criteria", "N/A"), # Evaluation Factors
+            "sow": details.get("scope_of_work", "N/A"), # SOW
+            "section_l": details.get("solicitation_instructions", "N/A"), # Instructions
+            "naics": details.get("opportunity", {}).get("naics_code", "N/A")
+        }
+        
+        # If specific structured sections aren't found at top level, try looking in 'solicitation' or 'technical' keys
+        if "solicitation" in details:
+             if "evaluation_criteria" in details["solicitation"]:
+                 requirements["section_m"] = details["solicitation"]["evaluation_criteria"]
+        
+        matches = await PastPerformanceService.match_projects_for_solicitation(
+            db, 
+            request.entity_uei, 
+            requirements
+        )
+        
+        return {"matches": matches}
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 

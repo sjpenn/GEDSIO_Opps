@@ -7,13 +7,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { 
-  ArrowLeft, 
-  TrendingUp, 
-  DollarSign, 
-  FileText, 
-  Target, 
-  AlertTriangle, 
+import {
+  ArrowLeft,
+  TrendingUp,
+  DollarSign,
+  FileText,
+  Target,
+  AlertTriangle,
   Users,
   Activity,
   CheckCircle,
@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import ShipleyPhaseIndicator from '@/components/ShipleyPhaseIndicator';
 import PursuitDecision from '@/components/PursuitDecision';
 import DocumentViewer from '@/components/DocumentViewer';
+import PastPerformanceMatcher from '@/components/PastPerformanceMatcher';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -60,6 +61,8 @@ interface AnalysisData {
     full_parent_path_name: string | null;
   };
   score: {
+    id: number;
+    opportunity_id: number;
     strategic_alignment_score: number;
     financial_viability_score: number;
     contract_risk_score: number;
@@ -87,15 +90,15 @@ const parseParentPath = (fullPath: string | null | undefined): { department: str
   if (!fullPath) {
     return { department: 'N/A', subTier: 'N/A' };
   }
-  
+
   // SAM.gov uses period as separator
   // Example: "DEPT OF DEFENSE.DEPT OF THE NAVY"
   const parts = fullPath.split('.').map(p => p.trim()).filter(p => p);
-  
+
   if (parts.length === 0) {
     return { department: 'N/A', subTier: 'N/A' };
   }
-  
+
   return {
     department: parts[0],
     subTier: parts[1] || 'N/A'
@@ -117,23 +120,23 @@ interface SourceLocation {
   text?: string;
 }
 
-function QuoteLink({ 
-  location, 
-  documents, 
-  onLocationClick 
-}: { 
-  location?: SourceLocation; 
-  documents?: SourceDocument[]; 
+function QuoteLink({
+  location,
+  documents,
+  onLocationClick
+}: {
+  location?: SourceLocation;
+  documents?: SourceDocument[];
   onLocationClick?: (doc: SourceDocument, loc: SourceLocation) => void;
 }) {
   if (!location || !documents) return null;
-  
+
   const doc = documents.find(d => d.filename === location.filename);
   if (!doc || !onLocationClick) return null;
 
   return (
-    <Badge 
-      variant="outline" 
+    <Badge
+      variant="outline"
       className="cursor-pointer hover:bg-blue-100 text-[10px] ml-2 px-1.5 py-0 h-5 border-blue-200 text-blue-700"
       onClick={(e) => {
         e.stopPropagation();
@@ -151,36 +154,36 @@ function QuoteLink({
  * Helper component for source badges with clickable document links.
  * Displays a badge for each source section (e.g., "Section L") and links it to the corresponding document if available.
  */
-function SourceBadge({ 
-  sources, 
-  documents, 
-  onDocumentClick 
-}: { 
+function SourceBadge({
+  sources,
+  documents,
+  onDocumentClick
+}: {
   /** List of source strings (e.g., ["Section L", "Section M"]) */
-  sources: string[]; 
+  sources: string[];
   /** List of available source documents to match against */
   documents?: SourceDocument[];
   /** Callback when a clickable badge is clicked */
   onDocumentClick?: (doc: SourceDocument) => void;
 }) {
   if (!sources || sources.length === 0) return null;
-  
+
   const handleClick = (doc: SourceDocument) => {
     if (onDocumentClick) {
       onDocumentClick(doc);
     }
   };
-  
+
   return (
     <div className="flex flex-wrap gap-1 mt-1">
       {sources.map((source, i) => {
         const doc = documents?.find(d => d.type?.includes(source.replace('Section ', '')));
         const isClickable = !!doc && !!onDocumentClick;
-        
+
         return (
-          <Badge 
-            key={i} 
-            variant="outline" 
+          <Badge
+            key={i}
+            variant="outline"
             className={cn(
               "text-xs bg-blue-50 text-blue-700 border-blue-300",
               isClickable && "cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
@@ -211,12 +214,12 @@ export default function AnalysisViewer() {
   const [showPursuitDialog, setShowPursuitDialog] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [eligibilityStatus, setEligibilityStatus] = useState<any>(null);
-  const [analysisMessage, setAnalysisMessage] = useState<{type: 'info' | 'success' | 'error', text: string} | null>(null);
-  
+  const [analysisMessage, setAnalysisMessage] = useState<{ type: 'info' | 'success' | 'error', text: string } | null>(null);
+
   // Document Viewer State
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<SourceDocument | null>(null);
-  const [highlightLocation, setHighlightLocation] = useState<{start: number, end: number} | undefined>(undefined);
+  const [highlightLocation, setHighlightLocation] = useState<{ start: number, end: number } | undefined>(undefined);
 
   const handleLocationClick = (doc: SourceDocument, loc: SourceLocation) => {
     setSelectedDoc(doc);
@@ -337,7 +340,7 @@ export default function AnalysisViewer() {
 
   const handlePursuitDecisionMade = async (decision: 'GO' | 'NO_GO', proposalId?: number) => {
     setShowPursuitDialog(false);
-    
+
     if (decision === 'GO' && proposalId) {
       // Refresh proposal data
       await fetchProposalData();
@@ -354,7 +357,7 @@ export default function AnalysisViewer() {
       type: 'info',
       text: 'Running comprehensive analysis...\n\nThis may take 30-60 seconds as AI agents analyze:\n• Solicitation requirements\n• Financial viability\n• Strategic alignment\n• Risk assessment\n• Internal capacity\n• Security requirements'
     });
-    
+
     try {
       const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze`, {
         method: 'POST'
@@ -398,19 +401,19 @@ export default function AnalysisViewer() {
 
   const exportAnalysis = (type: 'summary' | 'full') => {
     if (!data) return;
-    
+
     // Create timestamp in YYYYMMDD_HH:MM:SS format
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    
+
     // Sanitize opportunity title for filename
     const sanitizedTitle = data.opportunity.title
       .replace(/[^a-z0-9]/gi, '_')
       .replace(/_+/g, '_')
       .substring(0, 50);
-    
+
     const baseFilename = `${sanitizedTitle}_${type}_${timestamp}`;
-    
+
     // Create comprehensive export object
     const exportData = {
       exported_at: now.toISOString(),
@@ -419,12 +422,12 @@ export default function AnalysisViewer() {
       logs: data.logs,
       eligibility: eligibilityStatus
     };
-    
+
     // Generate markdown based on type
-    const markdownContent = type === 'summary' 
-      ? generateSummaryReport(exportData) 
+    const markdownContent = type === 'summary'
+      ? generateSummaryReport(exportData)
       : generateFullReport(exportData);
-    
+
     // Export as Markdown
     const mdBlob = new Blob([markdownContent], { type: 'text/markdown' });
     const mdUrl = URL.createObjectURL(mdBlob);
@@ -434,7 +437,7 @@ export default function AnalysisViewer() {
     document.body.appendChild(mdLink);
     document.body.removeChild(mdLink);
     URL.revokeObjectURL(mdUrl);
-    
+
     // Export as PDF using browser print
     setTimeout(() => {
       const printWindow = window.open('', '_blank');
@@ -476,23 +479,23 @@ export default function AnalysisViewer() {
   const generateSummaryReport = (exportData: any): string => {
     const opp = exportData.opportunity;
     const score = exportData.score;
-    
+
     let md = `# Analysis Summary: ${opp.title}\n\n`;
     md += `**Generated:** ${new Date(exportData.exported_at).toLocaleString()}\n\n`;
     md += `**Notice ID:** ${opp.notice_id}\n\n`;
     md += `---\n\n`;
-    
+
     // Overall Score and Decision
     if (score) {
       md += `## Overall Assessment\n\n`;
       md += `**Score:** ${score.weighted_score.toFixed(1)} / 100\n\n`;
       md += `**Decision:** ${score.go_no_go_decision}\n\n`;
-      
+
       // Executive Summary
       if (score.details?.executive_overview?.executive_summary) {
         md += `### Executive Summary\n\n${score.details.executive_overview.executive_summary}\n\n`;
       }
-      
+
       // Score Breakdown (compact)
       md += `### Score Breakdown\n\n`;
       md += `| Category | Score |\n`;
@@ -502,7 +505,7 @@ export default function AnalysisViewer() {
       md += `| Contract Risk | ${score.contract_risk_score.toFixed(1)} |\n`;
       md += `| Internal Capacity | ${score.internal_capacity_score.toFixed(1)} |\n\n`;
     }
-    
+
     // Key Opportunity Details
     const { department, subTier } = parseParentPath(opp.full_parent_path_name);
     md += `## Key Details\n\n`;
@@ -511,7 +514,7 @@ export default function AnalysisViewer() {
     md += `- **NAICS Code:** ${opp.naics_code || 'N/A'}\n`;
     md += `- **Set-Aside:** ${opp.type_of_set_aside || 'N/A'}\n`;
     md += `- **Response Deadline:** ${opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'N/A'}\n\n`;
-    
+
     // Critical Success Factors
     if (score?.details?.executive_overview?.critical_success_factors?.length > 0) {
       md += `## Critical Success Factors\n\n`;
@@ -520,12 +523,12 @@ export default function AnalysisViewer() {
       });
       md += `\n`;
     }
-    
+
     // Key Recommendations
     if (score?.details?.strategic?.recommendation) {
       md += `## Strategic Recommendation\n\n${score.details.strategic.recommendation}\n\n`;
     }
-    
+
     return md;
   };
 
@@ -537,30 +540,30 @@ export default function AnalysisViewer() {
     const opp = exportData.opportunity;
     const score = exportData.score;
     const eligibility = exportData.eligibility;
-    
+
     let md = `# Analysis Report: ${opp.title}\n\n`;
     md += `**Generated:** ${new Date(exportData.exported_at).toLocaleString()}\n\n`;
     md += `**Notice ID:** ${opp.notice_id}\n\n`;
     md += `---\n\n`;
-    
+
     // OVERVIEW TAB
     md += `## Overview\n\n`;
-    
+
     // Score Summary
     if (score) {
       md += `### Overall Score: ${score.weighted_score.toFixed(1)} / 100\n\n`;
       md += `**Decision:** ${score.go_no_go_decision}\n\n`;
-      
+
       // Executive Summary
       if (score.details?.executive_overview?.executive_summary) {
         md += `#### Executive Summary\n\n${score.details.executive_overview.executive_summary}\n\n`;
       }
-      
+
       // Mission Alignment
       if (score.details?.executive_overview?.mission_alignment) {
         md += `#### Mission Alignment\n\n${score.details.executive_overview.mission_alignment}\n\n`;
       }
-      
+
       // Critical Success Factors
       if (score.details?.executive_overview?.critical_success_factors?.length > 0) {
         md += `#### Critical Success Factors\n\n`;
@@ -569,7 +572,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       // Score Breakdown
       md += `### Score Breakdown\n\n`;
       md += `| Category | Score |\n`;
@@ -580,10 +583,10 @@ export default function AnalysisViewer() {
       md += `| Internal Capacity | ${score.internal_capacity_score.toFixed(1)} |\n`;
       md += `| Data Integrity | ${score.data_integrity_score.toFixed(1)} |\n\n`;
     }
-    
+
     // Parse department and subtier from fullParentPathName
     const { department, subTier } = parseParentPath(opp.full_parent_path_name);
-    
+
     // Opportunity Details
     md += `### Opportunity Details\n\n`;
     md += `- **Department:** ${department}\n`;
@@ -593,19 +596,19 @@ export default function AnalysisViewer() {
     md += `- **Posted Date:** ${opp.posted_date ? new Date(opp.posted_date).toLocaleDateString() : 'N/A'}\n`;
     md += `- **Response Deadline:** ${opp.response_deadline ? new Date(opp.response_deadline).toLocaleDateString() : 'N/A'}\n`;
     md += `- **Place of Performance:** ${opp.place_of_performance || 'N/A'}\n\n`;
-    
+
     if (opp.description) {
       md += `#### Description\n\n${opp.description}\n\n`;
     }
-    
+
     // SOLICITATION TAB
     if (score?.details?.solicitation) {
       md += `---\n\n## Solicitation Analysis\n\n`;
-      
+
       if (score.details.solicitation.summary) {
         md += `### Summary\n\n${score.details.solicitation.summary}\n\n`;
       }
-      
+
       if (score.details.solicitation.key_dates?.length > 0) {
         md += `### Key Dates & Milestones\n\n`;
         md += `| Event | Date |\n`;
@@ -615,7 +618,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.solicitation.key_personnel?.length > 0) {
         md += `### Key Personnel Requirements\n\n`;
         score.details.solicitation.key_personnel.forEach((person: any) => {
@@ -624,7 +627,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.solicitation.agency_goals?.length > 0) {
         md += `### Agency Goals\n\n`;
         score.details.solicitation.agency_goals.forEach((goal: string) => {
@@ -633,24 +636,24 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // FINANCIAL TAB
     if (score?.details?.financial) {
       md += `---\n\n## Financial Viability Analysis\n\n`;
       md += `**Score:** ${score.financial_viability_score.toFixed(1)} / 100\n\n`;
-      
+
       if (score.details.financial.summary) {
         md += `### Analysis Summary\n\n${score.details.financial.summary}\n\n`;
       }
-      
+
       if (score.details.financial.contract_value) {
         md += `### Contract Value\n\n${score.details.financial.contract_value}\n\n`;
       }
-      
+
       if (score.details.financial.pricing_strategy) {
         md += `### Pricing Strategy\n\n${score.details.financial.pricing_strategy}\n\n`;
       }
-      
+
       if (score.details.financial.cost_factors?.length > 0) {
         md += `### Cost Factors\n\n`;
         score.details.financial.cost_factors.forEach((factor: string) => {
@@ -659,16 +662,16 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // STRATEGIC TAB
     if (score?.details?.strategic) {
       md += `---\n\n## Strategic Alignment\n\n`;
       md += `**Score:** ${score.strategic_alignment_score.toFixed(1)} / 100\n\n`;
-      
+
       if (score.details.strategic.summary) {
         md += `### Analysis Summary\n\n${score.details.strategic.summary}\n\n`;
       }
-      
+
       if (score.details.strategic.alignment_factors?.length > 0) {
         md += `### Alignment Factors\n\n`;
         score.details.strategic.alignment_factors.forEach((factor: string) => {
@@ -676,7 +679,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.strategic.competitive_advantages?.length > 0) {
         md += `### Competitive Advantages\n\n`;
         score.details.strategic.competitive_advantages.forEach((advantage: string) => {
@@ -685,16 +688,16 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // RISK TAB
     if (score?.details?.risk) {
       md += `---\n\n## Risk Assessment\n\n`;
       md += `**Score:** ${score.contract_risk_score.toFixed(1)} / 100\n\n`;
-      
+
       if (score.details.risk.summary) {
         md += `### Risk Summary\n\n${score.details.risk.summary}\n\n`;
       }
-      
+
       if (score.details.risk.identified_risks?.length > 0) {
         md += `### Identified Risks\n\n`;
         score.details.risk.identified_risks.forEach((risk: any) => {
@@ -707,19 +710,19 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // SECURITY TAB
     if (score?.details?.security) {
       md += `---\n\n## Security Requirements\n\n`;
-      
+
       if (score.details.security.summary) {
         md += `### Security Posture Summary\n\n${score.details.security.summary}\n\n`;
       }
-      
+
       md += `### Clearance Requirements\n\n`;
       md += `- **Facility Clearance (FCL):** ${score.details.security.facility_clearance || 'Not Specified'}\n`;
       md += `- **Personnel Clearance (PCL):** ${score.details.security.personnel_clearance || 'Not Specified'}\n\n`;
-      
+
       if (score.details.security.cybersecurity_requirements?.length > 0) {
         md += `### Cybersecurity Requirements\n\n`;
         score.details.security.cybersecurity_requirements.forEach((req: string) => {
@@ -727,7 +730,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.security.other_requirements?.length > 0) {
         md += `### Other Security Requirements\n\n`;
         score.details.security.other_requirements.forEach((req: string) => {
@@ -736,16 +739,16 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // CAPACITY TAB
     if (score?.details?.capacity) {
       md += `---\n\n## Capacity Analysis\n\n`;
       md += `**Score:** ${score.internal_capacity_score.toFixed(1)} / 100\n\n`;
-      
+
       if (score.details.capacity.summary) {
         md += `### Analysis Summary\n\n${score.details.capacity.summary}\n\n`;
       }
-      
+
       if (score.details.capacity.resource_requirements?.length > 0) {
         md += `### Resource Requirements\n\n`;
         score.details.capacity.resource_requirements.forEach((req: string) => {
@@ -753,7 +756,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.capacity.capability_gaps?.length > 0) {
         md += `### Capability Gaps\n\n`;
         score.details.capacity.capability_gaps.forEach((gap: string) => {
@@ -762,15 +765,15 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // PERSONNEL TAB
     if (score?.details?.personnel) {
       md += `---\n\n## Personnel Requirements\n\n`;
-      
+
       if (score.details.personnel.summary) {
         md += `### Summary\n\n${score.details.personnel.summary}\n\n`;
       }
-      
+
       if (score.details.personnel.key_positions?.length > 0) {
         md += `### Key Positions\n\n`;
         score.details.personnel.key_positions.forEach((position: any) => {
@@ -779,20 +782,20 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.personnel.staffing_plan) {
         md += `### Staffing Plan\n\n${score.details.personnel.staffing_plan}\n\n`;
       }
     }
-    
+
     // PAST PERFORMANCE TAB
     if (score?.details?.past_performance) {
       md += `---\n\n## Past Performance\n\n`;
-      
+
       if (score.details.past_performance.summary) {
         md += `### Summary\n\n${score.details.past_performance.summary}\n\n`;
       }
-      
+
       if (score.details.past_performance.relevant_experience?.length > 0) {
         md += `### Relevant Experience\n\n`;
         score.details.past_performance.relevant_experience.forEach((exp: any) => {
@@ -803,7 +806,7 @@ export default function AnalysisViewer() {
         });
         md += `\n`;
       }
-      
+
       if (score.details.past_performance.requirements?.length > 0) {
         md += `### Past Performance Requirements\n\n`;
         score.details.past_performance.requirements.forEach((req: string) => {
@@ -812,12 +815,12 @@ export default function AnalysisViewer() {
         md += `\n`;
       }
     }
-    
+
     // ELIGIBILITY STATUS
     if (eligibility) {
       md += `---\n\n## Eligibility Status\n\n`;
       md += `**Qualified:** ${eligibility.qualified ? 'Yes ✓' : 'No ✗'}\n\n`;
-      
+
       if (eligibility.disqualifiers && eligibility.disqualifiers.length > 0) {
         md += `### Disqualification Reasons\n\n`;
         eligibility.disqualifiers.forEach((dq: any, i: number) => {
@@ -827,29 +830,29 @@ export default function AnalysisViewer() {
           md += `   - **Your Entity:** ${dq.actual}\n\n`;
         });
       }
-      
+
       if (eligibility.entity_info) {
         md += `### Entity Information\n\n`;
         md += `- **Name:** ${eligibility.entity_info.name}\n`;
         md += `- **UEI:** ${eligibility.entity_info.uei}\n\n`;
       }
     }
-    
+
     return md;
   };
 
   const markdownToHTML = (markdown: string): string => {
     // Simple markdown to HTML conversion for PDF generation
     let html = markdown;
-    
+
     // Headers
     html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
     html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
     html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-    
+
     // Bold
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
+
     // Tables
     html = html.replace(/\n\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)*)/g, (_match, header, rows) => {
       const headerCells = header.split('|').filter((c: string) => c.trim()).map((c: string) => `<th>${c.trim()}</th>`).join('');
@@ -859,15 +862,15 @@ export default function AnalysisViewer() {
       }).join('');
       return `<table><thead><tr>${headerCells}</tr></thead><tbody>${rowsHTML}</tbody></table>`;
     });
-    
+
     // Line breaks
     html = html.replace(/\n\n/g, '</p><p>');
     html = html.replace(/\n/g, '<br>');
     html = `<p>${html}</p>`;
-    
+
     // Horizontal rules
     html = html.replace(/<p>---<\/p>/g, '<hr>');
-    
+
     return html;
   };
 
@@ -932,9 +935,9 @@ export default function AnalysisViewer() {
     <div className="min-h-screen bg-background">
       <div className="space-y-6 p-6 pb-24">
         <div className="flex flex-col gap-6">
-          <Button 
-            onClick={() => navigate(-1)} 
-            variant="ghost" 
+          <Button
+            onClick={() => navigate(-1)}
+            variant="ghost"
             size="sm"
             className="gap-2 w-fit"
           >
@@ -957,18 +960,18 @@ export default function AnalysisViewer() {
             <div className="flex gap-4">
               {/* Stack 1: Exports */}
               <div className="flex flex-col gap-2">
-                <Button 
-                  onClick={handleExportSummary} 
-                  variant="outline" 
+                <Button
+                  onClick={handleExportSummary}
+                  variant="outline"
                   size="sm"
                   className="gap-1.5 text-xs justify-start w-36"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Export Summary
                 </Button>
-                <Button 
-                  onClick={handleExportFull} 
-                  variant="outline" 
+                <Button
+                  onClick={handleExportFull}
+                  variant="outline"
                   size="sm"
                   className="gap-1.5 text-xs justify-start w-36"
                 >
@@ -979,7 +982,7 @@ export default function AnalysisViewer() {
 
               {/* Stack 2: Proposals */}
               <div className="flex flex-col gap-2">
-                <Button 
+                <Button
                   onClick={handleGenerateProposal}
                   disabled={!canGenerateProposal || generatingProposal}
                   variant="default"
@@ -990,7 +993,7 @@ export default function AnalysisViewer() {
                   Generate Proposal
                 </Button>
                 {showPursuitButton && (
-                  <Button 
+                  <Button
                     onClick={() => setShowPursuitDialog(true)}
                     variant="default"
                     size="sm"
@@ -1019,7 +1022,7 @@ export default function AnalysisViewer() {
                 </Badge>
               </>
             )}
-            
+
             {pipelineStatus && (
               <Badge variant="secondary" className="bg-blue-600 hover:bg-blue-700 text-white gap-1 text-xs px-2 py-1 mr-2">
                 <Eye className="h-3 w-3" />
@@ -1027,10 +1030,10 @@ export default function AnalysisViewer() {
               </Badge>
             )}
 
-            <Button 
-              onClick={handleRerunAnalysis} 
+            <Button
+              onClick={handleRerunAnalysis}
               disabled={reanalyzing}
-              variant="outline" 
+              variant="outline"
               size="sm"
               className="gap-1.5 text-xs"
             >
@@ -1045,7 +1048,7 @@ export default function AnalysisViewer() {
               </Button>
             )}
           </div>
-          
+
           {/* Shipley Phase Indicator */}
           {proposalData && proposalData.shipley_phase && (
             <div className="mt-4">
@@ -1059,7 +1062,7 @@ export default function AnalysisViewer() {
       {eligibilityStatus && !eligibilityStatus.qualified && eligibilityStatus.disqualifiers && eligibilityStatus.disqualifiers.length > 0 && (
         <div className="max-w-7xl mx-auto px-6 pt-4">
           {eligibilityStatus.disqualifiers.map((disqualifier: any, index: number) => (
-            <Alert 
+            <Alert
               key={index}
               variant={disqualifier.severity === 'CRITICAL' ? 'destructive' : 'default'}
               className={`mb-3 ${disqualifier.severity === 'WARNING' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-900 dark:text-yellow-200' : ''}`}
@@ -1213,7 +1216,7 @@ function OverviewTab({ opportunity, score }: { opportunity: AnalysisData['opport
                 </p>
               </div>
             )}
-            
+
             {score?.details?.executive_overview?.critical_success_factors && (
               <div className="space-y-3">
                 <h4 className="font-semibold flex items-center gap-2">
@@ -1405,10 +1408,10 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
   const details = score.details?.security;
   const extractedFrom = details?.extracted_from || [];
   const sourceDocuments = score.details?.extracted_data?.source_documents || [];
-  
+
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<SourceDocument | null>(null);
-  
+
   const handleDocumentClick = (doc: SourceDocument) => {
     setSelectedDocument(doc);
     setViewerOpen(true);
@@ -1492,8 +1495,8 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
                       </li>
                     ))}
                   </ul>
-                  <SourceBadge 
-                    sources={extractedFrom} 
+                  <SourceBadge
+                    sources={extractedFrom}
                     documents={sourceDocuments}
                     onDocumentClick={handleDocumentClick}
                   />
@@ -1517,8 +1520,8 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
                       </li>
                     ))}
                   </ul>
-                  <SourceBadge 
-                    sources={extractedFrom} 
+                  <SourceBadge
+                    sources={extractedFrom}
                     documents={sourceDocuments}
                     onDocumentClick={handleDocumentClick}
                   />
@@ -1528,7 +1531,7 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
           </div>
         </CardContent>
       </Card>
-      
+
       <DocumentViewer
         open={viewerOpen}
         onClose={() => setViewerOpen(false)}
@@ -1561,10 +1564,10 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
             </div>
           </div>
           <div className="mt-4 flex justify-end">
-             <Button variant="outline" className="gap-2 text-blue-600 hover:text-blue-700">
-               <ExternalLink className="h-4 w-4" />
-               Price to Win Analysis
-             </Button>
+            <Button variant="outline" className="gap-2 text-blue-600 hover:text-blue-700">
+              <ExternalLink className="h-4 w-4" />
+              Price to Win Analysis
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1577,7 +1580,7 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
               <p className="text-sm">{score.details.financial.summary}</p>
             </div>
           )}
-          
+
           {score.details?.financial?.insights && score.details.financial.insights.length > 0 && (
             <div>
               <h4 className="font-semibold mb-3">Key Insights</h4>
@@ -1591,7 +1594,7 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
               </ul>
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             {score.details?.financial?.risks && score.details.financial.risks.length > 0 && (
               <div>
@@ -1606,7 +1609,7 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
                 </ul>
               </div>
             )}
-            
+
             {score.details?.financial?.opportunities && score.details.financial.opportunities.length > 0 && (
               <div>
                 <h4 className="font-semibold mb-3">Opportunities</h4>
@@ -1621,7 +1624,7 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
               </div>
             )}
           </div>
-          
+
           {score.details?.financial?.recommendation && (
             <div className="bg-muted/30 p-4 rounded-lg">
               <h4 className="font-semibold mb-2">Recommendation</h4>
@@ -1668,7 +1671,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
               <p className="text-sm">{score.details.strategic.summary}</p>
             </div>
           )}
-          
+
           {/* NAICS and PSC Match Analysis */}
           <div className="grid md:grid-cols-2 gap-4">
             {score.details?.strategic?.naics_match && (
@@ -1680,7 +1683,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
                 <p className="text-sm text-muted-foreground">{score.details.strategic.naics_match}</p>
               </div>
             )}
-            
+
             {score.details?.strategic?.psc_match && (
               <div className="bg-muted/30 p-4 rounded-lg border">
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
@@ -1691,7 +1694,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
               </div>
             )}
           </div>
-          
+
           {/* Team Contribution */}
           {score.details?.strategic?.team_contribution && (
             <div className="bg-purple-50 dark:bg-purple-950/30 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
@@ -1702,7 +1705,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
               <p className="text-sm">{score.details.strategic.team_contribution}</p>
             </div>
           )}
-          
+
           {score.details?.strategic?.capability_matches && score.details.strategic.capability_matches.length > 0 && (
             <div>
               <h4 className="font-semibold mb-3">Capability Matches</h4>
@@ -1716,7 +1719,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
               </ul>
             </div>
           )}
-          
+
           {score.details?.strategic?.gaps && score.details.strategic.gaps.length > 0 && (
             <div>
               <h4 className="font-semibold mb-3">Capability Gaps</h4>
@@ -1730,7 +1733,7 @@ function StrategicTab({ score }: { score: AnalysisData['score'] }) {
               </ul>
             </div>
           )}
-          
+
           {score.details?.strategic?.recommendation && (
             <div className="bg-muted/30 p-4 rounded-lg">
               <h4 className="font-semibold mb-2">Recommendation</h4>
@@ -1788,7 +1791,7 @@ function RiskTab({ opportunity, score }: { opportunity: AnalysisData['opportunit
               <p className="text-sm">{score.details.risk.summary}</p>
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             {score.details?.risk?.high_risks && score.details.risk.high_risks.length > 0 && (
               <div>
@@ -1810,7 +1813,7 @@ function RiskTab({ opportunity, score }: { opportunity: AnalysisData['opportunit
                 </ul>
               </div>
             )}
-            
+
             {score.details?.risk?.medium_risks && score.details.risk.medium_risks.length > 0 && (
               <div>
                 <h4 className="font-semibold mb-3 text-orange-600">Medium Risks</h4>
@@ -1832,7 +1835,7 @@ function RiskTab({ opportunity, score }: { opportunity: AnalysisData['opportunit
               </div>
             )}
           </div>
-          
+
           {score.details?.risk?.mitigation_strategies && score.details.risk.mitigation_strategies.length > 0 && (
             <div>
               <h4 className="font-semibold mb-3">Mitigation Strategies</h4>
@@ -1846,7 +1849,7 @@ function RiskTab({ opportunity, score }: { opportunity: AnalysisData['opportunit
               </ul>
             </div>
           )}
-          
+
           {score.details?.risk?.recommendation && (
             <div className="bg-muted/30 p-4 rounded-lg">
               <h4 className="font-semibold mb-2">Recommendation</h4>
@@ -1893,7 +1896,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
               <p className="text-sm">{score.details.capacity.summary}</p>
             </div>
           )}
-          
+
           {/* Entity, Team, and Combined Capacity */}
           <div className="grid md:grid-cols-3 gap-4">
             {score.details?.capacity?.entity_capacity && (
@@ -1905,7 +1908,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
                 <p className="text-xs text-muted-foreground">{score.details.capacity.entity_capacity}</p>
               </div>
             )}
-            
+
             {score.details?.capacity?.team_capacity && (
               <div className="bg-muted/30 p-4 rounded-lg border">
                 <h4 className="font-semibold mb-2 flex items-center gap-2 text-sm">
@@ -1915,7 +1918,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
                 <p className="text-xs text-muted-foreground">{score.details.capacity.team_capacity}</p>
               </div>
             )}
-            
+
             {score.details?.capacity?.combined_capacity && (
               <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg border border-green-200 dark:border-green-800">
                 <h4 className="font-semibold mb-2 flex items-center gap-2 text-sm">
@@ -1926,7 +1929,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
               </div>
             )}
           </div>
-          
+
           {/* Subcontracting Needs */}
           {score.details?.capacity?.subcontracting_needs && score.details.capacity.subcontracting_needs.length > 0 && (
             <div className="bg-orange-50 dark:bg-orange-950/30 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
@@ -1944,7 +1947,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
               </ul>
             </div>
           )}
-          
+
           {score.details?.capacity?.required_skills && score.details.capacity.required_skills.length > 0 && (
             <div>
               <h4 className="font-semibold mb-3">Required Skills</h4>
@@ -1958,7 +1961,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
               </ul>
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             {score.details?.capacity?.available_resources && score.details.capacity.available_resources.length > 0 && (
               <div>
@@ -1973,7 +1976,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
                 </ul>
               </div>
             )}
-            
+
             {score.details?.capacity?.gaps && score.details.capacity.gaps.length > 0 && (
               <div>
                 <h4 className="font-semibold mb-3">Capacity Gaps</h4>
@@ -1988,14 +1991,14 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
               </div>
             )}
           </div>
-          
+
           {score.details?.capacity?.staffing_recommendation && (
             <div className="bg-muted/30 p-4 rounded-lg">
               <h4 className="font-semibold mb-2">Staffing Recommendation</h4>
               <p className="text-sm">{score.details.capacity.staffing_recommendation}</p>
             </div>
           )}
-          
+
           {score.details?.capacity?.recommendation && (
             <div className="bg-muted/30 p-4 rounded-lg">
               <h4 className="font-semibold mb-2">Overall Recommendation</h4>
@@ -2009,7 +2012,7 @@ function CapacityTab({ score }: { score: AnalysisData['score'] }) {
 }
 
 // Personnel Tab Component
-function PersonnelTab({ score, documents, onLocationClick }: { 
+function PersonnelTab({ score, documents, onLocationClick }: {
   score: AnalysisData['score'];
   documents?: SourceDocument[];
   onLocationClick?: (doc: SourceDocument, loc: SourceLocation) => void;
@@ -2158,6 +2161,7 @@ function PastPerformanceTab({ score }: { score: AnalysisData['score'] }) {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <PastPerformanceMatcher opportunityId={score.opportunity_id.toString()} />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2305,7 +2309,7 @@ function ScoreCard({ title, score, highlight = false }: { title: string; score: 
       <div className="text-xs text-muted-foreground uppercase font-medium mb-1">{title}</div>
       <div className={cn("text-2xl font-bold", getColor(score))}>{score.toFixed(1)}</div>
       <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
-        <div 
+        <div
           className={cn("h-full transition-all", getColor(score).replace('text-', 'bg-'))}
           style={{ width: `${score}%` }}
         />

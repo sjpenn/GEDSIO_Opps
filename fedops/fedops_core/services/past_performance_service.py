@@ -778,3 +778,108 @@ class PastPerformanceService:
         
         return past_perf.citations_data
 
+
+    @staticmethod
+    async def match_projects_for_solicitation(
+        db: AsyncSession,
+        entity_uei: str,
+        solicitation_requirements: Dict[str, Any],
+        ai_service: Any = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Identify relevant past performance projects for a solicitation based on requirements.
+        
+        Args:
+            db: Database session
+            entity_uei: Entity UEI to search projects for
+            solicitation_requirements: Dictionary containing requirements (L, M, SOW summaries)
+            ai_service: AI service instance
+            
+        Returns:
+            List of matched projects with relevance scoring and rationale
+        """
+        # Get entity
+        result = await db.execute(select(Entity).where(Entity.uei == entity_uei))
+        entity = result.scalars().first()
+        if not entity:
+            raise ValueError(f"Entity with UEI {entity_uei} not found")
+
+        # Get all awards and past performances
+        awards_result = await db.execute(select(EntityAward).where(EntityAward.recipient_uei == entity_uei))
+        awards = awards_result.scalars().all()
+        
+        pp_result = await db.execute(select(PastPerformance).where(PastPerformance.entity_uei == entity_uei))
+        all_past_perfs = pp_result.scalars().all()
+        
+        # Build project summaries
+        project_summaries = await PastPerformanceService._build_project_summaries(
+            entity, awards, all_past_perfs
+        )
+        
+        if not project_summaries:
+            return []
+
+        # Import AI service if needed
+        if ai_service is None:
+            from fedops_core.services.ai_service import AIService
+            ai_service = AIService()
+            
+        # Import prompt (we'll use a new specialized prompt for matching)
+        MATCHING_PROMPT = """
+        You are a Proposal Capture Manager. Identify the most relevant Past Performance projects for a new opportunity.
+
+        NEW OPPORTUNITY REQUIREMENTS:
+        {requirements}
+
+        CANDIDATE PROJECTS (Internal Database):
+        {candidates}
+
+        TASK:
+        Compare the Candidate Projects against the Opportunity Requirements.
+        Select the top 5 matches.
+
+        RETURN JSON LIST:
+        [
+            {{
+                "project_id": "string",
+                "title": "string",
+                "relevance_score": 0-100,
+                "relevance_rationale": "Why this matches (specific mappings to SOW)",
+                "strengths": ["list", "of", "strengths"],
+                "weaknesses": ["list", "of", "gaps"]
+            }}
+        ]
+        """
+        
+        # Format requirements string
+        req_str = f"""
+        Evaluation Factors (Section M): {solicitation_requirements.get('section_m', 'N/A')}
+        Scope of Work (SOW): {solicitation_requirements.get('sow', 'N/A')}
+        Past Perf Requirements (Section L): {solicitation_requirements.get('section_l', 'N/A')}
+        NAICS: {solicitation_requirements.get('naics', 'N/A')}
+        """
+        
+        import json
+        prompt = MATCHING_PROMPT.format(
+            requirements=req_str,
+            candidates=json.dumps(project_summaries, indent=2)
+        )
+        
+        try:
+            response_text = await ai_service.generate_content(prompt)
+            
+            # Extract JSON
+            import re
+            json_str = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            start = json_str.find('[')
+            end = json_str.rfind(']') + 1
+            if start != -1 and end != -1:
+                json_str = json_str[start:end]
+            
+            matches = json.loads(json_str)
+            return matches
+            
+        except Exception as e:
+            # Fallback or empty list on error
+            print(f"Error matching projects: {e}")
+            return []

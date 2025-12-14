@@ -476,6 +476,14 @@ class PastPerformance(Base):
         "references": {"content": "", "generated": False}
     })
     
+    # Citations Data - Structured JSON with comprehensive citation information
+    # Stores array of PastPerformanceCitation objects for solicitation-specific citations
+    citations_data = Column(JSONB, nullable=True)
+    
+    # Solicitation Context - Stores Section L, M, SOW/PWS data used for citation generation
+    # Structure: {"section_l": "...", "section_m": "...", "sow_pws": "...", "agency_name": "...", "solicitation_id": "..."}
+    solicitation_context = Column(JSONB, nullable=True)
+    
     # Metadata
     created_by = Column(String, nullable=True)
     approved_by = Column(String, nullable=True)
@@ -484,3 +492,4 @@ class PastPerformance(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

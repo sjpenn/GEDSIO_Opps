@@ -1513,6 +1513,209 @@ Return ONLY a valid JSON object with this structure:
 }}
 """
 
+PAST_PERFORMANCE_CITATION_PROMPT = """
+You are an expert federal proposal writer.
+Generate past performance citations tailored to a specific federal solicitation.
+Follow these rules:
+
+Read and use the solicitation's Section L instructions and Section M evaluation factors, plus any PWS/SOW text provided.
+
+For each past performance reference, produce:
+
+A concise narrative that is clearly relevant to the solicitation.
+
+Data fields aligned with federal norms (contract identifiers, scope, size, complexity, performance results).
+
+Explicitly address:
+
+Relevance (scope, size, complexity, customer type).
+
+Recency (within the window in Section L, if provided).
+
+Performance quality, schedule, cost control, and management/business relations.
+
+Mirror the solicitation's terminology where appropriate (e.g., task names, domains, technologies) without copying large blocks of text.
+
+Write in clear, third‑person, past tense, and avoid marketing fluff.
+
+Output only valid JSON that exactly matches the schema provided under "OUTPUT JSON SCHEMA". Do not include comments, explanations, or extra keys.
+
+INPUTS:
+
+SOLICITATION_SECTION_L: {section_l_text}
+
+SOLICITATION_SECTION_M: {section_m_text}
+
+SOLICITATION_SOW_PWS: {sow_pws_text}
+
+AGENCY_NAME: {agency_name}
+
+REQUIRED_NUMBER_OF_CITATIONS: {n}
+
+INTERNAL_PROJECT_SUMMARIES: {internal_project_data}
+
+TASK:
+
+Select the best matching projects from INTERNAL_PROJECT_SUMMARIES for this solicitation.
+
+For each selected project, generate a tailored past performance citation and structured metadata.
+
+Ensure all REQUIRED_NUMBER_OF_CITATIONS are produced (if not enough projects are available, reuse the closest matches but note lower relevance_level).
+
+OUTPUT JSON SCHEMA:
+
+{{
+  "solicitation_meta": {{
+    "agency_name": "string",
+    "solicitation_id": "string",
+    "title": "string",
+    "section_l_focus": "string",
+    "section_m_factors": [
+      "string"
+    ]
+  }},
+  "citations": [
+    {{
+      "citation_id": "string",
+      "overall_relevance_level": "one of: VERY_RELEVANT | RELEVANT | SOMEWHAT_RELEVANT | NOT_RELEVANT",
+      "source_project_id": "string",
+
+      "contract_identifiers": {{
+        "contract_number": "string",
+        "task_order_number": "string or null",
+        "vehicle_name": "string or null",
+        "prime_or_sub": "PRIME or SUB",
+        "customer_name": "string",
+        "customer_type": "one of: CIVILIAN | DOD | INTEL | STATE_LOCAL | COMMERCIAL | OTHER",
+        "naics": "string or null",
+        "psc": "string or null"
+      }},
+
+      "period_and_value": {{
+        "period_of_performance_start": "YYYY-MM-DD",
+        "period_of_performance_end": "YYYY-MM-DD or \\"ONGOING\\"",
+        "is_within_recency_window": "boolean",
+        "base_years": "number",
+        "option_years": "number",
+        "total_contract_value": "number",
+        "total_value_units": "one of: USD | OTHER",
+        "total_obligated_value": "number or null"
+      }},
+
+      "customer_points_of_contact": [
+        {{
+          "name": "string",
+          "role": "e.g., COR, CO, Technical POC",
+          "organization": "string",
+          "email": "string",
+          "phone": "string"
+        }}
+      ],
+
+      "scope_and_relevance": {{
+        "summary_mission_context": "string",
+        "core_services_and_tasks": [
+          "string"
+        ],
+        "key_technologies_and_tools": [
+          "string"
+        ],
+        "size_and_complexity_indicators": {{
+          "fte_count": "number or null",
+          "locations_count": "number or null",
+          "users_supported": "number or null",
+          "data_or_transaction_volume": "string or null"
+        }},
+        "mapped_to_solicitation_tasks": [
+          {{
+            "solicitation_task_label": "string (e.g., Task 2 – Cloud Migration)",
+            "description_of_alignment": "string"
+          }}
+        ]
+      }},
+
+      "performance_results": {{
+        "quality": {{
+          "narrative": "string",
+          "metrics": [
+            {{
+              "name": "string",
+              "value": "string",
+              "better_direction": "HIGHER_IS_BETTER or LOWER_IS_BETTER"
+            }}
+          ]
+        }},
+        "schedule": {{
+          "narrative": "string",
+          "metrics": [
+            {{
+              "name": "string",
+              "value": "string",
+              "better_direction": "HIGHER_IS_BETTER or LOWER_IS_BETTER"
+            }}
+          ]
+        }},
+        "cost_control": {{
+          "narrative": "string",
+          "metrics": [
+            {{
+              "name": "string",
+              "value": "string",
+              "better_direction": "HIGHER_IS_BETTER or LOWER_IS_BETTER"
+            }}
+          ]
+        }},
+        "management_and_business_relations": {{
+          "narrative": "string",
+          "highlights": [
+            "string"
+          ]
+        }},
+        "cpars_or_ppq_summary": {{
+          "cpars_rating_quality": "string or null",
+          "cpars_rating_schedule": "string or null",
+          "cpars_rating_cost_control": "string or null",
+          "cpars_rating_management": "string or null",
+          "overall_assessment_excerpt": "string or null"
+        }}
+      }},
+
+      "challenges_and_risk_mitigation": {{
+        "key_challenges": [
+          "string"
+        ],
+        "mitigation_actions": [
+          "string"
+        ],
+        "outcomes": [
+          "string"
+        ]
+      }},
+
+      "tailored_narrative": {{
+        "executive_summary": "2–4 sentence summary tailored to this solicitation",
+        "detailed_writeup": "multi-paragraph narrative, max ~400 words, written as proposal-ready text",
+        "explicit_links_to_evaluation_factors": [
+          {{
+            "factor_name": "string (e.g., Past Performance – Relevance)",
+            "how_this_citation_supports_factor": "string"
+          }}
+        ]
+      }}
+    }}
+  ]
+}}
+
+IMPORTANT RULES:
+- Use third-person, past tense throughout
+- Mirror solicitation terminology where appropriate
+- Avoid marketing language or superlatives
+- Provide specific, quantifiable metrics where possible
+- Ensure all citations are genuinely relevant to the solicitation
+- If insufficient project data is available, note lower relevance levels
+- Return ONLY valid JSON matching the schema exactly
+"""
+
 SOURCES_SOUGHT_RESPONSE_PROMPT = """
 You are a federal government contracting proposal manager. Write a response to a Sources Sought Notice / Request for Information (RFI).
 
@@ -1571,3 +1774,4 @@ For each potential match (up to 5), provide a detailed profile in JSON format:
 }}
 
 Return ONLY valid JSON. If no matches are found, return {{"matches": []}}."""
+

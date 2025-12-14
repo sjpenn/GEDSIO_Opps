@@ -169,3 +169,69 @@ async def export_structured_output(
 async def get_questionnaire_template():
     """Get the questionnaire template structure with section descriptions"""
     return PastPerformanceService.get_template()
+
+
+@router.post("/{past_perf_id}/generate-citations")
+async def generate_citations(
+    past_perf_id: int,
+    section_l_text: str,
+    section_m_text: str,
+    sow_pws_text: str,
+    agency_name: str,
+    solicitation_id: Optional[str] = None,
+    solicitation_title: Optional[str] = None,
+    required_citations: int = 3,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate comprehensive past performance citations for a solicitation.
+    
+    Takes Section L, M, and SOW/PWS text and generates structured citations
+    tailored to the solicitation requirements.
+    
+    Returns:
+        Dictionary with solicitation_meta and citations array
+    """
+    try:
+        from fedops_core.services.ai_service import AIService
+        ai_service = AIService()
+        
+        result = await PastPerformanceService.generate_citations_for_solicitation(
+            db=db,
+            past_perf_id=past_perf_id,
+            section_l_text=section_l_text,
+            section_m_text=section_m_text,
+            sow_pws_text=sow_pws_text,
+            agency_name=agency_name,
+            solicitation_id=solicitation_id,
+            solicitation_title=solicitation_title,
+            required_citations=required_citations,
+            ai_service=ai_service
+        )
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{past_perf_id}/citations")
+async def get_citations(
+    past_perf_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get stored citations for a past performance record.
+    
+    Returns:
+        Dictionary with solicitation_meta and citations, or null if not generated
+    """
+    try:
+        citations = await PastPerformanceService.get_citations(db, past_perf_id)
+        if citations is None:
+            return {"citations": None, "message": "No citations generated yet"}
+        return citations
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

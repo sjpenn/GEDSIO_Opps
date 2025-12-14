@@ -582,3 +582,199 @@ class PastPerformanceService:
     def get_template() -> QuestionnaireTemplate:
         """Get the questionnaire template"""
         return QuestionnaireTemplate()
+    
+    @staticmethod
+    async def generate_citations_for_solicitation(
+        db: AsyncSession,
+        past_perf_id: int,
+        section_l_text: str,
+        section_m_text: str,
+        sow_pws_text: str,
+        agency_name: str,
+        solicitation_id: Optional[str] = None,
+        solicitation_title: Optional[str] = None,
+        required_citations: int = 3,
+        ai_service: Any = None
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive past performance citations for a solicitation.
+        
+        Args:
+            db: Database session
+            past_perf_id: Past performance record ID
+            section_l_text: Section L instructions text
+            section_m_text: Section M evaluation factors text
+            sow_pws_text: SOW/PWS text
+            agency_name: Agency name
+            solicitation_id: Optional solicitation ID
+            solicitation_title: Optional solicitation title
+            required_citations: Number of citations to generate
+            ai_service: AI service instance for generation
+            
+        Returns:
+            Dictionary with solicitation_meta and citations
+        """
+        import logging
+        import json
+        logger = logging.getLogger(__name__)
+        
+        # Get past performance record
+        result = await db.execute(
+            select(PastPerformance).where(PastPerformance.id == past_perf_id)
+        )
+        past_perf = result.scalars().first()
+        
+        if not past_perf:
+            raise ValueError(f"Past performance with ID {past_perf_id} not found")
+        
+        # Get entity and awards for context
+        entity_result = await db.execute(select(Entity).where(Entity.uei == past_perf.entity_uei))
+        entity = entity_result.scalars().first()
+        
+        # Get all awards for this entity
+        awards_result = await db.execute(
+            select(EntityAward).where(EntityAward.recipient_uei == past_perf.entity_uei)
+        )
+        awards = awards_result.scalars().all()
+        
+        # Get all past performances for this entity to use as project summaries
+        pp_result = await db.execute(
+            select(PastPerformance).where(PastPerformance.entity_uei == past_perf.entity_uei)
+        )
+        all_past_perfs = pp_result.scalars().all()
+        
+        # Build project summaries from past performances and awards
+        project_summaries = await PastPerformanceService._build_project_summaries(
+            entity, awards, all_past_perfs
+        )
+        
+        # Import AI service if not provided
+        if ai_service is None:
+            from fedops_core.services.ai_service import AIService
+            ai_service = AIService()
+        
+        # Import prompt
+        from fedops_core.prompts import PAST_PERFORMANCE_CITATION_PROMPT
+        
+        # Build prompt
+        prompt = PAST_PERFORMANCE_CITATION_PROMPT.format(
+            section_l_text=section_l_text[:10000],  # Limit to avoid token limits
+            section_m_text=section_m_text[:10000],
+            sow_pws_text=sow_pws_text[:10000],
+            agency_name=agency_name,
+            n=required_citations,
+            internal_project_data=json.dumps(project_summaries, indent=2)
+        )
+        
+        logger.info(f"Generating citations for past performance {past_perf_id}")
+        
+        # Generate citations using AI
+        try:
+            response_text = await ai_service.generate_content(prompt)
+            logger.info(f"AI response received (length={len(response_text)} chars)")
+            
+            # Extract JSON from response
+            import re
+            json_str = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            start = json_str.find('{')
+            end = json_str.rfind('}') + 1
+            if start != -1 and end != -1:
+                json_str = json_str[start:end]
+            
+            citations_data = json.loads(json_str)
+            
+            # Store citations and solicitation context
+            past_perf.citations_data = citations_data
+            past_perf.solicitation_context = {
+                "section_l": section_l_text,
+                "section_m": section_m_text,
+                "sow_pws": sow_pws_text,
+                "agency_name": agency_name,
+                "solicitation_id": solicitation_id,
+                "solicitation_title": solicitation_title,
+                "generated_at": datetime.utcnow().isoformat()
+            }
+            past_perf.updated_at = datetime.utcnow()
+            
+            await db.commit()
+            await db.refresh(past_perf)
+            
+            return citations_data
+            
+        except Exception as e:
+            logger.error(f"Failed to generate citations: {e}", exc_info=True)
+            raise ValueError(f"Failed to generate citations: {str(e)}")
+    
+    @staticmethod
+    async def _build_project_summaries(
+        entity: Entity,
+        awards: List[EntityAward],
+        past_performances: List[PastPerformance]
+    ) -> List[Dict[str, Any]]:
+        """
+        Build project summaries from entity data for citation generation.
+        
+        Combines award data with past performance questionnaire data.
+        """
+        summaries = []
+        
+        # Build summaries from past performances
+        for pp in past_performances:
+            summary = {
+                "project_id": str(pp.id),
+                "title": pp.title,
+                "questionnaire_data": pp.questionnaire_data
+            }
+            
+            # If linked to an award, add award details
+            if pp.award_id:
+                award = next((a for a in awards if a.award_id == pp.award_id), None)
+                if award:
+                    summary["award_details"] = {
+                        "award_id": award.award_id,
+                        "total_obligation": award.total_obligation,
+                        "award_date": award.award_date.isoformat() if award.award_date else None,
+                        "awarding_agency": award.awarding_agency,
+                        "naics_code": award.naics_code,
+                        "description": award.description,
+                        "award_type": award.award_type
+                    }
+            
+            summaries.append(summary)
+        
+        # Add awards without past performances
+        for award in awards:
+            # Check if award already included
+            if not any(s.get("award_details", {}).get("award_id") == award.award_id for s in summaries):
+                summaries.append({
+                    "project_id": f"award_{award.award_id}",
+                    "title": award.description or f"Award {award.award_id}",
+                    "award_details": {
+                        "award_id": award.award_id,
+                        "total_obligation": award.total_obligation,
+                        "award_date": award.award_date.isoformat() if award.award_date else None,
+                        "awarding_agency": award.awarding_agency,
+                        "naics_code": award.naics_code,
+                        "description": award.description,
+                        "award_type": award.award_type
+                    }
+                })
+        
+        return summaries
+    
+    @staticmethod
+    async def get_citations(
+        db: AsyncSession,
+        past_perf_id: int
+    ) -> Optional[Dict[str, Any]]:
+        """Get stored citations for a past performance"""
+        result = await db.execute(
+            select(PastPerformance).where(PastPerformance.id == past_perf_id)
+        )
+        past_perf = result.scalars().first()
+        
+        if not past_perf:
+            return None
+        
+        return past_perf.citations_data
+

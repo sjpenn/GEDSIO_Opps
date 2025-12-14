@@ -62,6 +62,12 @@ class PastPerformanceResponse(BaseModel):
         from_attributes = True
 
 
+class PastPerformanceWithCitationsResponse(PastPerformanceResponse):
+    """Response model for past performance with citations"""
+    citations_data: Optional[Dict[str, Any]] = None
+    solicitation_context: Optional[Dict[str, Any]] = None
+
+
 class GenerateSectionRequest(BaseModel):
     """Request to generate content for a specific section"""
     section_name: str = Field(..., description="Name of the section to generate (e.g., 'project_overview')")

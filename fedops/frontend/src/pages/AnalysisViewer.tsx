@@ -70,7 +70,31 @@ interface AnalysisData {
     data_integrity_score: number;
     weighted_score: number;
     go_no_go_decision: string;
-    details: any;
+    details: {
+      financial?: {
+        summary?: string;
+        contract_value?: string;
+        pricing_strategy?: string;
+        cost_factors?: string[];
+        lcat_pricing?: Array<{
+          lcat_title: string;
+          description: string;
+          requirements?: string;
+          project_phase?: string;
+          estimated_hours?: number;
+          fte_count?: number;
+          experience_level: string;
+          education: string;
+          market_salary_low: number;
+          market_salary_high: number;
+          bill_rate_low: number;
+          bill_rate_high: number;
+        }>;
+        incumbent_summary?: string;
+        [key: string]: any;
+      };
+      [key: string]: any;
+    };
     created_at: string;
   } | null;
   logs: Array<{
@@ -200,6 +224,12 @@ function SourceBadge({
     </div>
   );
 }
+
+const getScoreColor = (score: number) => {
+  if (score >= 70) return 'text-green-600';
+  if (score >= 50) return 'text-yellow-600';
+  return 'text-red-600';
+};
 
 export default function AnalysisViewer() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
@@ -883,11 +913,7 @@ export default function AnalysisViewer() {
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 70) return 'text-green-600';
-    if (score >= 50) return 'text-yellow-600';
-    return 'text-red-600';
-  };
+
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: TrendingUp },
@@ -1672,98 +1698,145 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
     </div>
   );
 }
+// Financial Tab Component
+// Financial Tab Component
 function FinancialTab({ score }: { score: AnalysisData['score'] }) {
-  if (!score) {
-    return <NoAnalysisCard />;
-  }
+  if (!score) return <NoAnalysisCard />;
+
+  const financial = score.details?.financial;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-green-600" />
-                Financial Viability Analysis
-              </CardTitle>
-              <CardDescription>Assessment of financial aspects and profitability</CardDescription>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="h-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-green-600" />
+              Financial Viability
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+              <span className="text-sm font-medium">Viability Score</span>
+              <span className={cn("text-2xl font-bold", getScoreColor(score.financial_viability_score))}>
+                {score.financial_viability_score.toFixed(1)}
+              </span>
             </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold text-green-600">{score.financial_viability_score.toFixed(1)}</div>
-              <div className="text-xs text-muted-foreground">Score</div>
-            </div>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <Button variant="outline" className="gap-2 text-blue-600 hover:text-blue-700">
-              <ExternalLink className="h-4 w-4" />
-              Price to Win Analysis
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {score.details?.financial?.summary && (
-            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-              <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <Lightbulb className="h-4 w-4 text-blue-600" />
-                AI Analysis Summary
-              </h4>
-              <p className="text-sm">{score.details.financial.summary}</p>
-            </div>
-          )}
 
-          {score.details?.financial?.insights && score.details.financial.insights.length > 0 && (
-            <div>
-              <h4 className="font-semibold mb-3">Key Insights</h4>
-              <ul className="space-y-2">
-                {score.details.financial.insights.map((insight: string, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <Lightbulb className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <span>{insight}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            {score.details?.financial?.risks && score.details.financial.risks.length > 0 && (
+            {financial?.summary && (
               <div>
-                <h4 className="font-semibold mb-3">Financial Risks</h4>
-                <ul className="space-y-2">
-                  {score.details.financial.risks.map((risk: string, i: number) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
-                      <span>{risk}</span>
-                    </li>
+                <h4 className="font-semibold text-sm mb-2">Summary</h4>
+                <p className="text-sm text-muted-foreground">{financial.summary}</p>
+              </div>
+            )}
+
+            {financial?.contract_value && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1">Estimated Value</h4>
+                <p className="text-sm font-medium">{financial.contract_value}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Strategies & Factors */}
+        <Card className="h-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-blue-600" />
+              Strategy & Drivers
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {financial?.pricing_strategy && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1">Recommended Strategy</h4>
+                <div className="p-3 bg-blue-50 text-blue-900 rounded text-sm">
+                  {financial.pricing_strategy}
+                </div>
+              </div>
+            )}
+
+            {financial?.cost_factors && financial.cost_factors.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Key Cost Drivers</h4>
+                <ul className="list-disc pl-4 space-y-1">
+                  {financial.cost_factors.map((factor: string, i: number) => (
+                    <li key={i} className="text-sm text-muted-foreground">{factor}</li>
                   ))}
                 </ul>
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
 
-            {score.details?.financial?.opportunities && score.details.financial.opportunities.length > 0 && (
-              <div>
-                <h4 className="font-semibold mb-3">Opportunities</h4>
-                <ul className="space-y-2">
-                  {score.details.financial.opportunities.map((opp: string, i: number) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                      <span>{opp}</span>
-                    </li>
-                  ))}
-                </ul>
+      {/* Price to Win / LCAT Pricing Section */}
+      {financial?.lcat_pricing && financial.lcat_pricing.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-purple-600" />
+              Price to Win Assessment
+            </CardTitle>
+            <CardDescription>
+              Estimated market rates for required labor categories based on similar awards and incumbent data.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {financial.incumbent_summary && (
+              <div className="mb-6 p-4 bg-purple-50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900 rounded-lg">
+                <h4 className="font-semibold text-purple-900 dark:text-purple-200 text-sm mb-2">Incumbent & Market Intelligence</h4>
+                <p className="text-sm text-purple-800 dark:text-purple-300">{financial.incumbent_summary}</p>
               </div>
             )}
-          </div>
 
-          {score.details?.financial?.recommendation && (
-            <div className="bg-muted/30 p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Recommendation</h4>
-              <p className="text-sm">{score.details.financial.recommendation}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-3 font-medium">Labor Category</th>
+                    <th className="text-left p-3 font-medium">Phase</th>
+                    <th className="text-left p-3 font-medium">Level</th>
+                    <th className="text-left p-3 font-medium w-1/3">Requirements</th>
+                    <th className="text-right p-3 font-medium">Hours / FTE</th>
+                    <th className="text-right p-3 font-medium">Est. Salary Range</th>
+                    <th className="text-right p-3 font-medium">Target Bill Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {financial.lcat_pricing.map((lcat: any, idx: number) => (
+                    <tr key={idx} className="border-b hover:bg-muted/10 transition-colors">
+                      <td className="p-3 font-medium">{lcat.lcat_title}</td>
+                      <td className="p-3 text-muted-foreground text-xs">{lcat.project_phase || '-'}</td>
+                      <td className="p-3">
+                        <Badge variant="outline" className="font-normal text-xs">{lcat.experience_level}</Badge>
+                        {lcat.education && <div className="text-xs text-muted-foreground mt-1">{lcat.education}</div>}
+                      </td>
+                      <td className="p-3 text-muted-foreground text-xs">
+                        <p>{lcat.description}</p>
+                        {lcat.requirements && (
+                          <p className="mt-1 pl-2 border-l-2 border-purple-200 dark:border-purple-900 italic">{lcat.requirements}</p>
+                        )}
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="font-medium">{lcat.estimated_hours ? lcat.estimated_hours.toLocaleString() : '-'} hrs</div>
+                        {lcat.fte_count !== undefined && <div className="text-xs text-muted-foreground text-nowrap">{lcat.fte_count} FTE</div>}
+                      </td>
+                      <td className="p-3 text-right tabular-nums">
+                        ${lcat.market_salary_low.toLocaleString()} - ${lcat.market_salary_high.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-right font-mono font-semibold text-green-600">
+                        ${lcat.bill_rate_low.toFixed(2)} - ${lcat.bill_rate_high.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

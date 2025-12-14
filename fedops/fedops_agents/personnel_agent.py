@@ -55,11 +55,17 @@ class PersonnelAgent(BaseAgent):
             extracted_context = "\n\n".join(context_parts) if context_parts else "No personnel documents extracted."
 
             # 3. Generate AI Analysis for estimates and recommendations
+            security_context = kwargs.get('security_context', {})
+            clearance_level = security_context.get('personnel_clearance', 'Not specified')
+            
             prompt = PERSONNEL_ANALYSIS_PROMPT.format(
                 title=opp.title or "N/A",
                 department=opp.department or "N/A",
                 description=opp.description or "No description available"
             )
+            
+            # Inject Security Constraints
+            prompt += f"\n\n## Security Constraints:\nRequired Personnel Clearance: {clearance_level}\nEnsure all staffing estimates account for this clearance requirement."
             
             # Append extracted context
             prompt += f"\n\n## Extracted Personnel Data:\n{extracted_context[:50000]}"

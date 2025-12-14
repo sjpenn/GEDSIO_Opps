@@ -1171,6 +1171,7 @@ def determine_document_type(filename: str, content_snippet: str = "") -> Documen
 # OPPORTUNITY ANALYSIS PROMPTS
 # ============================================================================
 
+
 FINANCIAL_ANALYSIS_PROMPT = """
 You are a federal government contracting financial analyst. Analyze this opportunity from a financial perspective.
 
@@ -1181,12 +1182,19 @@ You are a federal government contracting financial analyst. Analyze this opportu
 - Set-Aside: {set_aside}
 - Description: {description}
 
+**Incumbent & Market Intelligence:**
+{incumbent_context}
+
+**Extracted Financial Data:**
+{financial_data_context}
+
 **Analysis Required:**
-1. **Estimated Contract Value**: Provide a realistic range based on scope and similar awards.
-2. **Profitability Potential**: Estimate potential profit margins (Low/Medium/High) with justification.
-3. **Cost Drivers**: Identify major cost components (Labor, Materials, Travel, ODC).
-4. **Pricing Strategy**: Recommend a pricing strategy (e.g., Loss Leader, Market Penetration, Premium).
-5. **Financial Risks**: Specific risks that could impact profitability (e.g., fixed price with uncertain scope).
+1. **Price to Win (PTW) Strategy**: Analyze incumbent data and similar awards to recommend a winning price point.
+2. **LCAT Pricing Table**: Generate a detailed table of Labor Categories (LCATs) likely required, including experience levels, estimated market salaries, and suggested bill rates.
+3. **Estimated Contract Value**: Provide a realistic range based on scope and similar awards.
+4. **Profitability Potential**: Estimate potential profit margins (Low/Medium/High) with justification.
+5. **Cost Drivers**: Identify major cost components (Labor, Materials, Travel, ODC).
+6. **Financial Risks**: Specific risks that could impact profitability.
 
 **Note:** You will be provided with relevant sections of the solicitation documents (Section B for pricing, SOW for scope) below. Use them to validate your analysis.
 
@@ -1197,6 +1205,26 @@ Return ONLY a valid JSON object with this structure:
   "score": <number 0-100>,
   "estimated_value_range": {{"low": <number>, "high": <number>, "confidence": "Low/Medium/High"}},
   "margin_potential": "Low (<5%) / Medium (5-10%) / High (>10%)",
+  
+  "lcat_pricing": [
+      {{
+          "lcat_title": "Standardized Job Title (e.g., Senior Software Engineer)",
+          "description": "Brief description of duties/qualifications",
+          "requirements": "Detailed extracted requirements and qualifications",
+          "project_phase": "Phase/Task this LCAT supports",
+          "experience_level": "Junior/Mid/Senior/SME",
+          "education": "BS/MS/None",
+          "estimated_hours": <number>,
+          "fte_count": <number>,
+          "market_salary_low": <number>,
+          "market_salary_high": <number>,
+          "bill_rate_low": <number>,
+          "bill_rate_high": <number>
+      }}
+  ],
+  
+  "incumbent_summary": "Analysis of incumbent performance and pricing if available",
+
   "insights": ["insight 1", "insight 2", "insight 3"],
   "risks": ["financial risk 1", "financial risk 2"],
   "opportunities": ["financial opportunity 1", "financial opportunity 2"],

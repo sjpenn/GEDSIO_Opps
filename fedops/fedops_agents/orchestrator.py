@@ -36,20 +36,34 @@ class OrchestratorAgent(BaseAgent):
                 "sections_extracted": [k for k, v in extracted_data.items() if v and k != 'source_documents'] if extracted_data else []
             })
 
-            # 3. Concurrent Analysis - Pass extracted_data to all agents
-            await self.log_activity(opportunity_id, "CONCURRENT_ANALYSIS", "IN_PROGRESS")
+            # 3. Sequential Continual Analysis - Chain outputs
+            await self.log_activity(opportunity_id, "CONTINUAL_ANALYSIS", "IN_PROGRESS")
             
-            # Compliance & Security (with extracted Section H/I/K data)
+            # Step 1: Compliance & Security (Base layer)
+            # Extracts Facility/Personnel Clearance
             comp_agent = ComplianceAgent(self.db)
             comp_results = await comp_agent.execute(opportunity_id, extracted_data=extracted_data)
+            security_details = comp_results.get("security_details", {})
             
-            # Capability (with extracted SOW and Section M data)
+            # Step 2: Capability & Personnel (Informed by Security)
+            # Uses Clearance to filter/inform Personnel requirements
             cap_agent = CapabilityMappingAgent(self.db)
-            cap_results = await cap_agent.execute(opportunity_id, extracted_data=extracted_data)
+            cap_results = await cap_agent.execute(
+                opportunity_id, 
+                extracted_data=extracted_data,
+                security_context=security_details
+            )
+            personnel_details = cap_results.get("personnel_details", {})
             
-            # Financial (with extracted Section B data)
+            # Step 3: Financial (Informed by Personnel & Security)
+            # Uses Personnel LCATs/FTEs to build PTW model
             fin_agent = FinancialAnalysisAgent(self.db)
-            fin_results = await fin_agent.execute(opportunity_id, extracted_data=extracted_data)
+            fin_results = await fin_agent.execute(
+                opportunity_id, 
+                extracted_data=extracted_data,
+                security_context=security_details,
+                personnel_context=personnel_details
+            )
 
             # 4. Executive Overview Generation
             result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))

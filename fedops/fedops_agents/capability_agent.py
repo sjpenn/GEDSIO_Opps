@@ -89,8 +89,14 @@ class CapabilityMappingAgent(BaseAgent):
             capacity_analysis = await self.ai_service.analyze_opportunity(capacity_prompt)
             
             # 3. Personnel Analysis (Delegate to Agent with extracted_data)
+            # Pass security context to ensure clearance alignment
+            security_context = kwargs.get('security_context', {})
             personnel_agent = PersonnelAgent(self.db)
-            personnel_analysis = await personnel_agent.execute(opportunity_id, extracted_data=extracted_data)
+            personnel_analysis = await personnel_agent.execute(
+                opportunity_id, 
+                extracted_data=extracted_data,
+                security_context=security_context
+            )
             
             # Safely handle personnel analysis response
             if not personnel_analysis or not isinstance(personnel_analysis, dict):

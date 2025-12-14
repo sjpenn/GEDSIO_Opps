@@ -1,10 +1,14 @@
 import asyncio
 import logging
+import json
+import traceback
+from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 from fedops_core.settings import settings
 from fedops_agents.orchestrator import OrchestratorAgent
-from fedops_core.db.models import Opportunity
+from fedops_core.db.models import Opportunity, OpportunityScore, OpportunityPipeline
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,11 +30,26 @@ async def reproduce_analysis(opportunity_id: int):
 
             orchestrator = OrchestratorAgent(db)
             result = await orchestrator.execute(opportunity_id)
-            logger.info(f"Analysis result: {result}")
+            
+            # Fetch the saved score to get the details
+            stmt = select(OpportunityScore).where(OpportunityScore.opportunity_id == opportunity_id)
+            score_res = await db.execute(stmt)
+            score_entry = score_res.scalar_one_or_none()
+            
+            if score_entry and score_entry.details:
+                sol_details = score_entry.details.get('solicitation')
+                if sol_details:
+                    ai_analysis = sol_details.get('ai_analysis')
+                    logger.info("\n=== AI ANALYSIS STRUCTURE ===")
+                    print(json.dumps(ai_analysis, indent=2, default=str))
+                    logger.info("=============================\n")
+                else:
+                    logger.info("No solicitation details found in score entry")
+            else:
+                logger.info(f"Analysis result: {result} (No score entry found)")
             
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
-            import traceback
             logger.error(traceback.format_exc())
         finally:
             await db.close()

@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fedops_agents.base_agent import BaseAgent
-from fedops_core.db.models import Opportunity, StoredFile
+from fedops_core.db.models import Opportunity, StoredFile, OpportunityPipeline
 from fedops_core.services.ai_service import AIService
 from fedops_core.services.document_extractor import DocumentExtractor
 from fedops_core.prompts import SOLICITATION_SUMMARY_PROMPT, determine_document_type, DocumentType
@@ -21,6 +21,10 @@ class DocumentAnalysisAgent(BaseAgent):
             
             if not opp:
                 raise ValueError(f"Opportunity {opportunity_id} not found")
+
+            # Fetch pipeline data (for questions due date)
+            pipeline_res = await self.db.execute(select(OpportunityPipeline).where(OpportunityPipeline.opportunity_id == opportunity_id))
+            pipeline = pipeline_res.scalar_one_or_none()
             
             # Check if extracted_data was passed from orchestrator
             extracted_data = kwargs.get('extracted_data')
@@ -83,6 +87,23 @@ class DocumentAnalysisAgent(BaseAgent):
             
             ai_analysis = await ai_service.analyze_opportunity(prompt)
             
+            # --- Data Integrity: Overwrite with authoritative DB data ---
+            if opp.solicitation_number:
+                ai_analysis["solicitation_number"] = opp.solicitation_number
+                
+            if opp.response_deadline:
+                ai_analysis["proposal_due_date"] = str(opp.response_deadline)
+                
+            if pipeline and pipeline.questions_due_date:
+                ai_analysis["questions_due_date"] = str(pipeline.questions_due_date)
+                
+            if opp.naics_code:
+                ai_analysis["naics_code"] = opp.naics_code
+                
+            if opp.type_of_set_aside:
+                ai_analysis["set_aside"] = opp.type_of_set_aside
+            # -----------------------------------------------------------
+            
             # Combine extracted data with AI analysis
             combined_details = {
                 # Extracted facts from documents
@@ -130,11 +151,12 @@ class DocumentAnalysisAgent(BaseAgent):
             # ----------------------------------------------
             
             # Extract key information for logging
-            requirements_count = len(ai_analysis.get("key_dates", [])) + len(ai_analysis.get("key_personnel", []))
+            # New schema uses lists for certs and tech stack
+            requirements_count = len(ai_analysis.get("mandatory_certs", [])) + len(ai_analysis.get("tech_stack", []))
             
             await self.log_activity(opportunity_id, "END_DOC_ANALYSIS", "SUCCESS", {
                 "requirements_count": requirements_count,
-                "summary_length": len(ai_analysis.get("summary", "")),
+                "summary_length": len(ai_analysis.get("summary_scope", "")),
                 "source_docs": len(extracted_data.get('source_documents', [])),
                 "sections_extracted": [k for k, v in extracted_data.items() if v and k != 'source_documents']
             })
@@ -149,14 +171,15 @@ class DocumentAnalysisAgent(BaseAgent):
 
         except Exception as e:
             await self.log_activity(opportunity_id, "DOC_ANALYSIS_ERROR", "FAILURE", {"error": str(e)})
-            # Return fallback structure
+            # Return fallback structure matching BidDecisionSummary where possible
             return {
                 "status": "error",
                 "solicitation_details": {
-                    "summary": f"Solicitation analysis failed: {str(e)}", 
-                    "key_dates": [], 
-                    "key_personnel": [],
-                    "agency_goals": [],
+                    "summary_scope": f"Solicitation analysis failed: {str(e)}", 
+                    "solicitation_number": "ERROR",
+                    "proposal_due_date": "N/A",
+                    "ai_bid_recommendation": "NO-BID",
+                    "recommendation_reasoning": "Analysis failed",
                     "extracted_data": None,
                     "ai_analysis": None,
                     "source_documents": []

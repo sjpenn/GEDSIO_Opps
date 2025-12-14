@@ -81,3 +81,38 @@ class DocumentAnalysis(BaseModel):
     analysis_confidence: float = Field(0.90, ge=0.0, le=1.0, description="Analyst confidence (0-1)")
     requires_human_review: bool = Field(False, description="Flag for manual review?")
     review_notes: Optional[str] = Field(None, description="Analyst notes for manual review")
+
+class BidDecisionSummary(BaseModel):
+    """
+    Summary for Bid/No-Bid Decision Matrix
+    Mapped to standard RFP Sections (A, B, C, L, M)
+    """
+    # 1. KNOCK-OUT CRITERIA
+    solicitation_number: str = Field(..., description="Solicitation ID")
+    proposal_due_date: str = Field(..., description="YYYY-MM-DD HH:MM Timezone")
+    questions_due_date: str = Field(..., description="YYYY-MM-DD")
+    set_aside: str = Field(..., description="Total Small Business, 8(a), Unrestricted, etc.")
+    naics_code: str = Field(..., description="NAICS Code")
+    security_clearance: str = Field("None", description="Facility/Personnel Clearance level required")
+    mandatory_certs: List[str] = Field(default_factory=list, description="CMMC, ISO, CMMI requirements")
+
+    # 2. FIT CRITERIA
+    summary_scope: str = Field(..., description="3-bullet summary of the PWS/SOW")
+    tech_stack: List[str] = Field(default_factory=list, description="Required technologies/languages")
+    place_of_performance: str = Field(..., description="Remote, On-site, Hybrid, Specific Location")
+    key_personnel_roles: List[str] = Field(default_factory=list, description="Required Key Personnel titles")
+
+    # 3. WIN CRITERIA
+    evaluation_method: str = Field(..., description="LPTA, Best Value, Highest Rated, etc.")
+    incumbent_info: Optional[str] = Field(None, description="Name of incumbent if found")
+    contract_type: str = Field(..., description="FFP, T&M, Cost-Plus")
+    estimated_value: Optional[str] = Field(None, description="Rough order of magnitude or ceiling")
+    
+    # 4. EFFORT CRITERIA
+    proposal_complexity: str = Field(..., description="Low, Medium, High based on page count/volumes")
+    page_limit_tech: int = Field(..., description="Page limit for Technical Volume")
+    
+    # 5. AI RECOMMENDATION
+    ai_bid_recommendation: str = Field(..., description="BID, NO-BID, or MAYBE")
+    recommendation_reasoning: str = Field(..., description="Brief rationale based on GEDSIO profile")
+

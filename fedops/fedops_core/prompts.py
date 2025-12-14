@@ -1341,7 +1341,7 @@ Return ONLY a valid JSON object with this structure:
 """
 
 SOLICITATION_SUMMARY_PROMPT = """
-You are a federal government contracting analyst. Provide a comprehensive summary of this solicitation.
+You are a federal government contracting analyst. Provide a detailed "Bid/No-Bid Decision Matrix" summary for this solicitation.
 
 **Opportunity Details:**
 - Title: {title}
@@ -1352,26 +1352,40 @@ You are a federal government contracting analyst. Provide a comprehensive summar
 - Response Deadline: {response_deadline}
 
 **Analysis Required:**
-1. **Scope Summary**: Concise overview of what is being bought.
-2. **Key Dates**: Extract specific dates. If dates are relative (e.g., "30 days after award"), state them clearly as such.
-3. **Key Personnel**: Identify specific roles labeled as "Key Personnel" and their mandatory qualifications.
-4. **Agency Goals**: What problem is the agency trying to solve?
+1. **Knock-Out Criteria**: Critical dates, set-asides, and mandatory requirements.
+2. **Fit Criteria**: Scope alignment, tech stack, and location.
+3. **Win Criteria**: Evaluation method, incumbent intelligence, and contract value.
+4. **Effort Criteria**: Proposal complexity and page limits.
+5. **Bid Recommendation**: A clear BID / NO-BID / MAYBE recommendation based on the data.
 
 **Note:** You will be provided with relevant sections of the solicitation documents (RFP, Section L, Section M, SOW) below. Use them to provide a comprehensive and thorough overview.
 
 **Output Format (JSON):**
 Return ONLY a valid JSON object with this structure:
 {{
-  "summary": "Detailed 3-5 paragraph summary of the solicitation scope and objectives",
-  "key_dates": [
-    {{"event": "Questions Due", "date": "YYYY-MM-DD or Description", "source_quote": "Exact text defining this date"}},
-    {{"event": "Proposal Due", "date": "YYYY-MM-DD or Description", "source_quote": "Exact text defining this date"}}
-  ],
-  "key_personnel": [
-    {{"role": "Program Manager", "requirements": "PMP, 10+ years exp", "is_key": true, "source_quote": "Exact text defining this role"}},
-    {{"role": "Technical Lead", "requirements": "Master's Degree", "is_key": true, "source_quote": "Exact text defining this role"}}
-  ],
-  "agency_goals": ["Goal 1", "Goal 2"]
+  "solicitation_number": "Solicitation ID found in document",
+  "proposal_due_date": "YYYY-MM-DD HH:MM Timezone",
+  "questions_due_date": "YYYY-MM-DD or 'Not Specified'",
+  "set_aside": "Total Small Business, 8(a), Unrestricted, etc.",
+  "naics_code": "NAICS Code from document",
+  "security_clearance": "Facility/Personnel Clearance level required (e.g., Secret, Top Secret, None)",
+  "mandatory_certs": ["CMMC Level 2", "ISO 9001", "CMMI Level 3"],
+  
+  "summary_scope": "3-bullet summary of the PWS/SOW scope",
+  "tech_stack": ["Python", "AWS", "React", "Kubernetes"],
+  "place_of_performance": "Remote, On-site (Base Name), Hybrid, etc.",
+  "key_personnel_roles": ["Program Manager", "Senior Developer"],
+  
+  "evaluation_method": "LPTA, Best Value Tradeoff, Highest Rated Qualifying Offeror, etc.",
+  "incumbent_info": "Name of incumbent if found, else null",
+  "contract_type": "FFP, T&M, Cost-Plus, IDIQ, BPA, etc.",
+  "estimated_value": "Estimated ceiling or value range (e.g., '$50M - $100M')",
+  
+  "proposal_complexity": "Low (Standard), Medium (Multiple Volumes), High (Complex/Sample Task)",
+  "page_limit_tech": 0,
+  
+  "ai_bid_recommendation": "BID, NO-BID, or MAYBE",
+  "recommendation_reasoning": "Brief rationale for the recommendation"
 }}
 """
 

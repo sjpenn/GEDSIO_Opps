@@ -1301,102 +1301,233 @@ function SolicitationTab({ score }: { score: AnalysisData['score'] }) {
 
   const details = score.details?.solicitation;
 
+  // Use new BidDecisionSummary structure
+  // Knock-Out Criteria
+  const knockOut = {
+    solicitation_number: details?.solicitation_number,
+    proposal_due_date: details?.proposal_due_date,
+    questions_due_date: details?.questions_due_date,
+    set_aside: details?.set_aside,
+    naics_code: details?.naics_code,
+    security_clearance: details?.security_clearance,
+    mandatory_certs: details?.mandatory_certs || []
+  };
+
+  // Fit Criteria
+  const fit = {
+    summary_scope: details?.summary_scope,
+    tech_stack: details?.tech_stack || [],
+    place_of_performance: details?.place_of_performance,
+    key_personnel_roles: details?.key_personnel_roles || []
+  };
+
+  // Win Criteria
+  const win = {
+    evaluation_method: details?.evaluation_method,
+    incumbent_info: details?.incumbent_info,
+    contract_type: details?.contract_type,
+    estimated_value: details?.estimated_value
+  };
+
+  // Effort Criteria
+  const effort = {
+    proposal_complexity: details?.proposal_complexity,
+    page_limit_tech: details?.page_limit_tech
+  };
+
+  // AI Recommendation
+  const recommendation = {
+    decision: details?.ai_bid_recommendation || 'MAYBE',
+    reasoning: details?.recommendation_reasoning
+  };
+
+  // Helper to determine badge color for recommendation
+  const getRecColor = (rec: string) => {
+    switch (rec?.toLowerCase()) {
+      case 'bid': return 'bg-green-600 text-white hover:bg-green-700';
+      case 'no-bid': return 'bg-red-600 text-white hover:bg-red-700';
+      default: return 'bg-yellow-600 text-white hover:bg-yellow-700';
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-blue-600" />
-            Solicitation Analysis
-          </CardTitle>
-          <CardDescription>Comprehensive summary and key requirements</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {details?.summary && (
-            <div className="prose prose-sm max-w-none">
-              <h4 className="font-semibold mb-2">Solicitation Summary</h4>
-              <p className="text-muted-foreground whitespace-pre-wrap">{details.summary}</p>
-            </div>
-          )}
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {details?.key_dates && details.key_dates.length > 0 && (
-              <div>
-                <h4 className="font-semibold mb-3 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-orange-600" />
-                  Key Dates & Milestones
-                </h4>
-                <div className="space-y-3">
-                  {details.key_dates.map((item: any, i: number) => {
-                    // Handle both string and object formats
-                    if (typeof item === 'string') {
-                      return (
-                        <div key={i} className="p-3 bg-muted/30 rounded-lg">
-                          <span className="text-sm">{item}</span>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={i} className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
-                        <span className="text-sm font-medium">{item.event || item.name || item.description || 'Event'}</span>
-                        <Badge variant="outline">{item.date || item.deadline || 'TBD'}</Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {details?.key_personnel && details.key_personnel.length > 0 && (
-              <div>
-                <h4 className="font-semibold mb-3 flex items-center gap-2">
-                  <Users className="h-4 w-4 text-purple-600" />
-                  Key Personnel
-                </h4>
-                <div className="space-y-3">
-                  {details.key_personnel.map((person: any, i: number) => {
-                    // Handle both string and object formats
-                    if (typeof person === 'string') {
-                      return (
-                        <div key={i} className="p-3 bg-muted/30 rounded-lg">
-                          <span className="text-sm">{person}</span>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={i} className="p-3 bg-muted/30 rounded-lg space-y-1">
-                        <div className="flex justify-between items-start">
-                          <span className="text-sm font-medium">{person.role || person.title || 'Key Personnel'}</span>
-                          {person.is_key && <Badge className="text-[10px] h-5">Key</Badge>}
-                        </div>
-                        {person.requirements && (
-                          <p className="text-xs text-muted-foreground">{person.requirements}</p>
-                        )}
-                        {person.qualifications && !person.requirements && (
-                          <p className="text-xs text-muted-foreground">{person.qualifications}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {details?.agency_goals && details.agency_goals.length > 0 && (
+      {/* AI Recommendation Banner */}
+      <Card className="border-l-4 border-l-primary">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
             <div>
-              <h4 className="font-semibold mb-3">Agency Goals</h4>
-              <div className="flex flex-wrap gap-2">
-                {details.agency_goals.map((goal: string, i: number) => (
-                  <Badge key={i} variant="secondary" className="px-3 py-1">
-                    {goal}
-                  </Badge>
-                ))}
-              </div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-yellow-500" />
+                AI Bid Recommendation
+              </h3>
+              <p className="text-muted-foreground mt-1">{recommendation.reasoning || "Analyzing data..."}</p>
             </div>
-          )}
+            <Badge className={cn("text-lg px-4 py-1", getRecColor(recommendation.decision))}>
+              {recommendation.decision}
+            </Badge>
+          </div>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* 1. Knock-Out Criteria */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Shield className="h-4 w-4 text-red-500" />
+              Knock-Out Criteria
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
+              <div>
+                <div className="text-muted-foreground text-xs">Solicitation #</div>
+                <div className="font-medium">{knockOut.solicitation_number || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Set-Aside</div>
+                <div className="font-medium">{knockOut.set_aside || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Proposals Due</div>
+                <div className="font-medium text-red-600 font-semibold">{knockOut.proposal_due_date || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Questions Due</div>
+                <div className="font-medium">{knockOut.questions_due_date || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Security Clearance</div>
+                <Badge variant="outline">{knockOut.security_clearance || 'None'}</Badge>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">NAICS Code</div>
+                <div className="font-mono">{knockOut.naics_code || 'N/A'}</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-xs mb-1">Mandatory Certifications</div>
+              <div className="flex flex-wrap gap-1">
+                {knockOut.mandatory_certs.length > 0 ? (
+                  knockOut.mandatory_certs.map((c: string, i: number) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{c}</Badge>
+                  ))
+                ) : <span className="text-sm text-muted-foreground italic">None listed</span>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 2. Fit Criteria */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Target className="h-4 w-4 text-blue-500" />
+              Fit Criteria
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-muted-foreground text-xs">Scope Summary</div>
+              <div className="text-sm border-l-2 border-muted pl-2 py-1">
+                {fit.summary_scope || 'No summary available.'}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <div className="text-muted-foreground text-xs">Place of Performance</div>
+                <div className="font-medium">{fit.place_of_performance || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Key Personnel Roles</div>
+                <div className="flex flex-col gap-1 mt-1">
+                  {fit.key_personnel_roles.length > 0 ? (
+                    fit.key_personnel_roles.map((r: string, i: number) => (
+                      <span key={i} className="text-xs bg-muted/50 px-1.5 py-0.5 rounded">{r}</span>
+                    ))
+                  ) : <span className="text-muted-foreground italic">None listed</span>}
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-xs mb-1">Tech Stack</div>
+              <div className="flex flex-wrap gap-1">
+                {fit.tech_stack.length > 0 ? (
+                  fit.tech_stack.map((t: string, i: number) => (
+                    <Badge key={i} variant="outline" className="text-xs">{t}</Badge>
+                  ))
+                ) : <span className="text-sm text-muted-foreground italic">Not specified</span>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 3. Win Criteria */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingUp className="h-4 w-4 text-green-500" />
+              Win Criteria
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-muted-foreground text-xs">Contract Value</div>
+                <div className="text-green-600 font-semibold">{win.estimated_value || 'TBD'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Contract Type</div>
+                <div className="font-medium">{win.contract_type || 'N/A'}</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-xs">Evaluation Method</div>
+              <div className="font-medium">{win.evaluation_method || 'N/A'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-xs mb-1">Incumbent</div>
+              {win.incumbent_info ? (
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 text-yellow-800 dark:text-yellow-400 px-2 py-1 rounded border border-yellow-200 dark:border-yellow-800 inline-block font-medium">
+                  {win.incumbent_info}
+                </div>
+              ) : (
+                <div className="text-muted-foreground italic">None found / New Requirement</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 4. Effort Criteria */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4 text-purple-500" />
+              Effort Determination
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-muted-foreground text-xs">Proposal Complexity</div>
+                <div className="font-medium">{effort.proposal_complexity || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Tech Volume Pages</div>
+                <div className="font-medium">{effort.page_limit_tech ? `${effort.page_limit_tech} pages` : 'Not specified'}</div>
+              </div>
+            </div>
+
+            <div className="bg-muted/20 p-3 rounded text-xs text-muted-foreground mt-2">
+              *Complexity based on volume count, oral presentation requirements, and sample task inclusion.
+            </div>
+          </CardContent>
+        </Card>
+
+      </div>
     </div>
   );
 }

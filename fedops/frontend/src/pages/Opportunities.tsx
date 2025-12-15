@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
 import { AgentControlPanel } from '@/components/AgentControlPanel'
+import DocumentSlideout from '@/components/DocumentSlideout'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -28,7 +29,7 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null)
-  const [resourceFiles, setResourceFiles] = useState<{ url: string, filename: string }[]>([])
+  const [resourceFiles, setResourceFiles] = useState<{ url: string, filename: string, id?: number }[]>([])
   const [loadingResources, setLoadingResources] = useState(false)
   const [showFileManager, setShowFileManager] = useState(false)
   const [comments, setComments] = useState<OpportunityComment[]>([])
@@ -40,6 +41,10 @@ export default function OpportunitiesPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [naicsCounts, setNaicsCounts] = useState<Record<string, number>>({})
+
+  // Document Slideout state
+  const [slideoutOpen, setSlideoutOpen] = useState(false)
+  const [slideoutDocument, setSlideoutDocument] = useState<{ filename: string; id?: number; type?: string } | null>(null)
 
   // Calculate default date range (last 30 days)
   const getDefaultDates = () => {
@@ -252,23 +257,11 @@ export default function OpportunitiesPage() {
   const { opportunityId } = useParams();
   const navigate = useNavigate();
 
-  // Fetch specific opportunity if ID is in URL
+  // Redirect to detail page if opportunity ID is in URL
   useEffect(() => {
     if (opportunityId) {
-      const fetchOne = async () => {
-        try {
-          const res = await fetch(`/api/v1/opportunities/${opportunityId}`);
-          if (res.ok) {
-            const data = await res.json();
-            setSelectedOpp(data);
-          }
-        } catch (e) {
-          console.error("Failed to fetch opportunity", e);
-        }
-      };
-      fetchOne();
-    } else {
-      setSelectedOpp(null);
+      // Redirect to the new dedicated detail page
+      window.location.href = `/opportunities/${opportunityId}`;
     }
   }, [opportunityId]);
 
@@ -654,7 +647,7 @@ export default function OpportunitiesPage() {
                         )}
                       </div>
                       <h3
-                        onClick={() => setSelectedOpp(opp)}
+                        onClick={() => window.open(`/opportunities/${opp.id}`, '_blank')}
                         className="font-semibold text-lg leading-tight group-hover:text-primary transition-colors break-words cursor-pointer"
                       >
                         {opp.title}
@@ -712,7 +705,7 @@ export default function OpportunitiesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelectedOpp(opp)}
+                      onClick={() => window.open(`/opportunities/${opp.id}`, '_blank')}
                       className="text-primary hover:text-primary hover:bg-primary/10"
                     >
                       View Details <ChevronRight className="ml-1 h-4 w-4" />
@@ -899,31 +892,47 @@ export default function OpportunitiesPage() {
                         ) : (
                           resourceFiles.length > 0 ? (
                             resourceFiles.map((file, i) => (
-                              <a key={`res-${i}`} href={file.url} target="_blank" rel="noreferrer" className="block">
-                                <Card className="hover:bg-accent transition-colors">
-                                  <CardContent className="p-3 flex items-center gap-3">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                              <Card
+                                key={`res-${i}`}
+                                className="hover:bg-accent transition-colors cursor-pointer group"
+                                onClick={() => {
+                                  setSlideoutDocument({ filename: file.filename, id: file.id });
+                                  setSlideoutOpen(true);
+                                }}
+                              >
+                                <CardContent className="p-3 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                     <div className="overflow-hidden">
-                                      <p className="text-sm font-medium truncate" title={file.filename}>{file.filename}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{file.url}</p>
+                                      <p className="text-sm font-medium truncate group-hover:text-primary transition-colors" title={file.filename}>{file.filename}</p>
+                                      <p className="text-xs text-muted-foreground truncate">Click to preview</p>
                                     </div>
-                                  </CardContent>
-                                </Card>
-                              </a>
+                                  </div>
+                                  <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                </CardContent>
+                              </Card>
                             ))
                           ) : (
                             selectedOpp.resource_links?.map((link: string, i: number) => (
-                              <a key={`res-${i}`} href={link} target="_blank" rel="noreferrer" className="block">
-                                <Card className="hover:bg-accent transition-colors">
-                                  <CardContent className="p-3 flex items-center gap-3">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
+                              <Card
+                                key={`res-${i}`}
+                                className="hover:bg-accent transition-colors cursor-pointer group"
+                                onClick={() => {
+                                  setSlideoutDocument({ filename: getFilenameFromUrl(link) });
+                                  setSlideoutOpen(true);
+                                }}
+                              >
+                                <CardContent className="p-3 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                     <div className="overflow-hidden">
-                                      <p className="text-sm font-medium truncate" title={getFilenameFromUrl(link)}>{getFilenameFromUrl(link)}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{link}</p>
+                                      <p className="text-sm font-medium truncate group-hover:text-primary transition-colors" title={getFilenameFromUrl(link)}>{getFilenameFromUrl(link)}</p>
+                                      <p className="text-xs text-muted-foreground truncate">Click to preview</p>
                                     </div>
-                                  </CardContent>
-                                </Card>
-                              </a>
+                                  </div>
+                                  <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                </CardContent>
+                              </Card>
                             ))
                           )
                         )}
@@ -1135,6 +1144,14 @@ export default function OpportunitiesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Document Slideout */}
+      <DocumentSlideout
+        isOpen={slideoutOpen}
+        onClose={() => setSlideoutOpen(false)}
+        document={slideoutDocument}
+        opportunityId={selectedOpp?.id}
+      />
     </div>
   )
 }

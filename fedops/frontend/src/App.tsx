@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import CompanyProfilePage from './pages/CompanyProfile';
 import EntitySearchPage from './pages/EntitySearch';
 import OpportunitiesPage from './pages/Opportunities';
+import OpportunityDetail from './pages/OpportunityDetail';
 import FileManagementPage from './pages/FileManagement';
 import AnalysisViewer from './pages/AnalysisViewer';
 import ProposalWorkspace from './pages/ProposalWorkspace';
@@ -35,7 +36,7 @@ function App() {
             } />
             <Route path="/opportunities/:opportunityId" element={
               <PageTransition>
-                <OpportunitiesPage />
+                <OpportunityDetail />
               </PageTransition>
             } />
             <Route path="/entities" element={

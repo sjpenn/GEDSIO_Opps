@@ -493,3 +493,135 @@ class PastPerformance(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class DocumentClassification(Base):
+    """
+    Tracks the document structure classification for an opportunity.
+    Determines if opportunity uses SINGLE_DOCUMENT, MULTI_DOCUMENT, or HYBRID pattern.
+    """
+    __tablename__ = "document_classifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    classification_type = Column(String, nullable=False)  # SINGLE_DOCUMENT, MULTI_DOCUMENT, HYBRID
+    confidence = Column(String, nullable=False)  # HIGH, MEDIUM, LOW
+    reasoning = Column(Text, nullable=True)
+    
+    document_inventory = Column(JSONB, nullable=True)  # Detailed inventory of all files
+    extraction_strategy = Column(JSONB, nullable=True)  # How to process documents
+    
+    # Amendment tracking
+    amendment_count = Column(Integer, default=0)
+    amendment_files = Column(JSONB, nullable=True)  # List of amendment filenames
+    base_document_files = Column(JSONB, nullable=True)  # List of base document filenames
+    
+    critical_sections = Column(JSONB, nullable=True)  # ["L", "M", "C"]
+    
+    classified_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DocumentSection(Base):
+    """
+    Stores parsed section boundaries from solicitation documents.
+    Each row represents one section (A-M) detected in a document.
+    """
+    __tablename__ = "document_sections"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    stored_file_id = Column(Integer, ForeignKey("stored_files.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    section_letter = Column(String(2), nullable=False, index=True)  # A, B, C, ... M
+    section_title = Column(String(500), nullable=True)
+    
+    # Position tracking
+    start_position = Column(Integer, nullable=True)  # Character position start
+    end_position = Column(Integer, nullable=True)  # Character position end
+    start_line = Column(Integer, nullable=True)  # Line number start
+    end_line = Column(Integer, nullable=True)  # Line number end
+    
+    confidence_level = Column(String(10), nullable=True)  # HIGH, MEDIUM, LOW
+    detection_method = Column(String(50), nullable=True)  # explicit_header, inferred, cross_reference
+    
+    content = Column(Text, nullable=True)  # Extracted section content
+    metadata_ = Column("metadata", JSONB, nullable=True)  # Additional structured data
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Unique constraint on file + section letter
+    __table_args__ = (
+        {'extend_existing': True}
+    )
+
+
+class SectionSummary(Base):
+    """
+    AI-generated summaries for document sections.
+    Provides quick overview, key findings, and proposal guidance.
+    """
+    __tablename__ = "section_summaries"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("document_sections.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    summary_text = Column(Text, nullable=False)
+    key_findings = Column(JSONB, nullable=True)  # Array of key findings
+    proposal_implications = Column(Text, nullable=True)  # How to address in proposal
+    red_flags = Column(JSONB, nullable=True)  # Array of risks/concerns
+    opportunities = Column(JSONB, nullable=True)  # Array of differentiators
+    questions_to_ask = Column(JSONB, nullable=True)  # Clarification questions
+    
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    model_used = Column(String(100), nullable=True)
+
+
+class ExtractedRequirement(Base):
+    """
+    Individual requirements extracted from document sections.
+    Categorized by type (MANDATORY, CONDITIONAL, OPTIONAL) and category.
+    """
+    __tablename__ = "extracted_requirements"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("document_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    requirement_id = Column(String(50), nullable=True)  # e.g., C_156_1
+    requirement_text = Column(Text, nullable=False)
+    category = Column(String(50), nullable=True, index=True)  # FUNCTIONAL, TECHNICAL, COMPLIANCE, etc.
+    compliance_level = Column(String(20), nullable=True)  # MANDATORY, CONDITIONAL, OPTIONAL
+    
+    key_metrics = Column(JSONB, nullable=True)  # {metric_name: value}
+    dependencies = Column(JSONB, nullable=True)  # Array of related requirement IDs
+    cross_references = Column(JSONB, nullable=True)  # Links to other sections
+    
+    proposal_impact = Column(Text, nullable=True)
+    source_quote = Column(Text, nullable=True)  # Original text from document
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EvaluationMapping(Base):
+    """
+    Maps Section M evaluation criteria to Section C requirements.
+    Helps identify how proposal will be scored against requirements.
+    """
+    __tablename__ = "evaluation_mappings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    evaluation_factor = Column(String(300), nullable=False)
+    weight_percent = Column(Integer, nullable=True)
+    scoring_description = Column(Text, nullable=True)
+    
+    critical_success_factors = Column(JSONB, nullable=True)  # Array of CSFs
+    related_requirement_ids = Column(JSONB, nullable=True)  # Array of requirement IDs
+    
+    proposal_strategy = Column(Text, nullable=True)
+    source_section = Column(String(10), nullable=True)  # Usually "M"
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, FileText, Upload, RefreshCw, Download, Copy, Mail, File, CheckCircle } from 'lucide-react';
+import { Loader2, FileText, Upload, RefreshCw, Download, Copy, Mail, File, CheckCircle, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+import DocumentSlideout from "@/components/DocumentSlideout"
 
 interface StoredFile {
   id: number;
@@ -26,6 +27,10 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
   const [selectedFile, setSelectedFile] = useState<StoredFile | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState<number | null>(null);
+
+  // Slideout state
+  const [slideoutOpen, setSlideoutOpen] = useState(false);
+  const [slideoutDocument, setSlideoutDocument] = useState<StoredFile | null>(null);
 
   useEffect(() => {
     fetchFiles();
@@ -111,13 +116,13 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
 
   const handleImportResources = async () => {
     if (!opportunityId) return;
-    
+
     setUploading(true);
     try {
       const response = await fetch(`/api/v1/files/import-resources/${opportunityId}`, {
         method: 'POST'
       });
-      
+
       if (response.ok) {
         await fetchFiles();
       } else {
@@ -165,10 +170,10 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
             <Button disabled={uploading} className="gap-2 cursor-pointer relative overflow-hidden">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               Upload File
-              <input 
-                type="file" 
-                onChange={handleFileUpload} 
-                className="absolute inset-0 opacity-0 cursor-pointer" 
+              <input
+                type="file"
+                onChange={handleFileUpload}
+                className="absolute inset-0 opacity-0 cursor-pointer"
                 disabled={uploading}
               />
             </Button>
@@ -189,8 +194,8 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
             <ScrollArea className="h-full">
               <div className="divide-y">
                 {files.map(file => (
-                  <div 
-                    key={file.id} 
+                  <div
+                    key={file.id}
                     className={cn(
                       "p-4 cursor-pointer hover:bg-muted/50 transition-all text-sm group",
                       selectedFile?.id === file.id ? "bg-muted border-l-4 border-l-primary pl-[12px]" : "border-l-4 border-l-transparent"
@@ -198,13 +203,36 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
                     onClick={() => setSelectedFile(file)}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium truncate pr-2 flex-1" title={file.filename}>{file.filename}</span>
+                      <button
+                        className="font-medium truncate pr-2 flex-1 text-left hover:text-primary hover:underline transition-colors"
+                        title={`Click to view ${file.filename}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSlideoutDocument(file);
+                          setSlideoutOpen(true);
+                        }}
+                      >
+                        {file.filename}
+                      </button>
                       {file.content_summary && (
                         <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
                       )}
                     </div>
                     <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
                       <span>{(file.file_size / 1024).toFixed(1)} KB • {new Date(file.created_at).toLocaleDateString()}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSlideoutDocument(file);
+                          setSlideoutOpen(true);
+                        }}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        <span className="text-xs">View</span>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -232,7 +260,7 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
                       <span>{(selectedFile.file_size / 1024).toFixed(1)} KB</span>
                     </CardDescription>
                   </div>
-                  <Button 
+                  <Button
                     onClick={() => handleProcessFile(selectedFile.id)}
                     disabled={processing === selectedFile.id}
                     size="sm"
@@ -243,7 +271,7 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
                   </Button>
                 </div>
               </CardHeader>
-              
+
               <CardContent className="flex-1 overflow-hidden p-0">
                 <ScrollArea className="h-full p-6">
                   {selectedFile.content_summary ? (
@@ -278,14 +306,14 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
                           {selectedFile.content_summary}
                         </div>
                       </div>
-                      
+
                       <Separator />
-                      
+
                       <div>
                         <details className="group">
                           <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground flex items-center gap-2 select-none">
                             <div className="bg-muted p-1 rounded group-open:rotate-90 transition-transform">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
                             </div>
                             View Raw Parsed Content
                           </summary>
@@ -304,7 +332,7 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
                       <p className="text-sm max-w-xs text-center mb-6">
                         Click "Generate Summary" to analyze this file using AI.
                       </p>
-                      <Button 
+                      <Button
                         onClick={() => handleProcessFile(selectedFile.id)}
                         disabled={processing === selectedFile.id}
                         variant="secondary"
@@ -325,6 +353,14 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
           )}
         </Card>
       </div>
+
+      {/* Document Slideout */}
+      <DocumentSlideout
+        isOpen={slideoutOpen}
+        onClose={() => setSlideoutOpen(false)}
+        document={slideoutDocument}
+        opportunityId={opportunityId}
+      />
     </div>
   );
 };

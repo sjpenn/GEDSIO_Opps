@@ -1976,3 +1976,313 @@ FIND AND EXTRACT:
 RESPONSE FORMAT:
 Provide ReferenceExtraction JSON.
 """
+
+# =============================================================================
+# GEDSIO DOCUMENT ANALYSIS PROMPTS (7-Prompt System)
+# =============================================================================
+
+DOCUMENT_CLASSIFICATION_PROMPT = """
+ROLE: Government Solicitation Document Analyzer
+
+TASK: Classify the structure of provided solicitation documents for an opportunity.
+
+GOVERNMENT SOLICITATION CONTEXT:
+Federal solicitations follow FAR 33.2 with sections A-M:
+- Sections A-K: Administrative and contract content
+- Section L: Proposal Preparation Instructions (PAGE LIMITS, VOLUMES, FORMATTING)
+- Section M: Evaluation Criteria (SCORING METHODOLOGY)
+- Section C: Statement of Work (TECHNICAL REQUIREMENTS)
+
+TWO PRIMARY PATTERNS:
+1. MULTI-DOCUMENT: Separate files per section
+   Example files: "RFP_Cover_Section_A.pdf", "RFP_SOW_Section_C.pdf", "RFP_Evals_Section_M.pdf"
+   
+2. SINGLE-DOCUMENT: All sections in one PDF
+   Example: "Full_RFP_Combined.pdf" containing A through M
+
+CRITICAL - AMENDMENT HANDLING:
+Amendments are MODIFICATIONS to the base solicitation, NOT separate document types.
+Files named with these patterns should be treated as amendments to the base document:
+- "Amendment 0001", "Amendment 01", "Amend_01"
+- "Mod 01", "Modification 001"
+- "Change Order", "CO-001"
+- Files with version numbers like "RFP_v2", "Solicitation_Rev1"
+
+AMENDMENTS DO NOT:
+- Make a SINGLE_DOCUMENT opportunity into MULTI_DOCUMENT
+- Count as separate section files
+- Change the overall classification
+
+AMENDMENTS SHOULD:
+- Be associated with the base document they modify
+- Be noted in the document inventory with "is_amendment: true"
+- Be processed in chronological order to capture latest requirements
+
+YOUR INPUT:
+A list of document filenames and their first 500 characters of content for one opportunity.
+
+YOUR OUTPUT:
+JSON with classification, document inventory, and extraction strategy.
+
+CLASSIFICATION RULES:
+- If >50% of NON-AMENDMENT content is clearly from different sections in different files → MULTI_DOCUMENT
+- If all sections visible in one file with clear dividers (Section A, Section B, etc.) → SINGLE_DOCUMENT  
+- If files are not clearly mapped to sections (e.g., Technical.pdf, Commercial.pdf) → HYBRID
+- If mostly amendments with one or two base documents → Use classification of base documents
+
+DOCUMENTS TO ANALYZE:
+{documents}
+
+PROVIDE JSON RESPONSE:
+{{
+  "classification_type": "MULTI_DOCUMENT | SINGLE_DOCUMENT | HYBRID",
+  "confidence": "HIGH | MEDIUM | LOW",
+  "reasoning": "Brief explanation of why this classification was chosen",
+  "amendment_handling": {{
+    "amendments_detected": true/false,
+    "amendment_count": <number>,
+    "amendment_files": ["list of amendment filenames"],
+    "base_document_files": ["list of base document filenames"]
+  }},
+  "document_inventory": [
+    {{
+      "filename": "exact filename",
+      "likely_sections": ["A", "B", "L", "M"],
+      "document_type": "SOLICITATION_COVER | TECHNICAL_REQUIREMENTS | PRICING | EVALUATION_CRITERIA | LEGAL_CLAUSES | EXHIBITS | AMENDMENT | OTHER",
+      "is_amendment": true/false,
+      "amends_file": "filename of base document if this is an amendment, else null",
+      "extraction_priority": 1-5,
+      "confidence": "HIGH | MEDIUM | LOW",
+      "notes": "any special considerations"
+    }}
+  ],
+  "extraction_strategy": {{
+    "approach": "string describing overall strategy",
+    "sequence": ["step 1", "step 2", "step 3"],
+    "section_detection_needed": true/false
+  }},
+  "critical_sections_identified": ["L", "M", "C"]
+}}
+"""
+
+SECTION_BOUNDARY_DETECTION_PROMPT = """
+ROLE: Document Section Parser
+
+TASK: Identify where each section (A-M) begins and ends in a single government solicitation document.
+
+CONTEXT:
+This is a SINGLE solicitation document containing multiple sections.
+Sections should have clear headers like "Section A:", "Section L:", "PART I - SECTION A", etc.
+Some sections may not be present (e.g., Section D is rarely used in modern solicitations).
+
+STANDARD SOLICITATION STRUCTURE (FAR Uniform Contract Format):
+Section A: Information to Offerors or Quoters (administrative info, RFQ/RFP cover) - typically 1-3 pages
+Section B: Supplies or Services and Price/Costs (CLINs, pricing structures) - typically 2-5 pages
+Section C: Description/Specifications/Statement of Work (SOW, technical requirements) - typically 5-50+ pages ← CRITICAL
+Section D: Packaging and Marketing (rarely present in modern solicitations)
+Section E: Inspection and Acceptance (quality/acceptance criteria) - typically 1-3 pages
+Section F: Deliveries or Performance (delivery schedules, performance requirements) - typically 1-3 pages
+Section G: Contract Administrative Data (invoicing, payment, POC info) - typically 1-2 pages
+Section H: Special Contract Requirements (key personnel, compliance, clearances) - typically 2-10 pages
+Section I: Contract Clauses and General Provisions (FAR clauses, regulatory references) - typically 5-20 pages
+Section J: Attachments and Exhibits (document index) - typically 1 page
+Section K: Representations, Certifications, and Other Statements of Offerors - typically 2-5 pages
+Section L: Proposal Preparation Instructions (page limits, volumes, formatting) - typically 3-10 pages ← CRITICAL
+Section M: Evaluation Criteria (scoring, weights for technical/price/past performance) - typically 3-10 pages ← CRITICAL
+
+SECTION HEADER PATTERNS TO RECOGNIZE:
+- "SECTION A", "SECTION B", "SECTION C", etc.
+- "PART I - SECTION A", "PART II - SECTION L"
+- "A. Information to Offerors"
+- Roman numerals: "I. SOLICITATION", "II. STATEMENT OF WORK"
+- Mixed: "Section L – Instructions", "SECTION M: Evaluation"
+
+KEY EXTRACTION TARGETS:
+From Section L: Page limits, volume structure, formatting rules
+From Section M: Evaluation factors, weights, scoring methodology
+From Section C: Deliverables, compliance requirements, security requirements
+
+DOCUMENT TEXT:
+{document_text}
+
+PROVIDE JSON RESPONSE:
+{{
+  "document_length": <number of lines>,
+  "estimated_pages": <number>,
+  "structure_complexity": "SIMPLE | STANDARD | COMPLEX",
+  "sections_detected": [
+    {{
+      "section_letter": "A",
+      "section_title": "Official or inferred title",
+      "start_line": <number>,
+      "end_line": <number>,
+      "start_char_position": <number>,
+      "end_char_position": <number>,
+      "line_count": <number>,
+      "confidence": "HIGH | MEDIUM | LOW",
+      "detection_method": "explicit_header | inferred_from_content | cross_reference"
+    }}
+  ],
+  "subsections_detected": [
+    {{
+      "parent_section": "C",
+      "subsection_id": "C.3.1",
+      "subsection_title": "Development Phase Requirements",
+      "start_line": <number>,
+      "end_line": <number>,
+      "content_classification": "REQUIREMENT | INSTRUCTION | EVALUATION | REFERENCE | ADMINISTRATIVE | LEGAL",
+      "key_topics": ["topic1", "topic2"]
+    }}
+  ],
+  "cross_references_found": [
+    {{
+      "source_section": "C",
+      "source_line": <number>,
+      "reference_text": "quoted text showing cross-reference",
+      "target_section": "M",
+      "relationship": "constraint | definition | clarification"
+    }}
+  ],
+  "critical_findings": {{
+    "section_l": {{
+      "found": true/false,
+      "page_limits": "extracted page limit info or null",
+      "volumes": "volume structure if mentioned",
+      "formatting": "key formatting requirements"
+    }},
+    "section_m": {{
+      "found": true/false,
+      "evaluation_factors": ["Factor 1: Weight%", "Factor 2: Weight%"],
+      "evaluation_approach": "LPTA | BEST_VALUE | TRADEOFF"
+    }},
+    "section_c": {{
+      "found": true/false,
+      "sow_identified": true/false,
+      "line_range": "start-end"
+    }}
+  }},
+  "parsing_confidence": "HIGH | MEDIUM | LOW",
+  "recommendations": ["recommendation 1", "recommendation 2"]
+}}
+"""
+
+UI_FORMATTING_PROMPT = """
+ROLE: Document Content Formatter
+
+TASK: Prepare document content for UI display in a slideout panel.
+
+CONTEXT:
+User clicks on a document name and sees a panel showing:
+1. Quick summary (2-3 sentences)
+2. Key highlights (bulleted list)
+3. Full document text with section highlighting
+4. Requirements table (if applicable)
+
+The output must be ready for direct rendering in a React component.
+
+DOCUMENT DATA:
+{{
+  "filename": "{filename}",
+  "document_text": "{document_text}",
+  "detected_section": "{detected_section}",
+  "page_count": {page_count}
+}}
+
+FORMAT FOR UI DISPLAY:
+{{
+  "filename": "displayed at top of slideout",
+  "metadata": {{
+    "pages": <number>,
+    "extraction_date": "YYYY-MM-DD",
+    "detected_section": "L | M | C | H | etc. or null"
+  }},
+  "display_sections": [
+    {{
+      "type": "summary",
+      "content": "AI-generated 2-3 sentence summary of key content"
+    }},
+    {{
+      "type": "highlights",
+      "items": [
+        "Key finding 1",
+        "Key finding 2", 
+        "Critical deadline: DATE"
+      ]
+    }},
+    {{
+      "type": "full_text",
+      "content": "Full document text",
+      "markup": "<div class='section-header'>Section Title</div><div class='section-content'>...content...</div>",
+      "sections_highlighted": [
+        {{
+          "section": "L",
+          "start_char": <number>,
+          "end_char": <number>,
+          "css_class": "highlight-section-l"
+        }}
+      ]
+    }},
+    {{
+      "type": "requirements_table",
+      "headers": ["ID", "Requirement", "Category", "Priority"],
+      "rows": [
+        ["C_001", "Shall provide 24/7 support", "SERVICE", "MANDATORY"]
+      ]
+    }},
+    {{
+      "type": "red_flags",
+      "items": [
+        {{
+          "flag": "Tight deadline - 30 days to proposal",
+          "severity": "HIGH"
+        }}
+      ]
+    }}
+  ]
+}}
+"""
+
+BATCH_CLASSIFICATION_PROMPT = """
+ROLE: Batch Solicitation Processor
+
+TASK: Classify multiple opportunities at once for efficient processing.
+
+INPUT:
+Array of opportunities, each with file list.
+
+FOR EACH OPPORTUNITY:
+- Determine: SINGLE_DOCUMENT or MULTI_DOCUMENT or HYBRID
+- Identify amendments vs base documents
+- Identify critical sections present
+- Recommend extraction sequence
+- Estimate processing priority
+
+OPPORTUNITIES:
+{opportunities}
+
+RETURN:
+{{
+  "batch_results": [
+    {{
+      "opportunity_id": "ID from input",
+      "notice_id": "Notice ID if available",
+      "classification_type": "MULTI_DOCUMENT | SINGLE_DOCUMENT | HYBRID",
+      "confidence": "HIGH | MEDIUM | LOW",
+      "file_count": <number>,
+      "amendment_count": <number>,
+      "critical_sections_found": ["L", "M", "C"],
+      "extraction_priority": 1-5,
+      "estimated_processing_minutes": <number>,
+      "reason": "brief explanation"
+    }}
+  ],
+  "batch_summary": {{
+    "total_opportunities": <number>,
+    "single_document_count": <number>,
+    "multi_document_count": <number>,
+    "hybrid_count": <number>,
+    "total_amendments_detected": <number>,
+    "recommended_processing_order": ["opp_id_1", "opp_id_2"]
+  }}
+}}
+"""

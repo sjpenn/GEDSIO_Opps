@@ -45,8 +45,10 @@ from fedops_core.prompts import (
     SECTION_K_INSTRUCTIONS,
     CDRL_INSTRUCTIONS
 )
+from fedops_core.services.section_shredder import SectionShredder
 
 logger = logging.getLogger(__name__)
+
 
 
 class DocumentExtractor:
@@ -55,6 +57,7 @@ class DocumentExtractor:
     def __init__(self):
         self.ai_service = AIService()
         self.docling_service = DoclingService()
+        self.section_shredder = SectionShredder()
         self.schema_map = {
             DocumentType.SECTION_L: SectionLSchema,
             DocumentType.SECTION_M: SectionMSchema,
@@ -65,6 +68,17 @@ class DocumentExtractor:
             DocumentType.SECTION_K: SectionKSchema,
             DocumentType.CDRL: CDRLSchema,
         }
+        # Mapping from section letter to DocumentType
+        self.section_letter_to_type = {
+            'L': DocumentType.SECTION_L,
+            'M': DocumentType.SECTION_M,
+            'H': DocumentType.SECTION_H,
+            'C': DocumentType.SOW,
+            'B': DocumentType.SECTION_B,
+            'I': DocumentType.SECTION_I,
+            'K': DocumentType.SECTION_K,
+        }
+
     
     async def extract_all_documents(
         self, 
@@ -115,9 +129,23 @@ class DocumentExtractor:
                     logger.warning(f"No content extracted from {filename}")
                     continue
                 
-                # Determine document type
-                doc_type = determine_document_type(filename, content[:1000])
+                # Determine document type (pass more content for better detection)
+                doc_type = determine_document_type(filename, content[:5000])
                 logger.info(f"Detected {filename} as {doc_type.value}")
+                
+                # Handle combined RFPs by shredding into sections
+                if doc_type in [DocumentType.RFP_COMBINED, DocumentType.RFP]:
+                    await self._process_combined_rfp(
+                        content, filename, file_path, extracted_data
+                    )
+                    continue
+                
+                # Handle amendments - extract new/modified data
+                if doc_type == DocumentType.AMENDMENT:
+                    await self._process_amendment(
+                        content, filename, file_path, extracted_data
+                    )
+                    continue
                 
                 # Extract based on type (pass file_path for table extraction)
                 extracted = await self._extract_by_type(doc_type, content, filename, file_path)
@@ -140,6 +168,118 @@ class DocumentExtractor:
         
         logger.info(f"Extraction complete. Extracted sections: {[k for k, v in extracted_data.items() if v and k != 'source_documents']}")
         return extracted_data
+    
+    async def _process_combined_rfp(
+        self,
+        content: str,
+        filename: str,
+        file_path: str,
+        extracted_data: Dict[str, Any]
+    ) -> None:
+        """
+        Process a combined RFP document by shredding it into sections.
+        
+        Uses SectionShredder to detect section boundaries and extract
+        each section with appropriate prompts.
+        """
+        logger.info(f"Processing combined RFP: {filename}")
+        
+        # Shred into sections
+        shredded = self.section_shredder.shred_to_extractions(content)
+        logger.info(f"Shredded {filename} into {len(shredded)} sections: {list(shredded.keys())}")
+        
+        # Extract each section with appropriate method
+        for section_letter, section_info in shredded.items():
+            section_content = section_info.get('content', '')
+            
+            # Skip if section is too short
+            if len(section_content) < 100:
+                logger.debug(f"Skipping Section {section_letter} - too short ({len(section_content)} chars)")
+                continue
+            
+            # Get the DocumentType for this section
+            doc_type = self.section_letter_to_type.get(section_letter)
+            if not doc_type:
+                logger.debug(f"No extraction method for Section {section_letter}")
+                continue
+            
+            # Extract using appropriate method
+            try:
+                extracted = await self._extract_by_type(
+                    doc_type, section_content, f"{filename}#Section{section_letter}", file_path
+                )
+                
+                if extracted:
+                    section_key = self._get_section_key(doc_type)
+                    if section_key:
+                        # Don't overwrite if already extracted from dedicated file
+                        if extracted_data.get(section_key) is None:
+                            extracted_data[section_key] = extracted
+                            extracted_data["source_documents"].append({
+                                "filename": filename,
+                                "type": f"combined_rfp_section_{section_letter.lower()}",
+                                "section": section_key,
+                                "confidence": section_info.get('confidence', 'medium')
+                            })
+                            logger.info(f"Extracted Section {section_letter} from combined RFP")
+                        else:
+                            logger.info(f"Section {section_letter} already extracted, skipping")
+                            
+            except Exception as e:
+                logger.error(f"Error extracting Section {section_letter} from {filename}: {e}")
+    
+    async def _process_amendment(
+        self,
+        content: str,
+        filename: str,
+        file_path: str,
+        extracted_data: Dict[str, Any]
+    ) -> None:
+        """
+        Process an amendment document.
+        
+        Amendments may contain updates to any section - try to detect and merge.
+        """
+        logger.info(f"Processing amendment: {filename}")
+        
+        # Try to shred the amendment to find which sections are modified
+        shredded = self.section_shredder.shred_to_extractions(content)
+        
+        if shredded:
+            # Process as combined RFP but with amendment precedence
+            for section_letter, section_info in shredded.items():
+                section_content = section_info.get('content', '')
+                
+                if len(section_content) < 50:
+                    continue
+                    
+                doc_type = self.section_letter_to_type.get(section_letter)
+                if not doc_type:
+                    continue
+                
+                try:
+                    extracted = await self._extract_by_type(
+                        doc_type, section_content, f"{filename}#Section{section_letter}", file_path
+                    )
+                    
+                    if extracted:
+                        section_key = self._get_section_key(doc_type)
+                        if section_key:
+                            # Amendments OVERRIDE existing data
+                            extracted_data[section_key] = extracted
+                            extracted_data["source_documents"].append({
+                                "filename": filename,
+                                "type": f"amendment_section_{section_letter.lower()}",
+                                "section": section_key,
+                                "is_amendment": True
+                            })
+                            logger.info(f"Amendment updated Section {section_letter}")
+                            
+                except Exception as e:
+                    logger.error(f"Error processing amendment Section {section_letter}: {e}")
+        else:
+            logger.info(f"No specific sections detected in amendment {filename}")
+
     
     async def _read_file(self, file_path: str, use_docling: bool = False) -> Optional[str]:
         """Read file content with multiple fallback methods"""
@@ -220,11 +360,11 @@ class DocumentExtractor:
         file_path: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Route to appropriate extraction method based on document type"""
-        
-        # Limit content size
-        if len(content) > 100000:
-            logger.info(f"Truncating {filename} from {len(content)} to 100000 characters")
-            content = content[:100000]
+        # Truncate content to fit in context window
+        max_chars = 40000
+        if len(content) > max_chars:
+            logger.warning(f"Truncating content from {len(content)} to {max_chars} chars")
+            content = content[:max_chars]
         
         # Check if this is a table-heavy section and we have file path
         use_tables = (

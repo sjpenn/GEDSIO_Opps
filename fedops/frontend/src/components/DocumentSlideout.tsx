@@ -286,6 +286,195 @@ export default function DocumentSlideout({
         }
     };
 
+    // Format content with headers and proper spacing
+    const formatContent = (text: string) => {
+        // Intelligently split the content - add line breaks before numbered sections
+        // Only match when followed by an actual word (at least 3 letters), not just any capital
+        let processedText = text
+            // Add breaks before major numbered sections (e.g., "1. Introduction", "10. Key Project Tasks")
+            // Must have at least 3 characters after the number to be a real section
+            .replace(/(?<=[a-z.!?)])\s+(\d{1,2}\.\s+[A-Z][a-z]{2,})/g, '\n\n$1')
+            // Add breaks before subsections (e.g., "4.1 Client Management System")
+            .replace(/(?<=[a-z.!?)])\s+(\d{1,2}\.\d+\s+[A-Z][a-zA-Z]{2,})/g, '\n\n$1')
+            // Add breaks before sub-subsections (e.g., "4.1.1 PRISM Details")
+            .replace(/(?<=[a-z.!?)])\s+(\d{1,2}\.\d+\.\d+\s+[A-Z][a-zA-Z]{2,})/g, '\n\n$1')
+            // Add breaks before lettered items (a), (b), (c) with text following
+            .replace(/(?<=[.!?])\s+(\([a-z]\)\s+[A-Z][a-z])/gi, '\n$1');
+
+        const lines = processedText.split('\n');
+        const formattedElements: React.ReactNode[] = [];
+
+        // Track consecutive table-like lines
+        let tableBuffer: string[] = [];
+        let inTable = false;
+
+        // Helper to detect if a line looks like part of a table
+        const isTableLine = (line: string): boolean => {
+            const trimmed = line.trim();
+            if (!trimmed) return false;
+
+            // Table indicators:
+            // 1. Contains multiple tabs
+            // 2. Has multiple segments of 2+ spaces (column separators)
+            // 3. Starts with common table patterns (ID, #, Task, Item, etc.)
+            // 4. Contains pipe characters |
+            const hasMultipleTabs = (line.match(/\t/g) || []).length >= 2;
+            const hasMultiSpaces = (line.match(/\s{2,}/g) || []).length >= 2;
+            const hasPipes = line.includes('|');
+            const looksLikeTableHeader = /^(Task\s+ID|ID|#|Item|No\.?|Deliverable|Description|Due|Date|Title)\b/i.test(trimmed);
+            const hasColumnData = /^\d+\s{2,}[A-Za-z]/.test(trimmed) || /^[A-Za-z]+\s{2,}[A-Za-z]+\s{2,}/.test(trimmed);
+
+            return hasMultipleTabs || hasMultiSpaces || hasPipes || looksLikeTableHeader || hasColumnData;
+        };
+
+        // Helper to flush table buffer
+        const flushTable = () => {
+            if (tableBuffer.length > 0) {
+                formattedElements.push(
+                    <div key={`table-${formattedElements.length}`} className="my-4 overflow-x-auto">
+                        <pre className="text-xs font-mono bg-muted/30 border rounded-lg p-4 whitespace-pre leading-relaxed">
+                            {tableBuffer.join('\n')}
+                        </pre>
+                    </div>
+                );
+                tableBuffer = [];
+            }
+            inTable = false;
+        };
+
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+
+            // Check if this line is part of a table
+            if (isTableLine(line)) {
+                inTable = true;
+                tableBuffer.push(line);
+                return;
+            } else if (inTable && !trimmedLine) {
+                // Empty line might be end of table or just spacing in table
+                // If next non-empty line isn't table-like, flush
+                tableBuffer.push(line);
+                return;
+            } else if (inTable) {
+                // Non-table line after table content - flush table
+                flushTable();
+            }
+
+            // Skip empty lines but add spacing
+            if (!trimmedLine) {
+                formattedElements.push(<div key={index} className="h-3" />);
+                return;
+            }
+
+            // Detect ALL CAPS lines (headers)
+            const isAllCaps = trimmedLine === trimmedLine.toUpperCase() &&
+                trimmedLine.length > 3 &&
+                trimmedLine.length < 100 &&
+                /[A-Z]/.test(trimmedLine) &&
+                !/^\d/.test(trimmedLine);
+
+            // Detect major section headers: "1. Introduction", "10. Key Tasks"
+            const isMajorSection = /^(\d{1,2})\.\s+[A-Z][a-zA-Z\s&\-()]+$/.test(trimmedLine) && trimmedLine.length < 80;
+
+            // Detect subsection headers: "4.1 Client Management", "10.2 Phase 1"
+            const isSubSection = /^(\d{1,2}\.\d+)\s+[A-Z]/.test(trimmedLine) && trimmedLine.length < 120;
+
+            // Detect sub-subsection headers: "4.1.1 PRISM", "10.2.3 Details"
+            const isSubSubSection = /^(\d{1,2}\.\d+\.\d+)\s+[A-Z]/.test(trimmedLine) && trimmedLine.length < 120;
+
+            // Detect Task/Phase headers
+            const isTaskHeader = /^(Task|Phase|Step|Part)\s+\d+/i.test(trimmedLine);
+
+            // Detect colon-ending short lines (labels)
+            const isLabel = trimmedLine.endsWith(':') && trimmedLine.length < 50 && !trimmedLine.includes(',');
+
+            // Detect bullet/lettered items
+            const isBulletItem = /^[\-•\*]\s/.test(trimmedLine) || /^\([a-z]\)\s/i.test(trimmedLine);
+
+            // Major document headers (ALL CAPS with keywords)
+            if (isAllCaps && (
+                trimmedLine.includes('SECTION') ||
+                trimmedLine.includes('PART') ||
+                trimmedLine.includes('ARTICLE') ||
+                trimmedLine.includes('VOLUME') ||
+                trimmedLine.includes('PERFORMANCE WORK STATEMENT') ||
+                trimmedLine.includes('ATTACHMENT') ||
+                trimmedLine.includes('TABLE OF CONTENTS') ||
+                trimmedLine.includes('APPENDIX')
+            )) {
+                formattedElements.push(
+                    <div key={index} className="mt-8 mb-4 pt-4 border-t-2 border-primary/40">
+                        <h2 className="text-lg font-bold text-primary uppercase tracking-wide">
+                            {trimmedLine}
+                        </h2>
+                    </div>
+                );
+            }
+            // Major numbered sections: "1. Introduction"
+            else if (isMajorSection || isTaskHeader) {
+                formattedElements.push(
+                    <div key={index} className="mt-6 mb-3 pt-3 border-t border-primary/20">
+                        <h3 className="text-base font-bold text-foreground">
+                            {trimmedLine}
+                        </h3>
+                    </div>
+                );
+            }
+            // Subsections: "4.1 Client Management"
+            else if (isSubSection) {
+                formattedElements.push(
+                    <div key={index} className="mt-5 mb-2">
+                        <h4 className="text-sm font-semibold text-foreground border-l-2 border-primary/50 pl-3">
+                            {trimmedLine}
+                        </h4>
+                    </div>
+                );
+            }
+            // Sub-subsections: "4.1.1 PRISM"
+            else if (isSubSubSection) {
+                formattedElements.push(
+                    <div key={index} className="mt-4 mb-2 ml-2">
+                        <h5 className="text-sm font-medium text-foreground/90 italic">
+                            {trimmedLine}
+                        </h5>
+                    </div>
+                );
+            }
+            // Label headers (ending with colon)
+            else if (isLabel) {
+                formattedElements.push(
+                    <div key={index} className="mt-4 mb-1">
+                        <span className="font-semibold text-foreground text-sm">{trimmedLine}</span>
+                    </div>
+                );
+            }
+            // Bullet/lettered items
+            else if (isBulletItem) {
+                formattedElements.push(
+                    <div key={index} className="ml-4 mb-1 flex">
+                        <span className="text-primary mr-2">•</span>
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            {trimmedLine.replace(/^[\-•\*]\s*/, '').replace(/^\([a-z]\)\s*/i, '')}
+                        </p>
+                    </div>
+                );
+            }
+            // Regular paragraph content
+            else {
+                formattedElements.push(
+                    <p key={index} className="text-sm leading-relaxed text-muted-foreground mb-2">
+                        {trimmedLine}
+                    </p>
+                );
+            }
+        });
+
+        // Flush any remaining table content
+        flushTable();
+
+        return formattedElements;
+    };
+
     const renderHighlightedContent = () => {
         if (!fileContent) return null;
 
@@ -295,17 +484,17 @@ export default function DocumentSlideout({
             const after = fileContent.slice(highlightLocation.end);
 
             return (
-                <>
-                    {before}
-                    <span id="highlighted-quote" className="bg-yellow-200 dark:bg-yellow-900/50 border-b-2 border-yellow-500 animate-pulse">
+                <div className="space-y-0">
+                    {formatContent(before)}
+                    <span id="highlighted-quote" className="bg-yellow-200 dark:bg-yellow-900/50 border-b-2 border-yellow-500 animate-pulse px-1 rounded">
                         {highlight}
                     </span>
-                    {after}
-                </>
+                    {formatContent(after)}
+                </div>
             );
         }
 
-        return fileContent;
+        return <div className="space-y-0">{formatContent(fileContent)}</div>;
     };
 
     const formatFileSize = (bytes: number) => {
@@ -479,10 +668,10 @@ export default function DocumentSlideout({
                                 </div>
 
                                 {/* Text content */}
-                                <ScrollArea className="h-[50vh] border rounded-lg">
-                                    <pre className="p-4 text-sm font-mono whitespace-pre-wrap leading-relaxed text-slate-700 dark:text-slate-300">
+                                <ScrollArea className="h-[50vh] border rounded-lg bg-muted/5">
+                                    <div className="p-6">
                                         {renderHighlightedContent()}
-                                    </pre>
+                                    </div>
                                 </ScrollArea>
                             </>
                         ) : (

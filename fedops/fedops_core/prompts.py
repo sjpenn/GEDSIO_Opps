@@ -3,6 +3,7 @@ from enum import Enum
 
 class DocumentType(Enum):
     RFP = "rfp"  # Request for Proposal (General/Master)
+    RFP_COMBINED = "rfp_combined"  # Combined RFP with multiple sections A-M
     RFQ = "rfq"  # Request for Quotation
     IFB = "ifb"  # Invitation for Bid
     RFI = "rfi"  # Request for Information
@@ -14,7 +15,12 @@ class DocumentType(Enum):
     SECTION_K = "section_k"  # Representations and Certifications
     SECTION_I = "section_i"  # Contract Clauses
     CDRL = "cdrl"  # Contract Data Requirements List
+    AMENDMENT = "amendment"  # Amendments/Modifications
+    Q_AND_A = "q_and_a"  # Questions and Answers
+    PAST_PERFORMANCE = "past_performance"  # Past Performance Questionnaires
+    ATTACHMENT = "attachment"  # General attachments
     OTHER = "other"
+
 
 COMMON_JSON_STRUCTURE = """
 ### Output Format (JSON Structure)
@@ -1127,28 +1133,46 @@ import re
 def determine_document_type(filename: str, content_snippet: str = "") -> DocumentType:
     """
     Determines the document type based on filename and optional content snippet.
+    Enhanced to detect combined RFPs and additional document types.
     """
     filename_lower = filename.lower()
-    content_lower = content_snippet.lower()
+    content_lower = content_snippet.lower() if content_snippet else ""
+
+    # Priority 0: Amendments and Q&A (these modify other documents)
+    if any(x in filename_lower for x in ["amendment", "amend", "mod ", "modification"]):
+        return DocumentType.AMENDMENT
+    if any(x in filename_lower for x in ["q&a", "q and a", "q_and_a", "questions", "response to question"]):
+        return DocumentType.Q_AND_A
+    if any(x in filename_lower for x in ["past performance", "ppq", "questionnaire"]):
+        return DocumentType.PAST_PERFORMANCE
 
     # Priority 1: Explicit Section Names in Filename
-    if "section l" in filename_lower or "section_l" in filename_lower or "instr" in filename_lower:
+    if any(x in filename_lower for x in ["section l", "section_l", "instructions to offeror"]):
         return DocumentType.SECTION_L
-    if "section m" in filename_lower or "section_m" in filename_lower or "eval" in filename_lower:
+    if any(x in filename_lower for x in ["section m", "section_m", "evaluation factor", "evaluation criteria"]):
         return DocumentType.SECTION_M
-    if "section c" in filename_lower or "section_c" in filename_lower or "sow" in filename_lower or "pws" in filename_lower or "soo" in filename_lower or "statement of work" in filename_lower:
+    if any(x in filename_lower for x in ["section c", "section_c", "sow", "pws", "soo", "statement of work", "performance work statement"]):
         return DocumentType.SOW
-    if "section b" in filename_lower or "section_b" in filename_lower or "pricing" in filename_lower or "cost" in filename_lower:
+    if any(x in filename_lower for x in ["section b", "section_b", "pricing", "price schedule"]):
         return DocumentType.SECTION_B
-    if "section h" in filename_lower or "section_h" in filename_lower:
+    if any(x in filename_lower for x in ["section h", "section_h", "special contract"]):
         return DocumentType.SECTION_H
-    if "section k" in filename_lower or "section_k" in filename_lower or "rep" in filename_lower and "cert" in filename_lower:
+    if any(x in filename_lower for x in ["section i", "section_i", "contract clause"]):
+        return DocumentType.SECTION_I
+    if any(x in filename_lower for x in ["section k", "section_k"]) or ("rep" in filename_lower and "cert" in filename_lower):
         return DocumentType.SECTION_K
-    if "cdrl" in filename_lower or "data item" in filename_lower:
+    if any(x in filename_lower for x in ["cdrl", "data item", "dd form 1423"]):
         return DocumentType.CDRL
     
-    # Priority 2: Document Types
+    # Priority 2: Document Types by filename
+    if any(x in filename_lower for x in ["functional requirement", "technical requirement"]):
+        return DocumentType.ATTACHMENT
     if "rfp" in filename_lower or "solicitation" in filename_lower:
+        # Check if it's a combined RFP (contains multiple sections)
+        if content_lower:
+            sections_found = _detect_multiple_sections(content_lower)
+            if sections_found >= 3:  # If 3+ sections found, it's combined
+                return DocumentType.RFP_COMBINED
         return DocumentType.RFP
     if "rfq" in filename_lower:
         return DocumentType.RFQ
@@ -1156,16 +1180,74 @@ def determine_document_type(filename: str, content_snippet: str = "") -> Documen
         return DocumentType.IFB
     if "rfi" in filename_lower:
         return DocumentType.RFI
+    if "attachment" in filename_lower:
+        return DocumentType.ATTACHMENT
 
-    # Priority 3: Content Heuristics (if filename is ambiguous)
-    if "section l" in content_lower[:1000]:
+    # Priority 3: Content Heuristics (check first 5000 chars for better coverage)
+    content_check = content_lower[:5000] if content_lower else ""
+    
+    # Check for specific section content
+    if "instructions to offeror" in content_check or "section l" in content_check:
         return DocumentType.SECTION_L
-    if "section m" in content_lower[:1000]:
+    if "evaluation factor" in content_check or "section m" in content_check:
         return DocumentType.SECTION_M
-    if "statement of work" in content_lower[:1000] or "performance work statement" in content_lower[:1000]:
+    if "statement of work" in content_check or "performance work statement" in content_check:
         return DocumentType.SOW
+    if "special contract requirement" in content_check:
+        return DocumentType.SECTION_H
+    
+    # Check if content has multiple sections (combined RFP)
+    if content_lower:
+        sections_found = _detect_multiple_sections(content_lower)
+        if sections_found >= 3:
+            return DocumentType.RFP_COMBINED
 
     return DocumentType.RFP  # Default to Master/RFP if unknown
+
+
+def _detect_multiple_sections(content: str) -> int:
+    """
+    Detect how many standard solicitation sections are present in the document.
+    Returns count of unique sections found.
+    """
+    # Patterns that indicate section headers
+    section_patterns = [
+        r'\bsection\s+[a-m]\b',  # "Section A", "Section L", etc.
+        r'\bpart\s+[i]+\s*[-–]\s*section\s+[a-m]\b',  # "Part I - Section A"
+        r'\b[a-m]\.\s+[a-z]',  # "A. Information", "L. Instructions"
+    ]
+    
+    # Specific content markers for each section
+    section_markers = {
+        'L': ['instructions to offeror', 'proposal preparation', 'submission requirement'],
+        'M': ['evaluation factor', 'evaluation criteria', 'basis for award'],
+        'C': ['statement of work', 'performance work statement', 'scope of work'],
+        'B': ['supplies or services', 'prices/costs', 'contract line item'],
+        'H': ['special contract requirement', 'key personnel', 'security requirement'],
+        'I': ['contract clauses', 'far clause', 'dfars'],
+        'K': ['representations and certifications', 'certifications and representations'],
+    }
+    
+    sections_found = set()
+    
+    # Check regex patterns
+    for pattern in section_patterns:
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        for match in matches:
+            # Extract section letter
+            letter_match = re.search(r'[a-m]', match, re.IGNORECASE)
+            if letter_match:
+                sections_found.add(letter_match.group().upper())
+    
+    # Check content markers
+    for section, markers in section_markers.items():
+        for marker in markers:
+            if marker in content:
+                sections_found.add(section)
+                break
+    
+    return len(sections_found)
+
 
 # ============================================================================
 # OPPORTUNITY ANALYSIS PROMPTS

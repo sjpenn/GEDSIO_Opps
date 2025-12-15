@@ -1,11 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Textarea } from '@/components/ui/textarea';
-import { Loader2, CheckCircle, XCircle, Play, FileText, Edit2, Save, X, Activity, Clock, ExternalLink } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Play, FileText, Activity, Clock, ExternalLink } from 'lucide-react';
 import { cn } from "@/lib/utils"
 
 interface AgentControlPanelProps {
@@ -31,37 +29,12 @@ interface LogEntry {
   details: any;
 }
 
-interface Block {
-  id: string;
-  title: string;
-  content: string;
-  order: number;
-}
-
-interface ProposalVolume {
-  id: number;
-  title: string;
-  order: number;
-  blocks: Block[];
-}
-
-interface Proposal {
-  id: number;
-  volumes: ProposalVolume[];
-  version: number;
-}
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [loading, setLoading] = useState(false);
   const [score, setScore] = useState<ScoreData | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [proposal, setProposal] = useState<Proposal | null>(null);
-  const [activeVolumeId, setActiveVolumeId] = useState<number | null>(null);
-  const [editingBlock, setEditingBlock] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState("");
-  const [generating, setGenerating] = useState(false);
 
   const fetchData = async () => {
     console.log('Fetching agent data for opportunity:', opportunityId);
@@ -80,22 +53,12 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         console.log('Score not found (404 is normal if analysis not run yet)');
         setScore(null);
       }
-      
+
       const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
       if (logsRes.ok) {
         const logsData = await logsRes.json();
         console.log('Logs data received:', logsData.length, 'entries');
         setLogs(logsData);
-      }
-      
-      const propRes = await fetch(`${API_URL}/api/v1/proposals/${opportunityId}`);
-      if (propRes.ok) {
-        const propData = await propRes.json();
-        console.log('Proposal data received');
-        setProposal(propData);
-        if (propData.volumes && propData.volumes.length > 0 && !activeVolumeId) {
-            setActiveVolumeId(propData.volumes[0].id);
-        }
       }
     } catch (error) {
       console.error("Failed to fetch agent data", error);
@@ -121,7 +84,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
           console.error("Error polling logs", e);
         }
       };
-      
+
       pollLogs();
       interval = setInterval(pollLogs, 2000);
     }
@@ -152,60 +115,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
     }
   };
 
-  const handleGenerateProposal = async () => {
-    setGenerating(true);
-    try {
-      const res = await fetch(`${API_URL}/api/v1/proposals/generate/${opportunityId}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProposal(data.proposal);
-        if (data.proposal.volumes && data.proposal.volumes.length > 0) {
-            setActiveVolumeId(data.proposal.volumes[0].id);
-        }
-        // Open workspace in new tab
-        window.open(`/proposal-workspace/${opportunityId}`, '_blank');
-      } else {
-        const errorText = await res.text();
-        alert(`Failed to generate proposal: ${errorText}`);
-      }
-    } catch (error) {
-      console.error("Proposal generation failed", error);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const startEdit = (block: Block) => {
-    setEditingBlock(block.id);
-    setEditContent(block.content);
-  };
-
-  const saveBlock = async (blockId: string) => {
-    if (!proposal || !activeVolumeId) return;
-    try {
-      const res = await fetch(`${API_URL}/api/v1/proposals/${proposal.id}/volumes/${activeVolumeId}/blocks/${blockId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: editContent })
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        // Update local state
-        const updatedVolumes = proposal.volumes.map(vol => {
-            if (vol.id === activeVolumeId) {
-                return { ...vol, blocks: data.blocks };
-            }
-            return vol;
-        });
-        setProposal({ ...proposal, volumes: updatedVolumes });
-        setEditingBlock(null);
-      }
-    } catch (error) {
-      console.error("Failed to save block", error);
-    }
+  const handleOpenProposalWorkspace = () => {
+    window.open(`/proposal-workspace/${opportunityId}`, '_blank');
   };
 
   const getDecisionColor = (decision: string) => {
@@ -217,8 +128,6 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
     }
   };
 
-  const activeVolume = proposal?.volumes.find(v => v.id === activeVolumeId);
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
@@ -227,7 +136,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
           <h3 className="text-lg font-semibold">Agentic Analysis</h3>
         </div>
         <div className="flex gap-2">
-          <Button 
+          <Button
             onClick={() => window.open(`/analysis/${opportunityId}`, '_blank')}
             variant="outline"
             disabled={!score}
@@ -280,84 +189,13 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
                 <div className="text-lg font-bold">{score.internal_capacity_score.toFixed(1)}</div>
               </div>
             </div>
-            
-            <Button onClick={handleGenerateProposal} disabled={generating} variant="secondary" className="w-full gap-2">
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              {proposal ? 'Regenerate Proposal Draft' : 'Generate Proposal Draft'}
+
+            <Button onClick={handleOpenProposalWorkspace} variant="secondary" className="w-full gap-2">
+              <FileText className="h-4 w-4" />
+              Open Proposal Workspace
             </Button>
           </CardContent>
         </Card>
-      )}
-      
-      {proposal && (
-        <div className="space-y-4">
-            <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <FileText className="h-5 w-5" /> Proposal Documents
-                </h3>
-                <Badge variant="outline">Version {proposal.version}</Badge>
-            </div>
-            
-            <Card>
-              <CardHeader className="pb-0">
-                <div className="flex space-x-1 overflow-x-auto pb-2">
-                    {proposal.volumes.sort((a, b) => a.order - b.order).map(vol => (
-                        <Button
-                            key={vol.id}
-                            variant={activeVolumeId === vol.id ? "default" : "ghost"}
-                            size="sm"
-                            onClick={() => setActiveVolumeId(vol.id)}
-                            className="rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary"
-                            data-state={activeVolumeId === vol.id ? "active" : "inactive"}
-                        >
-                            {vol.title}
-                        </Button>
-                    ))}
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 bg-muted/10 min-h-[400px]">
-                {activeVolume && (
-                    <div className="space-y-4">
-                        {activeVolume.blocks.sort((a, b) => a.order - b.order).map(block => (
-                            <Card key={block.id} className="shadow-sm">
-                                <CardHeader className="py-3 px-4 bg-muted/30 flex flex-row items-center justify-between space-y-0">
-                                    <h5 className="font-semibold text-sm">{block.title}</h5>
-                                    {editingBlock !== block.id && (
-                                        <Button variant="ghost" size="sm" onClick={() => startEdit(block)} className="h-8 w-8 p-0">
-                                          <Edit2 className="h-4 w-4" />
-                                        </Button>
-                                    )}
-                                </CardHeader>
-                                <CardContent className="p-4">
-                                    {editingBlock === block.id ? (
-                                        <div className="space-y-3">
-                                            <Textarea 
-                                                className="min-h-[200px] font-mono text-sm leading-relaxed"
-                                                value={editContent}
-                                                onChange={(e) => setEditContent(e.target.value)}
-                                            />
-                                            <div className="flex gap-2 justify-end">
-                                                <Button variant="ghost" size="sm" onClick={() => setEditingBlock(null)} className="gap-1">
-                                                  <X className="h-4 w-4" /> Cancel
-                                                </Button>
-                                                <Button size="sm" onClick={() => saveBlock(block.id)} className="gap-1">
-                                                  <Save className="h-4 w-4" /> Save Changes
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                                          {block.content || <span className="italic opacity-50">No content generated yet.</span>}
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-              </CardContent>
-            </Card>
-        </div>
       )}
 
       <Card>
@@ -370,10 +208,10 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
               {logs.map((log) => (
                 <div key={log.id} className="flex items-start gap-3 text-sm group">
                   <div className="mt-0.5">
-                    {log.status === 'SUCCESS' ? <CheckCircle className="h-4 w-4 text-green-500" /> : 
-                     log.status === 'FAILURE' ? <XCircle className="h-4 w-4 text-red-500" /> :
-                     loading ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> : 
-                     <Clock className="h-4 w-4 text-muted-foreground" />}
+                    {log.status === 'SUCCESS' ? <CheckCircle className="h-4 w-4 text-green-500" /> :
+                      log.status === 'FAILURE' ? <XCircle className="h-4 w-4 text-red-500" /> :
+                        loading ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> :
+                          <Clock className="h-4 w-4 text-muted-foreground" />}
                   </div>
                   <div className="flex-1 space-y-1">
                     <div className="flex justify-between">
@@ -388,8 +226,8 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
                 <div className="text-muted-foreground text-center py-8 text-sm italic">
                   {loading ? (
                     <div className="flex flex-col items-center gap-2">
-                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                       <span>Initializing analysis agents... this may take 2-3 minutes.</span>
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      <span>Initializing analysis agents... this may take 2-3 minutes.</span>
                     </div>
                   ) : (
                     "No activity logs recorded yet."

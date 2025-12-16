@@ -109,13 +109,37 @@ class OrchestratorAgent(BaseAgent):
                  
                  # Extract core data from document analysis
                  solicitation_text = ""
+                 section_l_text = ""
+                 section_m_text = ""
+                 sow_text = ""
+                 
                  if extracted_data:
-                     # Attempt to construct a text representation of the extracted data
-                     # Or stick to the requirement "Extract from provided text" - but we only have extracted JSON here.
-                     # However, the prompt asks to "Extract from provided text". 
-                     # Ideally we pass the raw text, but that might be huge.
-                     # Let's pass the structured data as JSON string, LLM can parse it.
                      import json
+                     
+                     # Extract key sections for better AI parsing
+                     section_l = extracted_data.get("section_l", {})
+                     section_m = extracted_data.get("section_m", {})
+                     sow_data = extracted_data.get("sow", {}) or extracted_data.get("pws", {})
+                     
+                     if section_l:
+                         section_l_text = f"""
+=== SECTION L - INSTRUCTIONS TO OFFERORS ===
+{json.dumps(section_l, indent=2, default=str)}
+"""
+                     
+                     if section_m:
+                         section_m_text = f"""
+=== SECTION M - EVALUATION CRITERIA ===
+{json.dumps(section_m, indent=2, default=str)}
+"""
+                     
+                     if sow_data:
+                         sow_text = f"""
+=== STATEMENT OF WORK / PERFORMANCE WORK STATEMENT ===
+{json.dumps(sow_data, indent=2, default=str)}
+"""
+                     
+                     # Full extracted data as fallback
                      solicitation_text = json.dumps(extracted_data, default=str)
 
                  opportunity_data = f"""
@@ -128,13 +152,19 @@ class OrchestratorAgent(BaseAgent):
                  NAICS Code: {opp.naics_code or 'Not Specified'}
                  PSC/Classification Code: {opp.classification_code or 'Not Specified'}
                  Set-Aside Type: {opp.type_of_set_aside_description or opp.type_of_set_aside or 'Full & Open'}
-                 Response Deadline: {opp.response_deadline.strftime('%B %d, %Y') if opp.response_deadline else 'Not Specified'}
+                 Response Deadline: {opp.response_deadline.strftime('%B %d, %Y at %I:%M %p') if opp.response_deadline else 'Not Specified'}
                  Posted Date: {opp.posted_date.strftime('%B %d, %Y') if opp.posted_date else 'Not Specified'}
                  Place of Performance: {opp.place_of_performance if opp.place_of_performance else 'Not Specified'}
                  Solicitation Number: {opp.solicitation_number or 'Not Specified'}
                  Notice ID: {opp.notice_id or 'Not Specified'}
                  
-                 Extracted Solicitation Data:
+                 {section_l_text}
+                 
+                 {section_m_text}
+                 
+                 {sow_text}
+                 
+                 === FULL EXTRACTED SOLICITATION DATA ===
                  {solicitation_text}
                  """
                  

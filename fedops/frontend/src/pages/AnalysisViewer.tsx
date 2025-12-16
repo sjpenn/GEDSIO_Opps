@@ -1313,7 +1313,7 @@ export default function AnalysisViewer() {
       {quickScanHtml && !showQuickScan && (
         <button
           onClick={() => setShowQuickScan(true)}
-          className="fixed left-0 top-1/2 -translate-y-1/2 z-50 bg-primary hover:bg-primary/90 text-primary-foreground px-2 py-4 rounded-r-lg shadow-lg transition-all hover:px-3 group"
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-50 bg-primary hover:bg-primary/90 text-primary-foreground px-2 py-4 rounded-l-lg shadow-lg transition-all hover:px-3 group"
           title="Open Quick Scan Summary"
         >
           <div className="flex flex-col items-center gap-2">

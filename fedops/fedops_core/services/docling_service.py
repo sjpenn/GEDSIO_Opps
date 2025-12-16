@@ -250,7 +250,13 @@ class DoclingService:
             caption = table.get("caption")
             data = table.get("data", [])
             
-            if not data:
+            # Handle case where data is not a list (e.g., integer 0 or None)
+            if not isinstance(data, list):
+                logger.debug(f"Table {index}: data is not a list (got {type(data).__name__}), skipping")
+                return None
+            
+            if not data or len(data) == 0:
+                logger.debug(f"Table {index}: no data rows, skipping")
                 return None
             
             # First row is typically headers
@@ -269,7 +275,7 @@ class DoclingService:
             )
             
         except Exception as e:
-            logger.error(f"Error parsing table {index}: {e}")
+            logger.error(f"Error parsing table {index}: {type(e).__name__}: {e}")
             return None
     
     def _table_to_markdown(

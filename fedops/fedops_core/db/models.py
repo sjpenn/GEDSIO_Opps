@@ -353,13 +353,45 @@ class DocumentChunk(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     stored_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=False, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True, index=True)  # Link to opportunity
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    metadata_ = Column("metadata", JSONB, nullable=True) # "metadata" is reserved in SQLAlchemy Base, so we map it
     
+    # Enhanced source tracking
     page_number = Column(Integer, nullable=True)
     section = Column(String, nullable=True)
+    start_position = Column(Integer, nullable=True)  # Character position start
+    end_position = Column(Integer, nullable=True)    # Character position end
     
+    # Docling-specific metadata
+    chunk_type = Column(String, nullable=True)  # paragraph, table, list, heading
+    heading_context = Column(JSONB, nullable=True)  # Parent headings hierarchy
+    
+    # Vector store reference
+    vector_id = Column(String, nullable=True, index=True)  # ChromaDB ID
+    
+    metadata_ = Column("metadata", JSONB, nullable=True)  # "metadata" is reserved in SQLAlchemy Base
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DoclingDocument(Base):
+    """
+    Stores raw Docling parsing output for documents.
+    Preserves full document structure for debugging and re-processing.
+    """
+    __tablename__ = "docling_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stored_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=False, unique=True, index=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=False, index=True)
+    
+    docling_json = Column(JSONB, nullable=False)  # Full export_to_dict() output
+    markdown = Column(Text, nullable=True)  # Markdown export
+    num_pages = Column(Integer, nullable=True)
+    num_tables = Column(Integer, nullable=True)
+    num_chunks = Column(Integer, nullable=True)
+    
+    processed_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

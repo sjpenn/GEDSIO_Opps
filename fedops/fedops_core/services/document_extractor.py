@@ -548,3 +548,187 @@ class DocumentExtractor:
         except Exception as e:
             logger.error(f"Error extracting {section_name}: {e}", exc_info=True)
             return None
+    
+    # ========== NEW: Batch Ingestion Methods (Phase 1) ==========
+    
+    async def ingest_all_documents(
+        self,
+        files: List[Dict[str, Any]],
+        opportunity_id: int,
+        db_session=None
+    ) -> Dict[str, Any]:
+        """
+        Phase 1: Batch ingest all documents using Docling chunker.
+        
+        No AI calls - just parsing, chunking, and storage.
+        This is the first phase of the two-phase extraction process.
+        
+        Args:
+            files: List of dicts with 'file_path', 'filename', 'id' keys
+            opportunity_id: The opportunity ID
+            db_session: Optional database session for chunk storage
+            
+        Returns:
+            Summary of ingestion results
+        """
+        from fedops_core.services.docling_chunker import DoclingChunker
+        from fedops_core.services.vector_store import VectorStore
+        
+        logger.info(f"Starting batch ingestion of {len(files)} documents for opportunity {opportunity_id}")
+        
+        # Initialize services
+        vector_store = VectorStore()
+        chunker = DoclingChunker(vector_store=vector_store, db_session=db_session)
+        
+        results = {
+            "opportunity_id": opportunity_id,
+            "total_files": len(files),
+            "successful": 0,
+            "failed": 0,
+            "total_chunks": 0,
+            "file_results": [],
+            "docling_outputs": []
+        }
+        
+        for file_info in files:
+            file_path = file_info.get('file_path')
+            file_id = file_info.get('id', 0)
+            filename = file_info.get('filename', '')
+            
+            try:
+                ingest_result = await chunker.ingest_document(
+                    file_path=file_path,
+                    opportunity_id=opportunity_id,
+                    stored_file_id=file_id,
+                    store_vectors=True
+                )
+                
+                if ingest_result.success:
+                    results["successful"] += 1
+                    results["total_chunks"] += ingest_result.num_chunks
+                    
+                    # Store Docling JSON output for later use
+                    if ingest_result.docling_json:
+                        results["docling_outputs"].append({
+                            "file_id": file_id,
+                            "filename": filename,
+                            "docling_json": ingest_result.docling_json
+                        })
+                else:
+                    results["failed"] += 1
+                
+                results["file_results"].append({
+                    "file_id": file_id,
+                    "filename": filename,
+                    "success": ingest_result.success,
+                    "num_chunks": ingest_result.num_chunks,
+                    "num_pages": ingest_result.num_pages,
+                    "num_tables": ingest_result.num_tables,
+                    "error": ingest_result.error
+                })
+                
+            except Exception as e:
+                logger.error(f"Error ingesting {filename}: {e}")
+                results["failed"] += 1
+                results["file_results"].append({
+                    "file_id": file_id,
+                    "filename": filename,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        logger.info(f"Ingestion complete: {results['successful']}/{results['total_files']} files, {results['total_chunks']} chunks")
+        return results
+    
+    async def analyze_with_retrieval(
+        self,
+        opportunity_id: int,
+        section_type: str,
+        custom_query: Optional[str] = None,
+        top_k: int = 15
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Phase 2: Analyze a section using vector retrieval.
+        
+        Retrieves relevant chunks via semantic search, then runs AI extraction.
+        
+        Args:
+            opportunity_id: The opportunity ID
+            section_type: Section to analyze (L, M, H, C, B, I, K)
+            custom_query: Optional custom search query
+            top_k: Number of chunks to retrieve
+            
+        Returns:
+            Extracted structured data for the section
+        """
+        from fedops_core.services.docling_chunker import DoclingChunker
+        from fedops_core.services.vector_store import VectorStore
+        
+        logger.info(f"Analyzing section {section_type} for opportunity {opportunity_id} using vector retrieval")
+        
+        vector_store = VectorStore()
+        chunker = DoclingChunker(vector_store=vector_store)
+        
+        # Retrieve relevant chunks
+        if custom_query:
+            chunks = await chunker.semantic_search(custom_query, opportunity_id, top_k)
+        else:
+            chunks = await chunker.get_chunks_for_section(opportunity_id, section_type, top_k)
+        
+        if not chunks:
+            logger.warning(f"No chunks found for section {section_type}")
+            return None
+        
+        # Combine chunk content with source citations
+        combined_content = []
+        for chunk in chunks:
+            source_info = f"[Page {chunk.page_number}]" if chunk.page_number else ""
+            combined_content.append(f"{source_info}\n{chunk.content}")
+        
+        content = "\n\n---\n\n".join(combined_content)
+        
+        # Get the document type for this section
+        doc_type = self.section_letter_to_type.get(section_type.upper())
+        if not doc_type:
+            logger.warning(f"Unknown section type: {section_type}")
+            return None
+        
+        # Extract using existing methods
+        extracted = await self._extract_by_type(doc_type, content, f"Section {section_type}", None)
+        
+        if extracted:
+            # Add source tracking
+            extracted["_source_chunks"] = [
+                {
+                    "chunk_id": chunk.id,
+                    "page_number": chunk.page_number,
+                    "section": chunk.section,
+                    "score": chunk.metadata.get('score', None)
+                }
+                for chunk in chunks
+            ]
+        
+        return extracted
+    
+    async def get_docling_json(self, opportunity_id: int, file_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve stored Docling JSON output for a file.
+        
+        Args:
+            opportunity_id: The opportunity ID
+            file_id: The stored file ID
+            
+        Returns:
+            The Docling JSON dictionary or None
+        """
+        try:
+            from fedops_core.db.models import DoclingDocument
+            from sqlalchemy import select
+            
+            # This would need a DB session - placeholder for now
+            logger.info(f"Retrieving Docling JSON for file {file_id}")
+            return None  # Implement with actual DB query
+            
+        except Exception as e:
+            logger.error(f"Error retrieving Docling JSON: {e}")
+            return None

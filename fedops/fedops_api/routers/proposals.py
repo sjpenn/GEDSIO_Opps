@@ -10,7 +10,7 @@ from fedops_core.services.gate_validation_service import GateValidationService
 from pydantic import BaseModel
 
 router = APIRouter(
-    prefix="/proposals",
+    prefix="",
     tags=["proposals"]
 )
 

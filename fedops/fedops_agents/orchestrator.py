@@ -23,18 +23,19 @@ class OrchestratorAgent(BaseAgent):
         
         quick_scan = (mode == "quick")
         
-        # Initialize progress (start with 0 files, will be updated by Doc Analysis)
-        extraction_progress.start(opportunity_id, total_files=0, message=f"Initializing {mode} analysis workflow...")
+        # Initialize progress with enhanced tracking
+        extraction_progress.start(opportunity_id, total_files=0, message=f"🚀 Initializing {mode} analysis...")
+        extraction_progress.set_stage(opportunity_id, "initialization", percent=0)
         
         try:
-            # 1. Ingestion (Placeholder)
-            extraction_progress.update(opportunity_id, message="Step 1/5: Ingesting data...", percent=5)
+            # 1. Ingestion Stage
+            extraction_progress.set_stage(opportunity_id, "ingestion", message="📥 Loading opportunity files...", percent=5)
             # ingestion_agent = IngestionAgent(self.db)
             # await ingestion_agent.execute(opportunity_id)
 
             # 2. Document Analysis (Sequential) - This now includes extraction
             await self.log_activity(opportunity_id, "DOCUMENT_ANALYSIS", "IN_PROGRESS")
-            extraction_progress.update(opportunity_id, message="Step 2/5: Analyzing documents...", percent=10)
+            extraction_progress.set_stage(opportunity_id, "extraction", message="📄 Extracting document contents...", percent=10)
             
             doc_agent = DocumentAnalysisAgent(self.db)
             doc_results = await doc_agent.execute(
@@ -71,16 +72,18 @@ class OrchestratorAgent(BaseAgent):
             executive_overview = {}
 
             if not quick_scan:
-                extraction_progress.update(opportunity_id, message="Step 3/5: Running compliance and financial analysis...", percent=60)
+                extraction_progress.set_stage(opportunity_id, "analysis", message="🔍 Running deep analysis agents...", percent=55)
+                
+                extraction_progress.set_operation(opportunity_id, "analyzing", "Compliance & Risk", percent=60)
                 
                 # Step 1: Compliance & Security (Base layer)
-                # Extracts Facility/Personnel Clearance
+                extraction_progress.set_operation(opportunity_id, "analyzing", "Compliance & Security")
                 comp_agent = ComplianceAgent(self.db)
                 comp_results = await comp_agent.execute(opportunity_id, extracted_data=extracted_data)
                 security_details = comp_results.get("security_details", {})
                 
                 # Step 2: Capability & Personnel (Informed by Security)
-                # Uses Clearance to filter/inform Personnel requirements
+                extraction_progress.set_operation(opportunity_id, "analyzing", "Capability & Personnel", percent=70)
                 cap_agent = CapabilityMappingAgent(self.db)
                 cap_results = await cap_agent.execute(
                     opportunity_id, 
@@ -90,7 +93,7 @@ class OrchestratorAgent(BaseAgent):
                 personnel_details = cap_results.get("personnel_details", {})
                 
                 # Step 3: Financial (Informed by Personnel & Security)
-                # Uses Personnel LCATs/FTEs to build PTW model
+                extraction_progress.set_operation(opportunity_id, "analyzing", "Financial Viability", percent=75)
                 fin_agent = FinancialAnalysisAgent(self.db)
                 fin_results = await fin_agent.execute(
                     opportunity_id, 
@@ -99,7 +102,8 @@ class OrchestratorAgent(BaseAgent):
                     personnel_context=personnel_details
                 )
             else:
-                 extraction_progress.update(opportunity_id, message="Step 3/5: Running Quick Scan Analysis...", percent=70)
+                 extraction_progress.set_stage(opportunity_id, "analysis", message="⚡ Running Quick Scan...", percent=60)
+                 extraction_progress.set_operation(opportunity_id, "summarizing", "Quick Scan Summary", percent=70)
                  # Quick Scan Custom Workflow
                  # We want to run the specific QUICK_SCAN_SLIDEOUT_PROMPT
                  
@@ -220,8 +224,8 @@ class OrchestratorAgent(BaseAgent):
                  executive_overview = {"quick_scan_html": quick_scan_html}
 
 
-            # 4. Executive Overview Generation (Only if NOT quick scan, or we use the quick scan result)
-            extraction_progress.update(opportunity_id, message="Step 4/5: Finalizing report...", percent=80)
+            # 4. Executive Overview Generation
+            extraction_progress.set_stage(opportunity_id, "finalization", message="📝 Generating executive overview...", percent=80)
             
             if not quick_scan:
                 result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
@@ -241,7 +245,8 @@ class OrchestratorAgent(BaseAgent):
                 executive_overview = await ai_service.analyze_opportunity(overview_prompt)
 
             # 5. Score Calculation & Data Aggregation
-            extraction_progress.update(opportunity_id, message="Step 5/5: Calculating final scores...", percent=90)
+            extraction_progress.set_operation(opportunity_id, "storing", "Final scores to database", percent=90)
+            extraction_progress.track_db_operation(opportunity_id, "write")
             score_data = {
                 "contract_risk_score": comp_results.get("risk_score", 0.0),
                 "internal_capacity_score": cap_results.get("internal_capacity_score", 0.0),

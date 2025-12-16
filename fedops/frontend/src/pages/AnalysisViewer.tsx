@@ -276,12 +276,18 @@ export default function AnalysisViewer() {
     setViewerOpen(true);
   };
 
-  // Analysis Progress State
+  // Analysis Progress State - Enhanced with stage/operation tracking
   const [analysisProgress, setAnalysisProgress] = useState<{
     status: string;
     percent: number;
     message: string;
     current_file?: string;
+    stage?: string;
+    current_operation?: string;
+    operation_target?: string;
+    documents?: Array<{ name: string; status: string }>;
+    db_operations?: { writes: number; reads: number };
+    vector_operations?: { writes: number; reads: number };
   } | null>(null);
 
   // Poll for analysis status
@@ -1221,6 +1227,36 @@ export default function AnalysisViewer() {
           )}>
             <CardContent className="p-4">
               <div className="flex flex-col gap-3">
+                {/* Stage Badge */}
+                {analysisProgress?.stage && analysisProgress.stage !== 'idle' && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs uppercase tracking-wide">
+                      {analysisProgress.stage === 'initialization' && '🚀 Initializing'}
+                      {analysisProgress.stage === 'ingestion' && '📥 Ingestion'}
+                      {analysisProgress.stage === 'extraction' && '📄 Extraction'}
+                      {analysisProgress.stage === 'analysis' && '🔍 Analysis'}
+                      {analysisProgress.stage === 'finalization' && '✅ Finalizing'}
+                      {analysisProgress.stage === 'complete' && '✅ Complete'}
+                      {analysisProgress.stage === 'error' && '❌ Error'}
+                    </Badge>
+                    {/* DB/Vector operation counters */}
+                    {(analysisProgress.db_operations?.writes || analysisProgress.vector_operations?.writes) ? (
+                      <div className="flex gap-2 text-xs text-muted-foreground">
+                        {analysisProgress.db_operations?.writes ? (
+                          <span className="flex items-center gap-1">
+                            <span>💾</span> DB: {analysisProgress.db_operations.writes}
+                          </span>
+                        ) : null}
+                        {analysisProgress.vector_operations?.writes ? (
+                          <span className="flex items-center gap-1">
+                            <span>🔢</span> Vector: {analysisProgress.vector_operations.writes}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
                 <div className="flex items-start gap-3">
                   {analysisMessage?.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />}
                   {analysisMessage?.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />}
@@ -1230,13 +1266,38 @@ export default function AnalysisViewer() {
                     <p className="text-sm font-semibold whitespace-pre-line">
                       {analysisProgress?.message || analysisMessage?.text}
                     </p>
-                    {analysisProgress?.current_file && (
+                    {analysisProgress?.operation_target && (
                       <p className="text-xs text-muted-foreground mt-1 font-mono bg-muted/50 px-2 py-1 rounded inline-block">
-                        Analying: {analysisProgress.current_file}
+                        {analysisProgress.operation_target}
                       </p>
                     )}
                   </div>
                 </div>
+
+                {/* Document List */}
+                {analysisProgress?.documents && analysisProgress.documents.length > 0 && (
+                  <div className="pl-8 mt-1">
+                    <div className="flex flex-wrap gap-2">
+                      {analysisProgress.documents.map((doc, i) => (
+                        <Badge
+                          key={i}
+                          variant="secondary"
+                          className={cn(
+                            "text-xs",
+                            doc.status === 'complete' && "bg-green-100 text-green-800",
+                            doc.status === 'extracting' && "bg-blue-100 text-blue-800",
+                            doc.status === 'pending' && "bg-gray-100 text-gray-600",
+                            doc.status === 'error' && "bg-red-100 text-red-800"
+                          )}
+                        >
+                          {doc.status === 'extracting' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                          {doc.status === 'complete' && <CheckCircle className="h-3 w-3 mr-1" />}
+                          {doc.name.length > 25 ? doc.name.substring(0, 22) + '...' : doc.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {analysisProgress && (
                   <div className="w-full space-y-1.5 pl-8">

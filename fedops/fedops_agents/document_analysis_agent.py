@@ -6,6 +6,7 @@ from fedops_core.db.models import Opportunity, StoredFile, OpportunityPipeline
 from fedops_core.services.ai_service import AIService
 from fedops_core.services.document_extractor import DocumentExtractor
 from fedops_core.prompts import SOLICITATION_SUMMARY_PROMPT, determine_document_type, DocumentType, PROPOSAL_DECOMPOSITION_PROMPT
+from fedops_core.services.extraction_progress import extraction_progress
 
 class DocumentAnalysisAgent(BaseAgent):
     def __init__(self, db: AsyncSession):
@@ -37,19 +38,43 @@ class DocumentAnalysisAgent(BaseAgent):
                 files_result = await self.db.execute(select(StoredFile).where(StoredFile.opportunity_id == opportunity_id))
                 files = files_result.scalars().all()
                 
+                # Update progress with file count
+                extraction_progress.update(opportunity_id, message=f"📁 Found {len(files)} document(s) to process...")
+                
+                # Track each document as pending
+                for file in files:
+                    extraction_progress.track_document(opportunity_id, file.filename, "pending")
+                
                 # Prepare file list for DocumentExtractor
                 file_list = [
                     {"file_path": file.file_path, "filename": file.filename, "id": file.id}
                     for file in files
                 ]
                 
-                # Extract structured data from all documents
+                # Extract structured data from all documents with document tracking
                 doc_extractor = DocumentExtractor()
+                
+                # Track each document as it's processed
+                for i, file in enumerate(files, 1):
+                    extraction_progress.track_document(opportunity_id, file.filename, "extracting")
+                    extraction_progress.set_operation(
+                        opportunity_id, 
+                        "extracting", 
+                        f"{file.filename} ({i} of {len(files)})",
+                        percent=10 + int((i / len(files)) * 40)  # 10-50% range
+                    )
+                
                 extracted_data = await doc_extractor.extract_all_documents(
                     file_list, 
                     opportunity_id=opportunity_id,
                     quick_scan=quick_scan
                 )
+                
+                # Mark all documents complete
+                for file in files:
+                    extraction_progress.track_document(opportunity_id, file.filename, "complete")
+                
+                extraction_progress.set_operation(opportunity_id, "summarizing", "Document analysis", percent=50)
                 
                 await self.log_activity(opportunity_id, "EXTRACTION_COMPLETE", "SUCCESS", {
                     "sections_extracted": [k for k, v in extracted_data.items() if v and k != 'source_documents'],

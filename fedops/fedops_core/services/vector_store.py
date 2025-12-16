@@ -224,3 +224,225 @@ class VectorStore:
             return {"error": "Collection not found"}
         except Exception as e:
             return {"error": str(e)}
+    
+    # ===== Entity-Scoped Methods for Multi-Entity Support =====
+    
+    def _get_entity_collection_name(self, entity_uei: str, opportunity_id: int) -> str:
+        """Get collection name scoped to an entity and opportunity."""
+        # Sanitize UEI for collection name (ChromaDB has restrictions on names)
+        safe_uei = entity_uei.replace('-', '_').replace(' ', '_').lower()[:20]
+        return f"entity_{safe_uei}_opp_{opportunity_id}"
+    
+    def _get_entity_profile_collection_name(self, entity_uei: str) -> str:
+        """Get collection name for entity profile documents (not opportunity-specific)."""
+        safe_uei = entity_uei.replace('-', '_').replace(' ', '_').lower()[:20]
+        return f"entity_{safe_uei}_profile"
+    
+    def _get_or_create_entity_collection(self, entity_uei: str, opportunity_id: Optional[int] = None):
+        """Get or create a collection for an entity's data."""
+        if not self._ensure_initialized():
+            return None
+        
+        if opportunity_id:
+            collection_name = self._get_entity_collection_name(entity_uei, opportunity_id)
+            metadata = {"entity_uei": entity_uei, "opportunity_id": opportunity_id}
+        else:
+            collection_name = self._get_entity_profile_collection_name(entity_uei)
+            metadata = {"entity_uei": entity_uei, "type": "profile"}
+        
+        return self._client.get_or_create_collection(
+            name=collection_name,
+            embedding_function=self._embedding_function,
+            metadata=metadata
+        )
+    
+    async def add_entity_chunks(
+        self,
+        entity_uei: str,
+        chunks: List[Dict[str, Any]],
+        opportunity_id: Optional[int] = None
+    ) -> List[str]:
+        """
+        Add chunks to an entity-scoped collection.
+        
+        Args:
+            entity_uei: The entity's UEI
+            chunks: List of chunk dicts with 'id', 'content', and 'metadata'
+            opportunity_id: Optional opportunity ID for opportunity-specific data
+            
+        Returns:
+            List of vector IDs for the added chunks
+        """
+        if not self._ensure_initialized():
+            logger.warning("Vector store not available, skipping entity chunk addition")
+            return []
+        
+        collection = self._get_or_create_entity_collection(entity_uei, opportunity_id)
+        if not collection:
+            return []
+        
+        try:
+            ids = [str(chunk['id']) for chunk in chunks]
+            documents = [chunk['content'] for chunk in chunks]
+            metadatas = [chunk.get('metadata', {}) for chunk in chunks]
+            
+            # Add entity_uei to all metadata
+            for meta in metadatas:
+                meta['entity_uei'] = entity_uei
+            
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
+            )
+            
+            collection_type = f"opportunity {opportunity_id}" if opportunity_id else "profile"
+            logger.info(f"Added {len(chunks)} chunks to entity {entity_uei} {collection_type} collection")
+            return ids
+            
+        except Exception as e:
+            logger.error(f"Error adding entity chunks to vector store: {e}")
+            return []
+    
+    async def search_entity(
+        self,
+        entity_uei: str,
+        query: str,
+        opportunity_id: Optional[int] = None,
+        top_k: int = 10,
+        filter_metadata: Optional[Dict[str, Any]] = None
+    ) -> List[SearchResult]:
+        """
+        Semantic search within an entity's collection.
+        
+        Args:
+            entity_uei: The entity's UEI
+            query: Search query text
+            opportunity_id: Optional opportunity ID to search within
+            top_k: Number of results to return
+            filter_metadata: Optional metadata filters
+            
+        Returns:
+            List of SearchResult objects
+        """
+        if not self._ensure_initialized():
+            logger.warning("Vector store not available")
+            return []
+        
+        collection = self._get_or_create_entity_collection(entity_uei, opportunity_id)
+        if not collection:
+            return []
+        
+        try:
+            query_params = {
+                "query_texts": [query],
+                "n_results": top_k
+            }
+            
+            if filter_metadata:
+                query_params["where"] = filter_metadata
+            
+            results = collection.query(**query_params)
+            
+            search_results = []
+            if results and results['ids'] and results['ids'][0]:
+                for i, chunk_id in enumerate(results['ids'][0]):
+                    search_results.append(SearchResult(
+                        chunk_id=int(chunk_id),
+                        content=results['documents'][0][i] if results['documents'] else "",
+                        score=1 - results['distances'][0][i] if results['distances'] else 0.0,
+                        metadata=results['metadatas'][0][i] if results['metadatas'] else {}
+                    ))
+            
+            return search_results
+            
+        except Exception as e:
+            logger.error(f"Error searching entity vector store: {e}")
+            return []
+    
+    async def get_entity_stats(self, entity_uei: str) -> Dict[str, Any]:
+        """
+        Get statistics for all collections belonging to an entity.
+        
+        Returns dict with collection counts and total chunks.
+        """
+        if not self._ensure_initialized():
+            return {"error": "Vector store not available"}
+        
+        try:
+            # List all collections and filter by entity prefix
+            safe_uei = entity_uei.replace('-', '_').replace(' ', '_').lower()[:20]
+            prefix = f"entity_{safe_uei}"
+            
+            all_collections = self._client.list_collections()
+            entity_collections = [c for c in all_collections if c.name.startswith(prefix)]
+            
+            stats = {
+                "entity_uei": entity_uei,
+                "total_collections": len(entity_collections),
+                "total_chunks": 0,
+                "collections": []
+            }
+            
+            for collection in entity_collections:
+                count = collection.count()
+                stats["total_chunks"] += count
+                stats["collections"].append({
+                    "name": collection.name,
+                    "count": count,
+                    "metadata": collection.metadata
+                })
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error getting entity stats: {e}")
+            return {"error": str(e)}
+    
+    async def delete_entity_data(self, entity_uei: str) -> bool:
+        """
+        Delete all vector collections for an entity.
+        
+        WARNING: This permanently removes all embeddings for this entity.
+        
+        Returns:
+            True if successful
+        """
+        if not self._ensure_initialized():
+            return False
+        
+        try:
+            safe_uei = entity_uei.replace('-', '_').replace(' ', '_').lower()[:20]
+            prefix = f"entity_{safe_uei}"
+            
+            all_collections = self._client.list_collections()
+            deleted_count = 0
+            
+            for collection in all_collections:
+                if collection.name.startswith(prefix):
+                    self._client.delete_collection(collection.name)
+                    deleted_count += 1
+            
+            logger.info(f"Deleted {deleted_count} vector collections for entity {entity_uei}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity vector data: {e}")
+            return False
+    
+    async def list_entity_collections(self, entity_uei: str) -> List[str]:
+        """List all collection names for an entity."""
+        if not self._ensure_initialized():
+            return []
+        
+        try:
+            safe_uei = entity_uei.replace('-', '_').replace(' ', '_').lower()[:20]
+            prefix = f"entity_{safe_uei}"
+            
+            all_collections = self._client.list_collections()
+            return [c.name for c in all_collections if c.name.startswith(prefix)]
+            
+        except Exception as e:
+            logger.error(f"Error listing entity collections: {e}")
+            return []
+

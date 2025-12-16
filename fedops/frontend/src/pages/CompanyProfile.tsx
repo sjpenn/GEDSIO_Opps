@@ -41,7 +41,8 @@ const toast = {
 };
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { BulkUploadDropzone } from '../components/ui/BulkUploadDropzone';
-import type { CompanyProfile, CompanyProfileDocument, CompanyProfileLink, Entity, PastPerformance, ContractDocument } from '../types';
+import type { CompanyProfile, CompanyProfileDocument, CompanyProfileLink, Entity, PastPerformance, ContractDocument, EntityProfileSummary } from '../types';
+import EntityQuickSwitch from '../components/EntityQuickSwitch';
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -529,9 +530,20 @@ export default function CompanyProfilePage() {
           <p className="text-muted-foreground">Manage your company details, documents, and links.</p>
         </div>
         {!isEditing && profile && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {/* Entity Quick Switch */}
+            <div className="min-w-[280px]">
+              <EntityQuickSwitch
+                currentEntityUei={profile?.uei}
+                onEntitySwitch={(entity: EntityProfileSummary) => {
+                  setSuccess(`Switched to ${entity.legal_business_name}`);
+                  fetchProfile();
+                  setTimeout(() => setSuccess(null), 3000);
+                }}
+              />
+            </div>
             <Button onClick={() => setShowEntitySearch(true)} variant="outline" className="gap-2">
-              <Search className="h-4 w-4" /> Change Entity
+              <Search className="h-4 w-4" /> Add Entity
             </Button>
             <Button onClick={() => setIsEditing(true)} className="gap-2">
               <Edit2 className="h-4 w-4" /> Edit Profile

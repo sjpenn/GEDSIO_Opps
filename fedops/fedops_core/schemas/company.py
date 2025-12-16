@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from datetime import datetime
 
 class CompanyProfileBase(BaseModel):
@@ -125,3 +125,45 @@ class EntitySearchTerm(BaseModel):
     term: str
     searched_at: datetime
     result_count: Optional[int] = None
+
+
+class EntityProfileSummary(BaseModel):
+    """Summary of an entity profile for quick-switch UI."""
+    uei: str
+    legal_business_name: str
+    is_primary: bool = False
+    logo_url: Optional[str] = None
+    cage_code: Optional[str] = None
+    entity_type: Optional[str] = "OTHER"
+    document_count: int = 0
+    document_types: Dict[str, int] = {}  # {"SOW": 3, "PP": 2, ...}
+    last_active_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class EntityActivationResponse(BaseModel):
+    """Response from entity activation endpoint."""
+    success: bool
+    entity: Optional[Entity] = None
+    previous_entity_uei: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class EntityDocumentSummary(BaseModel):
+    """Document summary for an entity."""
+    entity_uei: str
+    total_documents: int = 0
+    by_type: Dict[str, int] = {}
+
+
+class EntityVectorStats(BaseModel):
+    """Vector store statistics for an entity."""
+    entity_uei: str
+    total_collections: int = 0
+    total_chunks: int = 0
+    collections: List[Dict[str, Any]] = []
+    error: Optional[str] = None
+

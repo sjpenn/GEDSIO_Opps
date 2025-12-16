@@ -666,3 +666,169 @@ async def refresh_entity_data(
     await service.update_entity_from_sam(entity)
     
     return entity
+
+
+# ============ Multi-Entity Profile Management Endpoints ============
+
+@router.get("/profiles", response_model=List[schemas.EntityProfileSummary])
+async def list_entity_profiles(
+    include_document_counts: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all entities with their document counts and active status.
+    
+    Returns entities sorted by:
+    1. Primary entity first
+    2. Most recently activated
+    3. Alphabetically by name
+    
+    Useful for the quick-switch entity selector UI.
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    profiles = await entity_profile_service.list_available_entities(
+        db, 
+        include_document_counts=include_document_counts
+    )
+    return profiles
+
+
+@router.post("/{uei}/activate")
+async def activate_entity(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Activate an entity as the primary, preserving previous entity's data.
+    
+    This sets the entity as primary and records the activation timestamp.
+    All data from the previously primary entity remains intact and can be
+    reactivated at any time.
+    
+    Returns:
+        Activation result with new primary entity info
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    result = await entity_profile_service.activate_entity(db, uei)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result.get("error", "Activation failed"))
+    
+    return result
+
+
+@router.get("/{uei}/documents/summary")
+async def get_entity_document_summary(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get document counts and types for an entity.
+    
+    Returns summary of all documents associated with this entity,
+    grouped by document type (SOW, PP, Contract, etc.).
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    # Verify entity exists
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    summary = await entity_profile_service.get_entity_document_summary(db, uei)
+    return summary
+
+
+@router.get("/{uei}/vector-stats")
+async def get_entity_vector_stats(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get vector store statistics for an entity.
+    
+    Returns the number of collections and total chunks stored
+    for this entity's documents in the vector store.
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    # Verify entity exists
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    stats = await entity_profile_service.get_entity_vector_stats(uei)
+    return stats
+
+
+@router.post("/{from_uei}/switch-to/{to_uei}")
+async def switch_entity(
+    from_uei: str,
+    to_uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Switch from one primary entity to another.
+    
+    Convenience endpoint that:
+    1. Deactivates the current primary entity
+    2. Activates the target entity as primary
+    3. Preserves all data for both entities
+    
+    Use this for quick entity switching in the UI.
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    result = await entity_profile_service.switch_entity(db, from_uei, to_uei)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Switch failed"))
+    
+    return result
+
+
+@router.get("/{uei}/full-profile")
+async def get_entity_full_profile(
+    uei: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get comprehensive entity profile including:
+    - Entity details
+    - Document summary
+    - Vector store stats
+    - Primary status
+    
+    Use this for the entity detail view in the quick-switch UI.
+    """
+    from fedops_core.services.entity_profile_service import entity_profile_service
+    
+    # Get entity
+    result = await db.execute(select(Entity).where(Entity.uei == uei))
+    entity = result.scalar_one_or_none()
+    
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    
+    # Get document summary
+    doc_summary = await entity_profile_service.get_entity_document_summary(db, uei)
+    
+    # Get vector stats
+    vector_stats = await entity_profile_service.get_entity_vector_stats(uei)
+    
+    return {
+        "entity": {
+            "uei": entity.uei,
+            "legal_business_name": entity.legal_business_name,
+            "cage_code": entity.cage_code,
+            "logo_url": entity.logo_url,
+            "is_primary": entity.is_primary,
+            "last_active_at": entity.last_active_at.isoformat() if entity.last_active_at else None,
+            "entity_type": entity.entity_type
+        },
+        "document_summary": doc_summary,
+        "vector_stats": vector_stats
+    }
+

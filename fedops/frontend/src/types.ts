@@ -62,6 +62,7 @@ export interface Entity {
   logo_url?: string
   last_synced_at?: string
   similarity_score?: number
+  last_active_at?: string
   full_response?: any
 
   // Partner Search Fields
@@ -88,6 +89,19 @@ export interface EntitySearchTerm {
   searched_at: string
   result_count?: number
 }
+
+export interface EntityProfileSummary {
+  uei: string;
+  legal_business_name: string;
+  is_primary: boolean;
+  logo_url?: string;
+  cage_code?: string;
+  entity_type?: string;
+  document_count: number;
+  document_types: Record<string, number>;
+  last_active_at?: string;
+}
+
 export interface PastPerformance {
   id: number;
   title: string;

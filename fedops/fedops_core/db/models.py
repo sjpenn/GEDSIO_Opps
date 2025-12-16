@@ -132,6 +132,9 @@ class Entity(Base):
     personnel_count = Column(Integer, nullable=True)  # Employee count
     business_types = Column(JSONB, nullable=True)  # Array of business type codes and descriptions
     
+    # Multi-entity switching: track last activation time
+    last_active_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

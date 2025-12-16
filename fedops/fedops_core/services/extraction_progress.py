@@ -17,7 +17,7 @@ class ExtractionProgress:
         self._progress: Dict[int, Dict] = {}
         self._lock = Lock()
     
-    def start(self, proposal_id: int, total_files: int):
+    def start(self, proposal_id: int, total_files: int, message: str = "Starting analysis..."):
         """Initialize progress tracking for a proposal"""
         with self._lock:
             self._progress[proposal_id] = {
@@ -25,20 +25,32 @@ class ExtractionProgress:
                 "total_files": total_files,
                 "processed_files": 0,
                 "current_file": None,
+                "message": message,
+                "percent": 0,
                 "filenames": [],
                 "started_at": datetime.utcnow().isoformat(),
                 "completed_at": None,
                 "error": None
             }
     
-    def update(self, proposal_id: int, filename: str):
-        """Update progress with current file being processed"""
+    def update(self, proposal_id: int, filename: str = None, message: str = None, percent: int = None):
+        """Update progress with current file being processed or general status message"""
         with self._lock:
             if proposal_id in self._progress:
                 progress = self._progress[proposal_id]
-                progress["current_file"] = filename
-                progress["processed_files"] += 1
-                progress["filenames"].append(filename)
+                if filename:
+                    progress["current_file"] = filename
+                    progress["processed_files"] += 1
+                    progress["filenames"].append(filename)
+                
+                if message:
+                    progress["message"] = message
+                    
+                if percent is not None:
+                    progress["percent"] = percent
+                elif filename and progress["total_files"] > 0:
+                    # Auto-calculate per file if not explicit
+                    progress["percent"] = int((progress["processed_files"] / progress["total_files"]) * 100)
     
     def complete(self, proposal_id: int, requirements_count: int, artifacts_count: int):
         """Mark extraction as complete"""

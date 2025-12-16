@@ -121,6 +121,8 @@ async def list_opportunities(
                     if resp.status_code == 200:
                         data = resp.json()
                         all_opportunities_data = data.get("opportunitiesData", [])
+                    elif resp.status_code == 429:
+                        logger.warning("SAM.gov API rate limit exceeded. Falling back to local database.")
                     else:
                         logger.warning(f"Failed to fetch from SAM.gov: {resp.status_code}")
             
@@ -142,6 +144,9 @@ async def list_opportunities(
                             if resp.status_code == 200:
                                 data = resp.json()
                                 return data.get("opportunitiesData", [])
+                            elif resp.status_code == 429:
+                                logger.warning(f"SAM.gov API rate limit exceeded for year {year}. Skipping.")
+                                return []
                             else:
                                 logger.warning(f"Failed to fetch year {year}: {resp.status_code}")
                                 return []

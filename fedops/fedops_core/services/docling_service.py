@@ -146,7 +146,7 @@ class DoclingService:
             )
         
         try:
-            from docling.document_converter import DocumentConverter
+            from docling.document_converter import DocumentConverter, PdfFormatOption
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
             
@@ -154,6 +154,8 @@ class DoclingService:
             
             # Configure pipeline options
             pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = False
+            pipeline_options.do_table_structure = True
             
             # Enable OCR if requested
             if use_ocr:
@@ -162,15 +164,23 @@ class DoclingService:
                 pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=True)
             
             # Initialize converter with options
-            # Enable DOCX support automatically through Docling defaults or explicit format
             converter = DocumentConverter(
                 format_options={
-                    InputFormat.PDF: pipeline_options
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
                 }
             )
             
-            # Convert document
-            result = converter.convert(file_path)
+            # Convert document (run in thread pool to avoid blocking event loop)
+            import asyncio
+            loop = asyncio.get_running_loop()
+            
+            # Create a partial to pass args cleanly
+            from functools import partial
+            convert_func = partial(converter.convert, file_path)
+            
+            logger.info("Starting Docling conversion in detached thread...")
+            result = await loop.run_in_executor(None, convert_func)
+            logger.info("Docling conversion completed")
             
             # Extract markdown
             markdown = result.document.export_to_markdown()

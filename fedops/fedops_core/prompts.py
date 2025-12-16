@@ -298,19 +298,40 @@ Analyze **Section L (Instructions to Offerors)** and produce:
 ## DISQUALIFICATION RISKS
 **TEST SUBMISSION:** [Portal test instructions]
 
+
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "formatting": { ... },
-  "submission": { ... },
-  "volume_structure": [ ... ],
-  "volume_structure": [ ... ],
+  "formatting": {
+    "font": "Arial 12pt",
+    "margins": "1 inch",
+    "page_limits": {"vol_1": 50, "vol_2": 25},
+    "file_types": ["PDF"],
+    "source_quote": "Exat text regarding formatting"
+  },
+  "submission": {
+    "method": "Email",
+    "due_date": "2025-01-15 14:00 EST",
+    "copies": {"electronic": 1, "hard": 0},
+    "source_quote": "Exact text regarding submission"
+  },
+  "volume_structure": [
+    {
+      "volume_name": "Volume I - Technical",
+      "page_limit": 50,
+      "content_required": ["Approach", "Staffing"],
+      "source_quote": "Text defining this volume"
+    }
+  ],
   "content_requirements": [ 
     {
-       "requirement": "string",
+       "requirement": "Must allow 12pt font",
+       "requirement_type": "mandatory",
        "source_quote": "Exact text defining this requirement"
     }
-  ]
+  ],
+  "disqualification_risks": ["Late submission"],
+  "compliance_checklist": ["Signed SF33"]
 }
 ```
 ```
@@ -412,22 +433,44 @@ Pink/Red Team Checklist:
 ## PROPOSAL SCORING MODEL
 [Mock evaluation matrix for self-assessment]
 
+
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "evaluationApproach": { ... },
+  "evaluation_approach": "LPTA|Best Value Tradeoff",
+  "rating_system": {
+    "adjectival": ["Outstanding", "Good", "Acceptable"],
+    "color": ["Blue", "Green", "Yellow"]
+  },
+  "relative_importance": "Technical > Past Perf > Price",
   "factors": [ 
     {
-      "factor": "string",
+      "factor": "Technical Approach",
+      "weight": "Most Important",
+      "subfactors": ["Staffing", "Transition"],
+      "discriminators": "Innovation, Risk Reduction (Description as String)",
+      "win_strategy": "Highlight proprietary tech",
       "source_quote": "Exact text defining this factor"
     }
   ],
-  "price": { ... }
+  "price": {
+    "structure": "FFP|T&M",
+    "evaluation_method": "Price Realism",
+    "most_probable_cost": true,
+    "source_quote": "Exact text defining price evaluation"
+  },
+  "strength_definitions": {
+    "Significant Strength": "Appreciably increases merit",
+    "Deficiency": "Material failure"
+  }
 }
 ```
 ```
 
 **Rules:**
+- Use snake_case keys exactly as shown (e.g., `evaluation_approach`, not `evaluationApproach`)
+- `discriminators` must be a STRING description, not a list
+- `price.source_quote` is REQUIRED
 - Quote EXACT factor wording and relative importance
 - Identify subfactor discriminators (where points are won/lost)
 - Map to Shipley win themes and evidence planning
@@ -526,15 +569,32 @@ Organize requirements hierarchically:
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "scope": { ... },
+  "scope_summary": {
+    "in_scope": ["Software Dev", "Testing"],
+    "out_of_scope": ["Hardware Procurement"],
+    "assumptions": ["Gov provides laptops"]
+  },
+  "work_breakdown": [
+    {"wbs": "1.1", "title": "Project Management"}
+  ],
   "deliverables": [ 
     {
-      "item": "string",
+      "description": "Monthly Report",
+      "due_date": "10th of month",
       "source_quote": "Exact text defining this deliverable"
     }
   ],
-  "performance_standards": [ ... ],
-  "execution_requirements": { ... }
+  "performance_standards": [
+    {
+      "metric": "System Uptime",
+      "target": "99.9%",
+      "source_quote": "Exact text"
+    }
+  ],
+  "execution_requirements": {
+    "place_of_performance": "Remote"
+  },
+  "compliance_risks": ["Unclear acceptance criteria"]
 }
 ```
 ```
@@ -637,18 +697,37 @@ TOTAL POTENTIAL: [years/months]
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "clin_structure": [ ... ],
-  "contract_type": { ... },
+  "clin_structure": [ 
+    {
+      "clin": "0001",
+      "description": "Labor",
+      "quantity": "12",
+      "unit": "Months",
+      "contract_type": "FFP",
+      "source_quote": "Exact text"
+    }
+  ],
   "period_of_performance": { 
-    "details": "string",
+    "base_period": "Start to End",
+    "option_periods": ["Opt 1", "Opt 2"],
+    "total_potential": "5 Years",
     "source_quote": "Exact text defining period of performance"
   },
-  "pricing_instructions": { ... }
+  "pricing_instructions": {
+    "escalation_formula": "3%",
+    "ceiling": "$50M"
+  },
+  "contract_value": {
+    "estimated_value": "$10M",
+    "ceiling": "$50M"
+  }
 }
 ```
 ```
 
 **Rules:**
+- Use snake_case keys (e.g. `period_of_performance`)
+- `source_quote` is REQUIRED for Period of Performance
 - Replicate EXACT table format from Section B
 - Flag "TBD" or "TBD" pricing fields
 - Note option exercise rights and volumes
@@ -748,20 +827,46 @@ Analyze **Section H (Special Contract Requirements)** and produce:
 {
   "key_personnel": [ 
     {
-      "role": "string",
-      "qualifications": "string",
+      "role": "Program Manager",
+      "qualifications": "PMP Required",
+      "experience": "10 years",
+      "resume_required": true,
       "source_quote": "Exact text defining this role"
     }
   ],
-  "security_requirements": { ... },
-  "transition_requirements": { ... },
-  "workforce_requirements": { ... },
-  "special_clauses": { ... }
+  "security_requirements": {
+    "facility_clearance": "Secret",
+    "personnel_clearances": {"min_level": "Secret"},
+    "cmmc_level": "Level 2",
+    "cyber_requirements": ["NIST 800-171"],
+    "export_control": false,
+    "source_quote": "Exact text regarding security"
+  },
+  "transition_requirements": [
+    {
+       "phase": "Phase-In",
+       "duration": "30 days",
+       "responsibilities": ["Badging", "Training"],
+       "source_quote": "Exact text"
+    }
+  ],
+  "workforce_requirements": {
+    "sca_applicable": true,
+    "incumbent_capture": "Right of first refusal"
+  },
+  "special_clauses": [
+    {
+       "clause": "H.1",
+       "impact": "High cost"
+    }
+  ]
 }
 ```
 ```
 
 **Rules:**
+- Use snake_case keys (e.g. `key_personnel`, `security_requirements`)
+- `role` and `source_quote` are REQUIRED for key personnel
 - Extract ALL named personnel requirements (even if not labeled "key")
 - Note DD Form 254 requirements explicitly
 - Flag clauses creating unreimbursable costs
@@ -852,9 +957,19 @@ Analyze **Contract Data Requirements List (CDRL)** and **Data Item Descriptions 
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "deliverables": [ ... ],
-  "data_rights": { ... },
-  "reporting_calendar": [ ... ]
+  "deliverables": [
+    {
+      "cdrl_number": "A001",
+      "did_number": "DI-MGMT-80227",
+      "title": "Monthly Status Report",
+      "frequency": "MONTHLY",
+      "copies": {"hard": 0, "electronic": 1},
+      "distribution": ["COR", "CO"],
+      "source_quote": "Exact text defining A001"
+    }
+  ],
+  "submission_instructions": "Submit via email to COR",
+  "approval_process": "Government approval required for A001"
 }
 ```
 ```
@@ -965,11 +1080,18 @@ Analyze **Section K (Representations, Certifications, and Other Statements of Of
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "sam_reps_certs": { ... },
-  "set_aside_eligibility": { ... },
-  "required_certifications": [ ... ],
-  "naics_compliance": { ... },
-  "bid_decision": { ... }
+  "representations": [
+    {
+      "title": "Small Business Concern",
+      "requirement": "Represent as small business under NAICS 541511",
+      "card_certification_required": true,
+      "annual_representation": true,
+      "source_quote": "Exact text defining this rep"
+    }
+  ],
+  "sam_registration_required": true,
+  "small_business_certifications": ["WOSB", "SDVOSB"],
+  "compliance_notes": ["Must update SAM before award"]
 }
 ```
 ```
@@ -1074,10 +1196,17 @@ Analyze **Section I (Contract Clauses)** and produce:
 ## STRUCTURED DATA [JSON]
 ```json
 {
-  "clauses": [ ... ],
-  "cybersecurity_requirements": { ... },
-  "flow_down_requirements": { ... },
-  "compliance_costs": { ... }
+  "clauses": [
+    {
+      "clause_number": "52.212-4",
+      "title": "Contract Terms and Conditions",
+      "clause_type": "mandatory",
+      "compliance_requirement": "Standard commercial terms",
+      "source_quote": "Exact text"
+    }
+  ],
+  "compliance_summary": "Standard FAR Part 12 clauses apply.",
+  "high_risk_clauses": ["52.204-25 (Prohibition on Chinese Telecom)"]
 }
 ```
 ```
@@ -2367,4 +2496,269 @@ RETURN:
     "recommended_processing_order": ["opp_id_1", "opp_id_2"]
   }}
 }}
+"""
+
+PROPOSAL_DECOMPOSITION_PROMPT = """
+You are a Shipley-certified Proposal Manager and Solution Architect.
+Your task is to decompose the provided RFP context (Section L, Section M, SOW) into a structured proposal outline.
+
+## INPUT CONTEXT
+{context}
+
+## OUTPUT INSTRUCTIONS
+Generate a JSON object representing the proposal structure.
+This structure must align with the `ProposalVolume` and `Block` database models.
+
+### JSON Structure:
+```json
+{{
+  "volumes": [
+    {{
+      "title": "Volume I: Technical",
+      "order": 1,
+      "blocks": [
+        {{
+          "title": "1.0 Executive Summary",
+          "content_guidelines": "Summarize user understanding and solution benefits...",
+          "order": 1
+        }},
+        ...
+      ]
+    }},
+    ...
+  ]
+}}
+```
+
+### Critical Rules:
+1. **Compliance First**: Ensure every "Shall" requirement in Section L has a corresponding section.
+2. **Evaluation Focused**: Align sections with Section M evaluation factors.
+3. **Structured**: Use standard numbering (1.0, 1.1) unless instructed otherwise.
+4. **Comprehensive**: Include Volumes for Technical, Management, Past Performance, and Price (unless combined).
+"""
+
+CONTENT_REVIEW_PROMPT = """
+You are a senior proposal reviewer Evaluator (color team reviewer) for federal proposals.
+Your task is to review the provided proposal content against the solicitation requirements and best practices.
+
+## INPUT REQUIREMENTS
+{requirements}
+
+## PROPOSAL CONTENT TO REVIEW
+{content}
+
+## REVIEW INSTRUCTIONS
+Analyze the content and provide a JSON review object.
+
+### JSON Structure:
+```json
+{{
+  "score": <0-100 integer>,
+  "strengths": [
+    "Clear mapping to requirement X",
+    "Strong use of win themes"
+  ],
+  "weaknesses": [
+    "Passive voice usage",
+    "Missing substantiation for claim Y"
+  ],
+  "compliance_check": {{
+    "compliant": <boolean>,
+    "missing_items": ["Requirement Z"]
+  }},
+  "suggestions": [
+     "Rewrite paragraph 2 to focus on benefits",
+     "Add proof point for experience"
+  ]
+}}
+```
+
+### Scoring Rubric:
+- **90-100**: Exceptional. Fully compliant, compelling, substantiated.
+- **80-89**: Very Good. Compliant, clear, minor improvements needed.
+- **70-79**: Acceptable. Compliant but weak arguments or passive voice.
+- **60-69**: Marginal. Potential compliance gaps, weak writing.
+- **<60**: Unacceptable. Non-compliant or poor quality.
+"""
+
+GOVCON_PROFILE = """Space Metrics Inc. is a small disadvantaged business that provides a wide range of services to the federal government. We have a team of experts in the fields of Program Management, Integrated Master Scheduling, business management, Earned Value Management, and Acquisition Support. Space Metrics Inc. will grow in the fields of Information technology, Systems Engineering, and Program structure. We are committed to providing high-quality services. Tools include MS Project, and Primavera, utilizing practices like Agile, Scrum, and Waterfall, and other EVM tools, and Program management practices. Our team has experience working with a variety of federal agencies, including the Department of Defense, the Department of Homeland Security; USCG, and the Department of Transportation's FAA. We are committed to providing high-quality services to our clients and helping them achieve their mission objectives. Our team is dedicated to excellence and innovation, and we are always looking for new opportunities to expand our business and serve our clients."""
+
+QUICK_SCAN_SLIDEOUT_PROMPT = """You are a federal Government ContractingGPT, An opportunity evaluation expert. 
+
+**Context:**
+We are Space Metrics Inc. (Account Profile):
+{govcon_profile}
+
+**Opportunity Data:**
+{opportunity_data}
+
+**Task:**
+Provide a comprehensive, well-structured Summary of this opportunity for bid decision purposes.
+Extract ALL available information from the provided data. Be thorough and detailed.
+
+**REQUIRED HTML STRUCTURE:**
+Use the following HTML structure. Fill in the [PLACEHOLDER] values with extracted data:
+
+```
+<div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.8; color: #333;">
+  
+  <div style="background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+    <h1 style="margin: 0; font-size: 24px;">[PROPOSAL TITLE / OPPORTUNITY TITLE]</h1>
+    <p style="margin: 8px 0 0 0; opacity: 0.9;">[AGENCY / DEPARTMENT]</p>
+    <p style="margin: 4px 0 0 0; opacity: 0.8; font-size: 14px;">Solicitation No: [SOLICITATION NUMBER]</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #dc2626;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Due Date</div>
+      <div style="font-size: 16px; font-weight: 600; color: #dc2626;">[DUE DATE WITH TIME]</div>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #16a34a;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Estimated Value</div>
+      <div style="font-size: 16px; font-weight: 600; color: #16a34a;">[VALUE OR "TBD"]</div>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #9333ea;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Set-Aside</div>
+      <div style="font-size: 16px; font-weight: 600; color: #9333ea;">[SET-ASIDE TYPE]</div>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #0891b2;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Contract Type</div>
+      <div style="font-size: 16px; font-weight: 600; color: #0891b2;">[CONTRACT TYPE e.g., "FFP", "T&M", "CPFF"]</div>
+    </div>
+  </div>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📋 Scope of Work</h2>
+    <p style="margin-bottom: 12px;">[FULL SOW DESCRIPTION - BE VERBOSE AND DETAILED]</p>
+    <h3 style="font-size: 14px; color: #475569; margin: 16px 0 8px 0;">Tasks:</h3>
+    <ul style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 6px;">[TASK 1 - e.g., Basic Services]</li>
+      <li style="margin-bottom: 6px;">[TASK 2 - e.g., Business Execution Support]</li>
+      <li style="margin-bottom: 6px;">[TASK 3 - e.g., Strategic Communication Support]</li>
+      <!-- Add ALL tasks from the SOW -->
+    </ul>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📊 Contract Details</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; width: 35%;">NAICS Code</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[NAICS CODE - DESCRIPTION]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">PSC Code</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[PSC CODE]</td>
+      </tr>
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Period of Performance</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[BASE YEAR + OPTION YEARS, e.g., "1 Base + 4 Option Years"]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Place of Performance</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[FULL ADDRESS OR LOCATIONS]</td>
+      </tr>
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Incumbent(s)</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[INCUMBENT NAMES/COUNT OR "Unknown"]</td>
+      </tr>
+    </table>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">👥 Key Personnel Requirements</h2>
+    <ul style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 6px;">[KEY POSITION 1 - e.g., Program Manager]</li>
+      <li style="margin-bottom: 6px;">[KEY POSITION 2 - e.g., Alternate Program Manager]</li>
+      <!-- Add all key personnel requirements -->
+    </ul>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">🔒 Security & Clearance</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; width: 35%;">Facility Clearance</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[FACILITY CLEARANCE LEVEL OR "N/A"]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Personnel Clearance</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[PERSONNEL CLEARANCE REQUIREMENTS OR "N/A"]</td>
+      </tr>
+    </table>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📝 Past Performance Requirements</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; width: 35%;">References Required</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[MINIMUM - MAXIMUM, e.g., "3-5 references required"]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Recency Requirement</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[RECENCY, e.g., "Within last 3 years"]</td>
+      </tr>
+    </table>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📤 Submission Instructions</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; width: 35%;">Submission Method</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[METHOD - e.g., "Electronic (Email)"]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Submission Email/Portal</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[EMAIL ADDRESSES OR PORTAL URL]</td>
+      </tr>
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Primary POC</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[NAME - EMAIL - PHONE]</td>
+      </tr>
+    </table>
+    <h3 style="font-size: 14px; color: #475569; margin: 16px 0 8px 0;">Volume Structure & Page Limits:</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <tr style="background: #1e3a5f; color: white;">
+        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">Volume</th>
+        <th style="padding: 8px; border: 1px solid #e2e8f0; text-align: left;">Page Limit</th>
+      </tr>
+      <tr><td style="padding: 8px; border: 1px solid #e2e8f0;">[VOLUME 1 - e.g., Part I - Summary/Administrative]</td><td style="padding: 8px; border: 1px solid #e2e8f0;">[LIMIT]</td></tr>
+      <tr style="background: #f8fafc;"><td style="padding: 8px; border: 1px solid #e2e8f0;">[VOLUME 2 - e.g., Part II - Technical]</td><td style="padding: 8px; border: 1px solid #e2e8f0;">[LIMIT]</td></tr>
+      <tr><td style="padding: 8px; border: 1px solid #e2e8f0;">[VOLUME 3 - e.g., Part III - Past Performance]</td><td style="padding: 8px; border: 1px solid #e2e8f0;">[LIMIT]</td></tr>
+      <tr style="background: #f8fafc;"><td style="padding: 8px; border: 1px solid #e2e8f0;">[VOLUME 4 - e.g., Part IV - Price]</td><td style="padding: 8px; border: 1px solid #e2e8f0;">[LIMIT]</td></tr>
+    </table>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">⚖️ Evaluation Criteria</h2>
+    <ul style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 8px;"><strong>Factor I - Technical:</strong> [DESCRIPTION OF TECHNICAL FACTORS]</li>
+      <li style="margin-bottom: 8px;"><strong>Factor II - Past Performance:</strong> [DESCRIPTION]</li>
+      <li style="margin-bottom: 8px;"><strong>Factor III - Price:</strong> [DESCRIPTION]</li>
+    </ul>
+    <p style="margin-top: 12px; font-style: italic; color: #64748b;">[EVALUATION METHODOLOGY - e.g., "Best Value Trade-off" or "LPTA"]</p>
+  </section>
+
+  <section style="background: #fef3c7; padding: 20px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #92400e; margin: 0 0 12px 0;">⚡ Key Takeaways for Bid Decision</h2>
+    <ul style="margin: 0; padding-left: 20px; color: #78350f;">
+      <li style="margin-bottom: 8px;">[TAKEAWAY 1 - Alignment with our capabilities]</li>
+      <li style="margin-bottom: 8px;">[TAKEAWAY 2 - Partnership requirements]</li>
+      <li style="margin-bottom: 8px;">[TAKEAWAY 3 - Timeline/urgency]</li>
+      <li style="margin-bottom: 8px;">[TAKEAWAY 4 - Competitive considerations]</li>
+    </ul>
+  </section>
+
+</div>
+```
+
+**CRITICAL INSTRUCTIONS:**
+1. Extract and fill in ALL [PLACEHOLDER] values with actual data
+2. If data is not available, use "Not Specified" or "TBD"
+3. Be VERBOSE - extract ALL tasks, ALL key personnel, ALL volumes/page limits
+4. Include the FULL solicitation number, FULL addresses, FULL email addresses
+5. DO NOT wrap output in markdown code blocks
+6. Return ONLY the raw HTML string
 """

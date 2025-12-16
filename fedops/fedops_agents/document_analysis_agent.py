@@ -5,13 +5,13 @@ from fedops_agents.base_agent import BaseAgent
 from fedops_core.db.models import Opportunity, StoredFile, OpportunityPipeline
 from fedops_core.services.ai_service import AIService
 from fedops_core.services.document_extractor import DocumentExtractor
-from fedops_core.prompts import SOLICITATION_SUMMARY_PROMPT, determine_document_type, DocumentType
+from fedops_core.prompts import SOLICITATION_SUMMARY_PROMPT, determine_document_type, DocumentType, PROPOSAL_DECOMPOSITION_PROMPT
 
 class DocumentAnalysisAgent(BaseAgent):
     def __init__(self, db: AsyncSession):
         super().__init__("DocumentAnalysisAgent", db)
 
-    async def execute(self, opportunity_id: int, **kwargs) -> Dict[str, Any]:
+    async def execute(self, opportunity_id: int, quick_scan: bool = False, **kwargs) -> Dict[str, Any]:
         await self.log_activity(opportunity_id, "START_DOC_ANALYSIS", "IN_PROGRESS")
         
         try:
@@ -45,7 +45,11 @@ class DocumentAnalysisAgent(BaseAgent):
                 
                 # Extract structured data from all documents
                 doc_extractor = DocumentExtractor()
-                extracted_data = await doc_extractor.extract_all_documents(file_list)
+                extracted_data = await doc_extractor.extract_all_documents(
+                    file_list, 
+                    opportunity_id=opportunity_id,
+                    quick_scan=quick_scan
+                )
                 
                 await self.log_activity(opportunity_id, "EXTRACTION_COMPLETE", "SUCCESS", {
                     "sections_extracted": [k for k, v in extracted_data.items() if v and k != 'source_documents'],
@@ -187,6 +191,42 @@ class DocumentAnalysisAgent(BaseAgent):
                 "requirements_count": 0,
                 "extracted_data": None
             }
+
+    async def decompose_rfp(self, opportunity_id: int, extracted_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Decomposes the RFP into a structured proposal outline (Volumes & Blocks).
+        """
+        await self.log_activity(opportunity_id, "START_DECOMPOSITION", "IN_PROGRESS")
+        
+        try:
+            # Prepare context for AI
+            context_parts = []
+            if extracted_data:
+                if extracted_data.get('section_l'):
+                    context_parts.append(f"## Section L (Instructions):\n{str(extracted_data['section_l'])[:10000]}")
+                if extracted_data.get('section_m'):
+                    context_parts.append(f"## Section M (Evaluation):\n{str(extracted_data['section_m'])[:10000]}")
+                if extracted_data.get('sow'):
+                    context_parts.append(f"## Statement of Work:\n{str(extracted_data['sow'])[:5000]}")
+            
+            rfp_context = "\n\n".join(context_parts) if context_parts else "No structured data available."
+            
+            # Generate decomposition
+            ai_service = AIService()
+            prompt = PROPOSAL_DECOMPOSITION_PROMPT.format(context=rfp_context)
+            
+            structure = await ai_service.analyze_opportunity(prompt) # analyze_opportunity expects JSON return
+            
+            await self.log_activity(opportunity_id, "DECOMPOSITION_COMPLETE", "SUCCESS", {"volumes": len(structure.get("volumes", []))})
+            
+            return {
+                "status": "success",
+                "structure": structure
+            }
+            
+        except Exception as e:
+            await self.log_activity(opportunity_id, "DECOMPOSITION_ERROR", "FAILURE", {"error": str(e)})
+            return {"status": "error", "message": str(e)}
 
     def _locate_quotes(self, data: Any, file_contents: Dict[str, str]) -> Any:
         """

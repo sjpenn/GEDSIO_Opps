@@ -11,7 +11,7 @@ from fedops_core.db.engine import get_db
 from fedops_core.services.proposal_content_service import ProposalContentService
 from fedops_core.services.file_storage_service import FileStorageService
 
-router = APIRouter(prefix="/proposal-content", tags=["proposal-content"])
+router = APIRouter(tags=["proposal-content"])
 
 
 # Pydantic models

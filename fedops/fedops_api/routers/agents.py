@@ -6,20 +6,29 @@ from typing import Dict, Any
 from fedops_core.db.engine import get_db
 from fedops_agents.orchestrator import OrchestratorAgent
 from fedops_core.db.models import OpportunityScore, AgentActivityLog, Opportunity
+from fedops_core.services.extraction_progress import extraction_progress
 
 router = APIRouter(
     tags=["agents"],
     responses={404: {"description": "Not found"}},
 )
 
+@router.get("/opportunities/{opportunity_id}/analysis/status")
+async def get_analysis_status(opportunity_id: int):
+    """Get real-time status of analysis"""
+    status = extraction_progress.get(opportunity_id)
+    if not status:
+        return {"status": "idle", "percent": 0, "message": "Not running"}
+    return status
+
 @router.post("/opportunities/{opportunity_id}/analyze")
-async def trigger_analysis(opportunity_id: int, db: AsyncSession = Depends(get_db)):
+async def trigger_analysis(opportunity_id: int, mode: str = "full", db: AsyncSession = Depends(get_db)):
     """
     Triggers the full agentic analysis workflow for a given opportunity.
     """
     orchestrator = OrchestratorAgent(db)
     try:
-        result = await orchestrator.execute(opportunity_id)
+        result = await orchestrator.execute(opportunity_id, mode=mode)
         return result
     except Exception as e:
         import traceback

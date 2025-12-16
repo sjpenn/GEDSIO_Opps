@@ -1,5 +1,6 @@
 import google.generativeai as genai
 from openai import AsyncOpenAI
+import httpx
 from fedops_core.settings import settings
 from fedops_core.prompts import DocumentType, get_prompt_for_doc_type
 import json
@@ -9,25 +10,48 @@ import logging
 from typing import Optional, Dict, Any, Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
+# Try importing mlx_lm
+try:
+    from mlx_lm import load, generate
+    MLX_AVAILABLE = True
+except ImportError:
+    MLX_AVAILABLE = False
+
 T = TypeVar('T', bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
 class AIService:
-    def __init__(self):
-        self.provider = settings.LLM_PROVIDER
-        self.model = settings.LLM_MODEL
-        self.temperature = settings.LLM_TEMPERATURE
-        self.max_tokens = settings.LLM_MAX_TOKENS
-        self.max_retries = settings.LLM_MAX_RETRIES
-        self.retry_delay = settings.LLM_RETRY_DELAY
-        self.fallback_model = settings.LLM_FALLBACK_MODEL
+    _instance = None
+    _mlx_model = None
+    _mlx_tokenizer = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(AIService, cls).__new__(cls)
+            # Initialize with default settings
+            cls._instance.provider = settings.LLM_PROVIDER
+            cls._instance.model = settings.LLM_MODEL
+            cls._instance.temperature = settings.LLM_TEMPERATURE
+            cls._instance.max_tokens = settings.LLM_MAX_TOKENS
+            cls._instance.max_retries = settings.LLM_MAX_RETRIES
+            cls._instance.retry_delay = settings.LLM_RETRY_DELAY
+            cls._instance.fallback_model = settings.LLM_FALLBACK_MODEL
+            
+            # Configure Gemini if needed
+            if settings.GOOGLE_API_KEY:
+                genai.configure(api_key=settings.GOOGLE_API_KEY)
+            
+            logger.info(f"AIService initialized with provider={cls._instance.provider}, model={cls._instance.model}")
+        return cls._instance
+
+    def set_provider(self, provider: str, model: Optional[str] = None):
+        """Update the LLM provider at runtime."""
+        self.provider = provider
+        if model:
+            self.model = model
         
-        # Configure Gemini
-        if settings.GOOGLE_API_KEY:
-            genai.configure(api_key=settings.GOOGLE_API_KEY)
-        
-        logger.info(f"AIService initialized with provider={self.provider}, model={self.model}")
+        logger.info(f"Switched AI Provider to: {self.provider} ({self.model})")
 
     async def generate_content(self, prompt: str) -> str:
         """
@@ -37,8 +61,10 @@ class AIService:
             return await self._call_gemini(prompt)
         elif self.provider == "openai" or self.provider == "openrouter":
             return await self._call_openai_compatible(prompt)
+        elif self.provider == "local":
+            return await self._call_mlx_lm(prompt)
         else:
-            raise ValueError("Invalid LLM Provider Configuration")
+            raise ValueError(f"Invalid LLM Provider Configuration: {self.provider}")
 
     async def generate_shipley_summary(self, content: str, doc_type: DocumentType = DocumentType.RFP) -> str:
         prompt = get_prompt_for_doc_type(doc_type, content)
@@ -47,6 +73,8 @@ class AIService:
             return await self._call_gemini(prompt)
         elif self.provider == "openai" or self.provider == "openrouter":
             return await self._call_openai_compatible(prompt)
+        elif self.provider == "local":
+            return await self._call_mlx_lm(prompt)
         else:
             return "Invalid LLM Provider Configuration"
 
@@ -122,6 +150,33 @@ class AIService:
             
             raise
 
+    async def _call_mlx_lm(self, prompt: str) -> str:
+        """Call local MLX model via external server."""
+        # URL for the local server running on host machine
+        # From Docker container, host is accessible via host.docker.internal
+        url = "http://host.docker.internal:8001/v1/chat/completions"
+        
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    url,
+                    json={
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": self.temperature,
+                        "max_tokens": self.max_tokens
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result["content"]
+
+        except httpx.ConnectError:
+             logger.error("Failed to connect to Local LLM Server at http://host.docker.internal:8001")
+             return "Error: Local LLM Server is not running. Please run 'python local_llm_server.py' on your host machine."
+        except Exception as e:
+            logger.error(f"Local LLM Server error: {str(e)}")
+            raise
+
     def _extract_json_from_text(self, text: str) -> Optional[Dict[str, Any]]:
         """
         Extract JSON from text using multiple strategies.
@@ -176,12 +231,7 @@ class AIService:
         """
         try:
             # Get response from AI
-            if self.provider == "gemini":
-                response_text = await self._call_gemini(prompt)
-            elif self.provider == "openai" or self.provider == "openrouter":
-                response_text = await self._call_openai_compatible(prompt)
-            else:
-                raise ValueError("Invalid LLM Provider Configuration")
+            response_text = await self.generate_content(prompt)
             
             # Validate response
             if not response_text:
@@ -224,7 +274,7 @@ class AIService:
             Validated Pydantic model instance or None if validation fails
         """
         try:
-            # For OpenAI, we can use native structured output
+            # For OpenAI, we can use native structured output if enabled and provider is OpenAI
             if use_structured_output and self.provider == "openai":
                 return await self._call_openai_with_schema(prompt, schema)
             

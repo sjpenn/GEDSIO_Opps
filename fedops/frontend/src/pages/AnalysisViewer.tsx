@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft,
   TrendingUp,
@@ -23,7 +24,6 @@ import {
   Lightbulb,
   AlertCircle,
   Shield,
-  Calendar,
   Briefcase,
   History,
   ExternalLink,
@@ -36,6 +36,7 @@ import ShipleyPhaseIndicator from '@/components/ShipleyPhaseIndicator';
 import PursuitDecision from '@/components/PursuitDecision';
 import DocumentViewer from '@/components/DocumentViewer';
 import PastPerformanceMatcher from '@/components/PastPerformanceMatcher';
+import QuickScanSlideout from '@/components/QuickScanSlideout';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -251,11 +252,56 @@ export default function AnalysisViewer() {
   const [selectedDoc, setSelectedDoc] = useState<SourceDocument | null>(null);
   const [highlightLocation, setHighlightLocation] = useState<{ start: number, end: number } | undefined>(undefined);
 
+  // Quick Scan State
+  const [showQuickScan, setShowQuickScan] = useState(false);
+  const [quickScanHtml, setQuickScanHtml] = useState<string>('');
+
   const handleLocationClick = (doc: SourceDocument, loc: SourceLocation) => {
     setSelectedDoc(doc);
     setHighlightLocation({ start: loc.start, end: loc.end });
     setViewerOpen(true);
   };
+
+  // Analysis Progress State
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    status: string;
+    percent: number;
+    message: string;
+    current_file?: string;
+  } | null>(null);
+
+  // Poll for analysis status
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+
+    // Check status if we are reanalyzing manually OR if we want to check on load
+    // We poll if reanalyzing is true, or if we suspect a background job
+    if (reanalyzing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analysis/status`);
+          if (res.ok) {
+            const status = await res.json();
+            if (status.status === 'running') {
+              setAnalysisProgress(status);
+            } else if (status.status === 'completed') {
+              setAnalysisProgress({ ...status, percent: 100, message: "Analysis complete!" });
+              // Don't clear immediately, let the success handler do it
+            } else if (status.status === 'failed') {
+              setAnalysisProgress(status);
+            }
+          }
+        } catch (e) {
+          console.error("Polling error", e);
+        }
+      }, 1000);
+    } else {
+      // Reset if not reanalyzing 
+      if (!analysisMessage) setAnalysisProgress(null);
+    }
+
+    return () => clearInterval(interval);
+  }, [reanalyzing, opportunityId]);
 
   const canGenerateProposal = !!data?.score;
   const showPursuitButton = !!proposalData;
@@ -289,8 +335,17 @@ export default function AnalysisViewer() {
       }
       const analysisData = await response.json();
       setData(analysisData);
+
+      // Load existing Quick Scan HTML if available
+      const existingQuickScanHtml = analysisData?.score?.details?.executive_overview?.quick_scan_html;
+      if (existingQuickScanHtml && typeof existingQuickScanHtml === 'string') {
+        setQuickScanHtml(existingQuickScanHtml);
+      }
+
+      return analysisData;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -380,26 +435,38 @@ export default function AnalysisViewer() {
     }
   };
 
-  const handleRerunAnalysis = async () => {
+  const handleRerunAnalysis = async (mode: 'full' | 'quick' = 'full') => {
     if (!opportunityId) return;
     setReanalyzing(true);
+
+    const isQuick = mode === 'quick';
+    const messageText = isQuick
+      ? 'Running quick scan...\n\nAnalyzing SOW and Evaluation Criteria for preliminary assessment...'
+      : 'Running comprehensive analysis...\n\nThis may take 30-60 seconds as AI agents analyze:\n• Solicitation requirements\n• Financial viability\n• Strategic alignment\n• Risk assessment\n• Internal capacity\n• Security requirements';
+
     setAnalysisMessage({
       type: 'info',
-      text: 'Running comprehensive analysis...\n\nThis may take 30-60 seconds as AI agents analyze:\n• Solicitation requirements\n• Financial viability\n• Strategic alignment\n• Risk assessment\n• Internal capacity\n• Security requirements'
+      text: messageText
     });
 
     try {
-      const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze`, {
+      const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze?mode=${mode}`, {
         method: 'POST'
       });
       if (res.ok) {
         setAnalysisMessage({
           type: 'success',
-          text: 'Analysis completed successfully! Refreshing data...'
+          text: `Analysis (${isQuick ? 'Quick' : 'Full'}) completed successfully! Refreshing data...`
         });
         // Refresh all analysis data
-        await fetchAnalysisData();
+        const newData = await fetchAnalysisData();
         await fetchEligibility();
+
+        if (isQuick && newData?.score?.details?.executive_overview?.quick_scan_html) {
+          setQuickScanHtml(newData.score.details.executive_overview.quick_scan_html);
+          setShowQuickScan(true);
+        }
+
         setTimeout(() => setAnalysisMessage(null), 3000);
       } else {
         const errorText = await res.text();
@@ -986,24 +1053,39 @@ export default function AnalysisViewer() {
             <div className="flex gap-4">
               {/* Stack 1: Exports */}
               <div className="flex flex-col gap-2">
-                <Button
-                  onClick={handleExportSummary}
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs justify-start w-36"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export Summary
-                </Button>
-                <Button
-                  onClick={handleExportFull}
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs justify-start w-36"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Export Full
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRerunAnalysis('quick')}
+                    disabled={reanalyzing}
+                    className="gap-2"
+                  >
+                    <div className="h-4 w-4 relative">
+                      <Activity className="h-4 w-4" />
+                      <div className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+                    </div>
+                    Quick Scan
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRerunAnalysis('full')}
+                    disabled={reanalyzing}
+                  >
+                    <RefreshCw className={cn("h-4 w-4 mr-2", reanalyzing && "animate-spin")} />
+                    Re-Run Analysis
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleExportSummary()}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Summary
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleExportFull()}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Full Report
+                  </Button>
+                </div>
               </div>
 
               {/* Stack 2: Proposals */}
@@ -1057,7 +1139,7 @@ export default function AnalysisViewer() {
             )}
 
             <Button
-              onClick={handleRerunAnalysis}
+              onClick={() => handleRerunAnalysis('full')}
               disabled={reanalyzing}
               variant="outline"
               size="sm"
@@ -1115,20 +1197,42 @@ export default function AnalysisViewer() {
       )}
 
       {/* Analysis Progress Message */}
-      {analysisMessage && (
+      {(analysisMessage || analysisProgress) && (
         <div className="max-w-7xl mx-auto px-6 pt-4">
           <Card className={cn(
             "border-l-4",
-            analysisMessage.type === 'success' && "border-l-green-500 bg-green-50 dark:bg-green-950",
-            analysisMessage.type === 'error' && "border-l-red-500 bg-red-50 dark:bg-red-950",
-            analysisMessage.type === 'info' && "border-l-blue-500 bg-blue-50 dark:bg-blue-950"
+            analysisMessage?.type === 'success' ? "border-l-green-500 bg-green-50 dark:bg-green-950" :
+              analysisMessage?.type === 'error' ? "border-l-red-500 bg-red-50 dark:bg-red-950" :
+                "border-l-blue-500 bg-blue-50 dark:bg-blue-950"
           )}>
             <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                {analysisMessage.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />}
-                {analysisMessage.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />}
-                {analysisMessage.type === 'info' && <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />}
-                <p className="text-sm whitespace-pre-line">{analysisMessage.text}</p>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                  {analysisMessage?.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />}
+                  {analysisMessage?.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />}
+                  {analysisMessage?.type === 'info' && <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />}
+
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold whitespace-pre-line">
+                      {analysisProgress?.message || analysisMessage?.text}
+                    </p>
+                    {analysisProgress?.current_file && (
+                      <p className="text-xs text-muted-foreground mt-1 font-mono bg-muted/50 px-2 py-1 rounded inline-block">
+                        Analying: {analysisProgress.current_file}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {analysisProgress && (
+                  <div className="w-full space-y-1.5 pl-8">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progress</span>
+                      <span>{analysisProgress.percent}%</span>
+                    </div>
+                    <Progress value={analysisProgress.percent} className="h-2" />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1204,6 +1308,29 @@ export default function AnalysisViewer() {
           highlightLocation={highlightLocation}
         />
       )}
+
+      {/* Floating Quick Scan Tab - appears when quick scan data exists */}
+      {quickScanHtml && !showQuickScan && (
+        <button
+          onClick={() => setShowQuickScan(true)}
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-50 bg-primary hover:bg-primary/90 text-primary-foreground px-2 py-4 rounded-r-lg shadow-lg transition-all hover:px-3 group"
+          title="Open Quick Scan Summary"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <FileText className="h-5 w-5" />
+            <span className="text-xs font-medium writing-mode-vertical [writing-mode:vertical-rl] rotate-180">
+              Quick Scan
+            </span>
+          </div>
+        </button>
+      )}
+
+      {/* Quick Scan Slideout */}
+      <QuickScanSlideout
+        isOpen={showQuickScan}
+        onClose={() => setShowQuickScan(false)}
+        htmlContent={quickScanHtml}
+      />
     </div>
   );
 }

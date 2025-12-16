@@ -46,9 +46,9 @@ from fedops_core.prompts import (
     CDRL_INSTRUCTIONS
 )
 from fedops_core.services.section_shredder import SectionShredder
+from fedops_core.services.extraction_progress import extraction_progress
 
 logger = logging.getLogger(__name__)
-
 
 
 class DocumentExtractor:
@@ -79,30 +79,21 @@ class DocumentExtractor:
             'K': DocumentType.SECTION_K,
         }
 
-    
     async def extract_all_documents(
         self, 
-        files: List[Dict[str, str]]
+        files: List[Dict[str, str]],
+        opportunity_id: Optional[int] = None,
+        quick_scan: bool = False
     ) -> Dict[str, Any]:
         """
         Extract structured data from all documents in an opportunity.
         
         Args:
             files: List of dicts with 'file_path' and 'filename' keys
+            opportunity_id: Optional ID for progress tracking
             
         Returns:
-            Dictionary organized by document type:
-            {
-                "section_l": {...},
-                "section_m": {...},
-                "section_h": {...},
-                "sow": {...},
-                "section_b": {...},
-                "section_i": {...},
-                "section_k": {...},
-                "cdrl": {...},
-                "source_documents": [...]
-            }
+            Dictionary organized by document type
         """
         logger.info(f"Starting extraction from {len(files)} documents")
         
@@ -118,9 +109,22 @@ class DocumentExtractor:
             "source_documents": []
         }
         
-        for file_info in files:
+        total_files = len(files)
+        
+        for idx, file_info in enumerate(files):
             file_path = file_info.get('file_path')
             filename = file_info.get('filename', Path(file_path).name)
+            
+            # Update progress
+            if opportunity_id:
+                # Map 0-100% of file processing to 10-60% of overall workflow
+                files_percent = int((idx / total_files) * 50) + 10
+                extraction_progress.update(
+                    opportunity_id, 
+                    filename=filename, 
+                    message=f"Step 2/5: Analyzing {filename} ({idx+1}/{total_files})...", 
+                    percent=files_percent
+                )
             
             try:
                 # Read file content
@@ -132,6 +136,11 @@ class DocumentExtractor:
                 # Determine document type (pass more content for better detection)
                 doc_type = determine_document_type(filename, content[:5000])
                 logger.info(f"Detected {filename} as {doc_type.value}")
+                
+                # QUICK SCAN FILTER
+                if quick_scan and doc_type not in [DocumentType.SOW, DocumentType.SECTION_M]:
+                    logger.info(f"Quick Scan: Skipping {doc_type.value} ({filename})")
+                    continue
                 
                 # Handle combined RFPs by shredding into sections
                 if doc_type in [DocumentType.RFP_COMBINED, DocumentType.RFP]:

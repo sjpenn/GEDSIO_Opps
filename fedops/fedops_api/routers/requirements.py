@@ -23,7 +23,6 @@ from fedops_core.db.models import (
 from fedops_core.services.requirement_extraction_service import RequirementExtractionService
 
 router = APIRouter(
-    prefix="/requirements",
     tags=["requirements"]
 )
 

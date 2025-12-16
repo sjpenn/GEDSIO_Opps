@@ -1,55 +1,52 @@
 from fastapi import FastAPI
 from fedops_core.settings import settings
-from fedops_api.routers import opportunities, ingest, files, company, entities, agents, proposals, requirements, gates, competitive_intel, capture, proposal_content, reviews, submission, manual_upload, teams, agency_intel, co_intel, resumes, past_performance
+from fedops_api.routers import (
+    opportunities, ingest, files, company, entities, agents, proposals, 
+    requirements, gates, competitive_intel, capture, proposal_content, 
+    reviews, submission, manual_upload, teams, agency_intel, co_intel, 
+    resumes, past_performance, workflow
+)
 from fedops_core.routers import pipeline
 from fedops_core.db.engine import engine, Base
 from starlette.middleware.cors import CORSMiddleware
 
 app = FastAPI(
-    title="FedOps API",
-    description="API for Federal Opportunity Operations",
-    version="1.0.0",
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# CORS Middleware
+# Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
-import os
-
-# Mount static files
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-static_dir = os.path.join(base_dir, "static")
-os.makedirs(static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-# Include Routers
-# Include Routers
 app.include_router(opportunities.router, prefix="/api/v1/opportunities", tags=["opportunities"])
-app.include_router(entities.router, prefix="/api/v1/entities", tags=["entities"])
+app.include_router(ingest.router, prefix="/api/v1/ingest", tags=["ingest"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 app.include_router(company.router, prefix="/api/v1/company", tags=["company"])
+app.include_router(entities.router, prefix="/api/v1/entities", tags=["entities"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
-app.include_router(proposals.router, prefix="/api/v1") # Proposals router already has /proposals prefix
-app.include_router(requirements.router, prefix="/api/v1") # Requirements router already has /requirements prefix
-app.include_router(gates.router, prefix="/api/v1") # Gates router already has /gates prefix
-app.include_router(competitive_intel.router, prefix="/api/v1") # Competitive intel router already has /competitive_intel prefix
-app.include_router(agency_intel.router, prefix="/api/v1")
-app.include_router(co_intel.router, prefix="/api/v1")
-app.include_router(capture.router, prefix="/api/v1")
-app.include_router(proposal_content.router, prefix="/api/v1")
-app.include_router(reviews.router, prefix="/api/v1")
-app.include_router(submission.router, prefix="/api/v1")
-app.include_router(manual_upload.router, prefix="/api/v1", tags=["manual_upload"])
+app.include_router(proposals.router, prefix="/api/v1/proposals", tags=["proposals"])
+app.include_router(requirements.router, prefix="/api/v1/requirements", tags=["requirements"])
+app.include_router(gates.router, prefix="/api/v1/gates", tags=["gates"])
+app.include_router(competitive_intel.router, prefix="/api/v1/competitive-intel", tags=["competitive_intel"])
+app.include_router(capture.router, prefix="/api/v1/capture", tags=["capture"])
+app.include_router(proposal_content.router, prefix="/api/v1/proposal-content", tags=["proposal_content"])
+app.include_router(reviews.router, prefix="/api/v1/reviews", tags=["reviews"])
+app.include_router(submission.router, prefix="/api/v1/submission", tags=["submission"])
+app.include_router(manual_upload.router, prefix="/api/v1/manual-upload", tags=["manual_upload"])
 app.include_router(teams.router, prefix="/api/v1/teams", tags=["teams"])
-app.include_router(resumes.router, prefix="/api/v1", tags=["resumes"])
-app.include_router(past_performance.router, prefix="/api/v1", tags=["past_performance"])
+app.include_router(agency_intel.router, prefix="/api/v1/agency-intel", tags=["agency-intel"])
+app.include_router(co_intel.router, prefix="/api/v1/co-intel", tags=["co-intel"])
+app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
+app.include_router(past_performance.router, prefix="/api/v1/past-performance", tags=["past_performance"])
+app.include_router(workflow.router, prefix="/api/v1")
+from fedops_api.routers import config
+app.include_router(config.router, prefix="/api/v1")
 app.include_router(pipeline.router)
 
 @app.on_event("startup")

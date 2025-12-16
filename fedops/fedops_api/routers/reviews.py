@@ -5,6 +5,8 @@ from typing import List, Optional, Dict, Any
 
 from fedops_core.db.engine import get_db
 from fedops_core.services.review_service import ReviewService
+from fedops_agents.reviewer_agent import ReviewerAgent
+from fastapi import BackgroundTasks
 
 router = APIRouter(
     prefix="/reviews",
@@ -28,6 +30,11 @@ class ReviewComplete(BaseModel):
 
 class ReviewStart(BaseModel):
     user_id: str
+
+class ReviewRequest(BaseModel):
+    section_id: Optional[str] = None
+    content: Optional[str] = None 
+    context: Optional[str] = None
 
 @router.post("/proposals/{proposal_id}/{review_type}/start")
 async def start_review(
@@ -122,3 +129,26 @@ async def complete_review(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/proposals/{proposal_id}/trigger-ai-review")
+async def trigger_ai_review(
+    proposal_id: int, 
+    request: ReviewRequest, 
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Trigger an AI review for a proposal or specific section.
+    """
+    agent = ReviewerAgent(db)
+    
+    # Execute AI review
+    result = await agent.execute(
+        opportunity_id=0, # We might need to look this up from proposal_id, but execute takes it for logging.
+        proposal_id=proposal_id, 
+        section_id=request.section_id,
+        content=request.content,
+        context=request.context
+    )
+    
+    return result

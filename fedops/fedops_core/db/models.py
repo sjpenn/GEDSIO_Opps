@@ -216,6 +216,17 @@ class OpportunityScore(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class ProposalStage(str, enum.Enum):
+    """AutoGEN AI Workflow Stages"""
+    DISCOVERY = "DISCOVERY"         # Opportunity Qualification
+    ANALYSIS = "ANALYSIS"           # RFP Analysis / Go/No-Go
+    DECOMPOSITION = "DECOMPOSITION" # Structured Outline
+    STRATEGY = "STRATEGY"           # Win Themes / Capture Plan
+    DRAFTING = "DRAFTING"           # Content Generation
+    REVIEW = "REVIEW"               # Collaborative Review
+    APPROVAL = "APPROVAL"           # Final Sign-off
+    SUBMISSION = "SUBMISSION"       # Export & Submit
+
 class Proposal(Base):
     __tablename__ = "proposals"
 
@@ -224,7 +235,11 @@ class Proposal(Base):
     
     version = Column(Integer, default=1)
     
-    # Shipley Workflow Fields
+    # AutoGEN Workflow Fields
+    current_stage = Column(Enum(ProposalStage, name="proposal_stage_enum"), default=ProposalStage.DISCOVERY, index=True)
+    stage_status = Column(String, default="IN_PROGRESS") # IN_PROGRESS, COMPLETED, BLOCKED
+    
+    # Shipley Workflow Fields (Legacy but kept for compatibility)
     shipley_phase = Column(String, default=ShipleyPhase.PHASE_1_LONG_TERM_POSITIONING.value, index=True)
     capture_manager_id = Column(String, nullable=True)  # User assignment
     pmp_data = Column(JSONB, nullable=True)  # Proposal Management Plan

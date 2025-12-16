@@ -14,32 +14,34 @@ import CapturePlanningTab from '@/components/CapturePlanningTab';
 import ProposalEditor from '@/components/ProposalEditor';
 import ReviewsTab from '@/components/ReviewsTab';
 import SubmissionTab from '@/components/SubmissionTab';
+import { WorkflowStepper } from '@/components/WorkflowStepper';
+import type { ProposalStage } from '@/components/WorkflowStepper';
 import {
   ArrowLeft,
+  Clock,
+  Loader2,
+  AlertCircle,
   FileText,
-  CheckSquare,
   FileCode,
   History,
   DollarSign,
   Package,
-  Loader2,
   Save,
-  AlertCircle,
   CheckCircle2,
-  Clock,
-  AlertTriangle,
   Sparkles,
-  Target,
-  ShieldCheck,
-  Send,
   GripVertical,
   Plus,
   Pencil,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// ... (keep interfaces)
+
 const API_URL = import.meta.env.VITE_API_URL || '';
+
+// ... (keep interfaces Requirement, Artifact, Document, Opportunity, Block, Volume, WorkspaceData)
 
 interface Requirement {
   id: number;
@@ -108,6 +110,7 @@ interface WorkspaceData {
     opportunity_id: number;
     version: number;
     volumes: Volume[];
+    current_stage: ProposalStage; // Added
   };
   opportunity: Opportunity | null;
   requirements: Requirement[];
@@ -115,14 +118,15 @@ interface WorkspaceData {
   documents: Document[];
 }
 
-type TabType = 'overview' | 'capture' | 'development' | 'specification' | 'requirements' | 'sow' | 'past-performance' | 'pricing' | 'artifacts' | 'reviews' | 'submission' | 'sources-sought';
-
 export default function ProposalWorkspace() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [workspaceData, setWorkspaceData] = useState<WorkspaceData | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [currentStage, setCurrentStage] = useState<ProposalStage>('DISCOVERY');
+  // Keep activeTab for sub-navigation within stages if needed, or remove. 
+  // For now, we render based on stage.
+
   const [selectedRequirement, setSelectedRequirement] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,13 +144,13 @@ export default function ProposalWorkspace() {
       }
       const pipelineData = await pipelineRes.json();
       const pipelineItem = pipelineData.find((p: any) => p.opportunity.id === parseInt(opportunityId || '0'));
-      
+
       if (!pipelineItem || !pipelineItem.proposal) {
         throw new Error('Proposal not found. Please make a Pursuit Decision first.');
       }
-      
+
       const proposalId = pipelineItem.proposal.id;
-      
+
       // Then get workspace data
       const workspaceRes = await fetch(`${API_URL}/api/v1/requirements/proposals/${proposalId}/workspace`);
       if (!workspaceRes.ok) {
@@ -154,6 +158,16 @@ export default function ProposalWorkspace() {
       }
       const data = await workspaceRes.json();
       setWorkspaceData(data);
+
+      // Fetch workflow status using new endpoint
+      const statusRes = await fetch(`${API_URL}/api/v1/workflow/${proposalId}/status`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.current_stage) {
+          setCurrentStage(statusData.current_stage as ProposalStage);
+        }
+      }
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -161,20 +175,22 @@ export default function ProposalWorkspace() {
     }
   };
 
-  const tabs = [
-    { id: 'overview' as TabType, label: 'Opportunity Overview', icon: AlertCircle },
-    { id: 'capture' as TabType, label: 'Capture Planning', icon: Target },
-    { id: 'development' as TabType, label: 'Proposal Development', icon: FileText },
-    { id: 'specification' as TabType, label: 'Proposal Specification', icon: FileText },
-    { id: 'requirements' as TabType, label: 'Requirements Matrix', icon: CheckSquare },
-    { id: 'sow' as TabType, label: 'SOW/PWS Decomposition', icon: FileCode },
-    { id: 'past-performance' as TabType, label: 'Past Performance', icon: History },
-    { id: 'pricing' as TabType, label: 'Pricing Requirements', icon: DollarSign },
-    { id: 'artifacts' as TabType, label: 'Required Artifacts', icon: Package },
-    { id: 'reviews' as TabType, label: 'Reviews', icon: ShieldCheck },
-    { id: 'submission' as TabType, label: 'Submission', icon: Send },
-    { id: 'sources-sought' as TabType, label: 'Sources Sought', icon: FileText },
-  ];
+  const handleStageChange = async (newStage: ProposalStage) => {
+    if (!workspaceData?.proposal.id) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/workflow/${workspaceData.proposal.id}/transition/${newStage}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setCurrentStage(newStage);
+        // Optimistically update
+        fetchWorkspaceData();
+      }
+    } catch (e) {
+      console.error("Transition failed", e);
+    }
+  };
 
   if (loading) {
     return (
@@ -188,6 +204,7 @@ export default function ProposalWorkspace() {
   }
 
   if (error || !workspaceData) {
+    // ... (Keep existing error view)
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="max-w-md">
@@ -206,16 +223,61 @@ export default function ProposalWorkspace() {
     );
   }
 
+  // Render content based on Stage
+  const renderStageContent = () => {
+    switch (currentStage) {
+      case 'DISCOVERY':
+        return <OpportunityOverviewTab opportunity={workspaceData.opportunity} />;
+      case 'ANALYSIS':
+        return (
+          <div className="space-y-8">
+            <RequirementsTab
+              proposalId={workspaceData.proposal.id}
+              requirements={workspaceData.requirements}
+              selectedRequirement={selectedRequirement}
+              setSelectedRequirement={setSelectedRequirement}
+            />
+            <PricingTab requirements={workspaceData.requirements.filter(r => r.requirement_type === 'PRICING')} />
+            <PastPerformanceTab
+              requirements={workspaceData.requirements.filter(r => r.requirement_type === 'PAST_PERFORMANCE')}
+              proposalId={workspaceData.proposal.id}
+            />
+            <SourcesSoughtTab proposalId={workspaceData.proposal.id} />
+            <ArtifactsTab artifacts={workspaceData.artifacts} proposalId={workspaceData.proposal.id} />
+          </div>
+        );
+      case 'DECOMPOSITION':
+        return (
+          <div className="space-y-8">
+            <SOWTab documents={workspaceData.documents} proposalId={workspaceData.proposal.id} />
+            <SpecificationTab proposal={workspaceData.proposal} proposalId={workspaceData.proposal.id} />
+          </div>
+        );
+      case 'STRATEGY':
+        return <CapturePlanningTab proposalId={workspaceData.proposal.id} />;
+      case 'DRAFTING':
+        return <ProposalEditor proposalId={workspaceData.proposal.id} />;
+      case 'REVIEW':
+        return <ReviewsTab proposalId={workspaceData.proposal.id} />;
+      case 'APPROVAL':
+        return <div className="p-12 text-center text-muted-foreground">Approval Stage - Implementation Pending</div>;
+      case 'SUBMISSION':
+        return <SubmissionTab proposalId={workspaceData.proposal.id} />;
+      default:
+        return <div>Unknown Stage</div>;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <div className="bg-card border-b shadow-sm sticky top-0 z-10">
         <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
-              <Button 
-                onClick={() => navigate(`/analysis/${opportunityId}`)} 
-                variant="ghost" 
+              <Button
+                onClick={() => navigate(`/analysis/${opportunityId}`)}
+                variant="ghost"
                 size="sm"
                 className="gap-2"
               >
@@ -231,81 +293,20 @@ export default function ProposalWorkspace() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {workspaceData.opportunity?.response_deadline && (
-                <Badge variant="outline" className="text-sm gap-2">
-                  <Clock className="h-4 w-4" />
-                  Due: {new Date(workspaceData.opportunity.response_deadline).toLocaleDateString()}
-                </Badge>
-              )}
-              <Badge variant="outline" className="text-sm">
-                {workspaceData.requirements.length} Requirements
-              </Badge>
-              <Badge variant="outline" className="text-sm">
-                {workspaceData.artifacts.length} Artifacts
-              </Badge>
+              {/* Status Badges */}
+              <Badge variant="outline">{currentStage}</Badge>
             </div>
           </div>
+
+          {/* Stepper */}
+          <WorkflowStepper currentStage={currentStage} onStageSelect={handleStageChange} />
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Vertical Tab Navigation */}
-        <div className="w-64 bg-card border-r flex-shrink-0">
-          <ScrollArea className="h-full">
-            <div className="p-4 space-y-2">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-                      activeTab === tab.id
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-left">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-auto">
-          <div className="p-8">
-            {activeTab === 'overview' && <OpportunityOverviewTab opportunity={workspaceData.opportunity} />}
-            {activeTab === 'capture' && <CapturePlanningTab proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'development' && <ProposalEditor proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'specification' && <SpecificationTab proposal={workspaceData.proposal} proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'requirements' && (
-              <RequirementsTab 
-                proposalId={workspaceData.proposal.id}
-                requirements={workspaceData.requirements}
-                selectedRequirement={selectedRequirement}
-                setSelectedRequirement={setSelectedRequirement}
-              />
-            )}
-            {activeTab === 'sow' && <SOWTab documents={workspaceData.documents} proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'past-performance' && (
-              <PastPerformanceTab 
-                requirements={workspaceData.requirements.filter(r => r.requirement_type === 'PAST_PERFORMANCE')} 
-                proposalId={workspaceData.proposal.id}
-              />
-            )}
-            {activeTab === 'pricing' && (
-              <PricingTab requirements={workspaceData.requirements.filter(r => r.requirement_type === 'PRICING')} />
-            )}
-            {activeTab === 'artifacts' && <ArtifactsTab artifacts={workspaceData.artifacts} proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'reviews' && <ReviewsTab proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'submission' && <SubmissionTab proposalId={workspaceData.proposal.id} />}
-            {activeTab === 'sources-sought' && <SourcesSoughtTab proposalId={workspaceData.proposal.id} />}
-          </div>
+      <div className="flex-1 overflow-auto bg-gray-50">
+        <div className="max-w-screen-2xl mx-auto p-8">
+          {renderStageContent()}
         </div>
       </div>
     </div>
@@ -464,12 +465,12 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
                     </div>
                   ))
                 ) : typeof opportunity.point_of_contact === 'object' ? (
-                   <div className="text-sm bg-muted/30 p-3 rounded-lg border">
-                      <div className="font-medium">{(opportunity.point_of_contact as any).fullName || (opportunity.point_of_contact as any).name}</div>
-                      {(opportunity.point_of_contact as any).email && (
-                        <div className="text-xs mt-1">{(opportunity.point_of_contact as any).email}</div>
-                      )}
-                   </div>
+                  <div className="text-sm bg-muted/30 p-3 rounded-lg border">
+                    <div className="font-medium">{(opportunity.point_of_contact as any).fullName || (opportunity.point_of_contact as any).name}</div>
+                    {(opportunity.point_of_contact as any).email && (
+                      <div className="text-xs mt-1">{(opportunity.point_of_contact as any).email}</div>
+                    )}
+                  </div>
                 ) : (
                   <div className="text-sm bg-muted/30 p-3 rounded-lg">
                     {String(opportunity.point_of_contact)}
@@ -504,11 +505,11 @@ function OpportunityOverviewTab({ opportunity }: { opportunity: Opportunity | nu
 // Specification Tab Component
 function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['proposal'], proposalId: number }) {
   const [volumes, setVolumes] = useState(proposal.volumes);
-  const [editingSection, setEditingSection] = useState<{volumeId: number, blockId: string} | null>(null);
+  const [editingSection, setEditingSection] = useState<{ volumeId: number, blockId: string } | null>(null);
   const [sectionTitle, setSectionTitle] = useState('');
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [newSectionTitle, setNewSectionTitle] = useState('');
-  
+
   useEffect(() => {
     setVolumes(proposal.volumes);
   }, [proposal.volumes]);
@@ -519,16 +520,16 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
         id: block.id,
         order: index
       }));
-      
+
       const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/reorder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ block_orders: blockOrders })
       });
-      
+
       if (res.ok) {
         // Update local state
-        setVolumes(prev => prev.map(v => 
+        setVolumes(prev => prev.map(v =>
           v.id === volumeId ? { ...v, blocks: newBlocks } : v
         ));
       }
@@ -536,21 +537,21 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
       console.error('Reorder failed:', error);
     }
   };
-  
+
   const handleRename = async (volumeId: number, blockId: string) => {
     if (!sectionTitle.trim()) return;
-    
+
     try {
       const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections/${blockId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: sectionTitle })
       });
-      
+
       if (res.ok) {
         // Update local state
-        setVolumes(prev => prev.map(v => 
-          v.id === volumeId 
+        setVolumes(prev => prev.map(v =>
+          v.id === volumeId
             ? { ...v, blocks: v.blocks.map(b => b.id === blockId ? { ...b, title: sectionTitle } : b) }
             : v
         ));
@@ -561,19 +562,19 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
       console.error('Rename failed:', error);
     }
   };
-  
+
   const handleDelete = async (volumeId: number, blockId: string) => {
     if (!confirm('Delete this section?')) return;
-    
+
     try {
       const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections/${blockId}`, {
         method: 'DELETE'
       });
-      
+
       if (res.ok) {
         // Update local state
-        setVolumes(prev => prev.map(v => 
-          v.id === volumeId 
+        setVolumes(prev => prev.map(v =>
+          v.id === volumeId
             ? { ...v, blocks: v.blocks.filter(b => b.id !== blockId) }
             : v
         ));
@@ -582,25 +583,25 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
       console.error('Delete failed:', error);
     }
   };
-  
+
   const handleAddSection = async (volumeId: number) => {
     if (!newSectionTitle.trim()) return;
-    
+
     try {
       const res = await fetch(`/api/v1/proposal-content/proposals/${proposalId}/volumes/${volumeId}/sections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           title: newSectionTitle,
           content: ''
         })
       });
-      
+
       if (res.ok) {
         const newBlock = await res.json();
         // Update local state
-        setVolumes(prev => prev.map(v => 
-          v.id === volumeId 
+        setVolumes(prev => prev.map(v =>
+          v.id === volumeId
             ? { ...v, blocks: [...v.blocks, newBlock] }
             : v
         ));
@@ -622,7 +623,7 @@ function SpecificationTab({ proposal, proposalId }: { proposal: WorkspaceData['p
         <CardContent>
           <div className="space-y-4">
             {volumes.map((volume) => (
-              <VolumeCard 
+              <VolumeCard
                 key={volume.id}
                 volume={volume}
                 onReorder={handleReorder}
@@ -680,11 +681,11 @@ function VolumeCard({
   setNewSectionTitle
 }: VolumeCardProps) {
   const [blocks, setBlocks] = useState<Block[]>(volume.blocks);
-  
+
   useEffect(() => {
     setBlocks(volume.blocks);
   }, [volume.blocks]);
-  
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -693,12 +694,12 @@ function VolumeCard({
   );
 
   const handleDragEnd = (event: any) => {
-    const {active, over} = event;
+    const { active, over } = event;
 
     if (active.id !== over.id) {
       const oldIndex = blocks.findIndex((b) => b.id === active.id);
       const newIndex = blocks.findIndex((b) => b.id === over.id);
-      
+
       const newBlocks = arrayMove(blocks, oldIndex, newIndex);
       setBlocks(newBlocks);
       onReorder(volume.id, newBlocks);
@@ -741,13 +742,13 @@ function VolumeCard({
             </Button>
           </div>
         )}
-        
-        <DndContext 
+
+        <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext 
+          <SortableContext
             items={blocks.map((b) => b.id)}
             strategy={verticalListSortingStrategy}
           >
@@ -808,7 +809,7 @@ function SortableSection({
     setNodeRef,
     transform,
     transition,
-  } = useSortable({id: block.id});
+  } = useSortable({ id: block.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -824,7 +825,7 @@ function SortableSection({
       <div {...attributes} {...listeners} className="cursor-move p-1">
         <GripVertical className="h-4 w-4 text-muted-foreground" />
       </div>
-      
+
       {editing ? (
         <>
           <Input
@@ -844,15 +845,15 @@ function SortableSection({
         <>
           <FileText className="h-4 w-4 text-muted-foreground" />
           <span className="flex-1 text-sm">{block.title}</span>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             variant="ghost"
             onClick={() => onStartEdit(block.id, block.title)}
           >
             <Pencil className="h-3 w-3" />
           </Button>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             variant="ghost"
             onClick={onDelete}
           >
@@ -877,12 +878,12 @@ function SourcesSoughtTab({ proposalId }: { proposalId: number }) {
       const res = await fetch(`${API_URL}/api/v1/proposal-content/proposals/${proposalId}/generate-sources-sought`, {
         method: 'POST',
       });
-      
+
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || 'Failed to generate response');
       }
-      
+
       const data = await res.json();
       setResponse(data.content);
     } catch (err) {
@@ -959,12 +960,12 @@ function SourcesSoughtTab({ proposalId }: { proposalId: number }) {
 
 
 // Requirements Tab Component
-function RequirementsTab({ 
+function RequirementsTab({
   proposalId,
   requirements,
   selectedRequirement,
   setSelectedRequirement
-}: { 
+}: {
   proposalId: number;
   requirements: Requirement[];
   selectedRequirement: number | null;
@@ -973,10 +974,10 @@ function RequirementsTab({
   const [filter, setFilter] = useState<string>('ALL');
   const [generating, setGenerating] = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [extractionMessage, setExtractionMessage] = useState<{type: 'success' | 'error' | 'info', text: string} | null>(null);
-  
-  const filteredRequirements = filter === 'ALL' 
-    ? requirements 
+  const [extractionMessage, setExtractionMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+
+  const filteredRequirements = filter === 'ALL'
+    ? requirements
     : requirements.filter(r => r.requirement_type === filter);
 
   const [matrixData, setMatrixData] = useState<any[]>([]);
@@ -992,7 +993,7 @@ function RequirementsTab({
       CERTIFICATION: 0,
       OTHER: 0,
     };
-    
+
     requirements.forEach(req => {
       const type = req.requirement_type;
       if (counts[type] !== undefined) {
@@ -1001,7 +1002,7 @@ function RequirementsTab({
         counts.OTHER++;
       }
     });
-    
+
     return counts;
   }, [requirements]);
 
@@ -1025,14 +1026,14 @@ function RequirementsTab({
       if (res.ok) {
         const data = await res.json();
         setMatrixData(data.content);
-        setExtractionMessage({type: 'success', text: 'Requirements matrix generated successfully!'});
+        setExtractionMessage({ type: 'success', text: 'Requirements matrix generated successfully!' });
       } else {
         const errorData = await res.json().catch(() => ({}));
-        setExtractionMessage({type: 'error', text: `Failed to generate matrix: ${errorData.detail || errorData.message || 'Unknown error'}`});
+        setExtractionMessage({ type: 'error', text: `Failed to generate matrix: ${errorData.detail || errorData.message || 'Unknown error'}` });
       }
     } catch (error) {
       console.error("Generation failed:", error);
-      setExtractionMessage({type: 'error', text: 'An error occurred during generation.'});
+      setExtractionMessage({ type: 'error', text: 'An error occurred during generation.' });
     } finally {
       setGenerating(false);
     }
@@ -1067,41 +1068,41 @@ function RequirementsTab({
   const handleExtractRequirements = async () => {
     setExtracting(true);
     setExtractionMessage(null);
-    
+
     try {
       // Start the extraction
       const res = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/extract-requirements`, {
         method: 'POST'
       });
-      
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        setExtractionMessage({type: 'error', text: `Failed to start extraction: ${errorData.detail || errorData.message || 'Unknown error'}`});
+        setExtractionMessage({ type: 'error', text: `Failed to start extraction: ${errorData.detail || errorData.message || 'Unknown error'}` });
         setExtracting(false);
         return;
       }
-      
+
       const startData = await res.json();
-      
+
       if (startData.status === 'already_running') {
-        setExtractionMessage({type: 'info', text: 'Extraction is already in progress. Checking status...'});
+        setExtractionMessage({ type: 'info', text: 'Extraction is already in progress. Checking status...' });
       } else {
-        setExtractionMessage({type: 'info', text: 'Extraction started. Processing documents...'});
+        setExtractionMessage({ type: 'info', text: 'Extraction started. Processing documents...' });
       }
-      
+
       // Poll for progress
       const pollInterval = setInterval(async () => {
         try {
           const progressRes = await fetch(`${API_URL}/api/v1/proposals/${proposalId}/extract-requirements/progress`);
           if (progressRes.ok) {
             const progress = await progressRes.json();
-            
+
             if (progress.status === 'running') {
               // Update message with current progress
-              const fileList = progress.filenames.length > 0 
+              const fileList = progress.filenames.length > 0
                 ? '\n\nProcessed files:\n' + progress.filenames.map((f: string) => `  • ${f}`).join('\n')
                 : '';
-              
+
               setExtractionMessage({
                 type: 'info',
                 text: `Extracting requirements... ${progress.percentage}%\n\nCurrent file: ${progress.current_file || 'Initializing...'}\nProcessed: ${progress.processed_files} / ${progress.total_files} files${fileList}`
@@ -1109,7 +1110,7 @@ function RequirementsTab({
             } else if (progress.status === 'completed') {
               clearInterval(pollInterval);
               setExtracting(false);
-              
+
               if (progress.requirements_count > 0) {
                 setExtractionMessage({
                   type: 'success',
@@ -1136,7 +1137,7 @@ function RequirementsTab({
           console.error('Error polling progress:', error);
         }
       }, 2000); // Poll every 2 seconds
-      
+
       // Cleanup interval after 5 minutes (safety timeout)
       setTimeout(() => {
         clearInterval(pollInterval);
@@ -1148,10 +1149,10 @@ function RequirementsTab({
           });
         }
       }, 300000); // 5 minutes
-      
+
     } catch (error) {
       console.error("Extraction failed:", error);
-      setExtractionMessage({type: 'error', text: 'An error occurred during extraction.'});
+      setExtractionMessage({ type: 'error', text: 'An error occurred during extraction.' });
       setExtracting(false);
     }
   };
@@ -1190,9 +1191,9 @@ function RequirementsTab({
               <CardDescription>All extracted requirements from solicitation documents</CardDescription>
             </div>
             <div className="flex gap-2 items-center">
-              <Button 
-                onClick={handleGenerateMatrix} 
-                disabled={generating} 
+              <Button
+                onClick={handleGenerateMatrix}
+                disabled={generating}
                 variant="secondary"
                 size="sm"
                 className="gap-2"
@@ -1200,9 +1201,9 @@ function RequirementsTab({
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-500" />}
                 Generate Matrix
               </Button>
-              <Button 
-                onClick={handleExtractRequirements} 
-                disabled={extracting} 
+              <Button
+                onClick={handleExtractRequirements}
+                disabled={extracting}
                 variant="outline"
                 size="sm"
                 className="gap-2"
@@ -1212,13 +1213,13 @@ function RequirementsTab({
               </Button>
             </div>
           </div>
-          
+
           {/* Requirement Type Filters */}
           <div className="flex flex-wrap gap-2 mt-4">
             {requirementTypes.map((type) => {
               const count = requirementCounts[type.key] || 0;
               const isActive = filter === type.key;
-              
+
               return (
                 <button
                   key={type.key}
@@ -1226,22 +1227,22 @@ function RequirementsTab({
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
                     "border hover:shadow-sm",
-                    isActive 
-                      ? cn(type.color, "shadow-sm ring-2 ring-offset-1", 
-                          type.key === 'ALL' ? 'ring-slate-400' :
+                    isActive
+                      ? cn(type.color, "shadow-sm ring-2 ring-offset-1",
+                        type.key === 'ALL' ? 'ring-slate-400' :
                           type.key === 'TECHNICAL' ? 'ring-blue-400' :
-                          type.key === 'MANAGEMENT' ? 'ring-purple-400' :
-                          type.key === 'PAST_PERFORMANCE' ? 'ring-green-400' :
-                          type.key === 'PRICING' ? 'ring-orange-400' :
-                          type.key === 'CERTIFICATION' ? 'ring-red-400' :
-                          'ring-gray-400'
-                        )
+                            type.key === 'MANAGEMENT' ? 'ring-purple-400' :
+                              type.key === 'PAST_PERFORMANCE' ? 'ring-green-400' :
+                                type.key === 'PRICING' ? 'ring-orange-400' :
+                                  type.key === 'CERTIFICATION' ? 'ring-red-400' :
+                                    'ring-gray-400'
+                      )
                       : "bg-background border-border text-muted-foreground hover:bg-muted"
                   )}
                 >
                   <span>{type.label}</span>
-                  <Badge 
-                    variant="secondary" 
+                  <Badge
+                    variant="secondary"
                     className={cn(
                       "ml-1 px-1.5 py-0 text-xs font-semibold",
                       isActive ? "bg-white/40" : "bg-muted"
@@ -1274,7 +1275,7 @@ function RequirementsTab({
           )}
           <div className="space-y-3">
             {filteredRequirements.map((req) => (
-              <Card 
+              <Card
                 key={req.id}
                 className={cn(
                   "cursor-pointer transition-all hover:shadow-md",
@@ -1360,8 +1361,8 @@ function RequirementsTab({
                         <td className="p-4 align-middle">{row.proposal_section}</td>
                         <td className="p-4 align-middle">
                           <Badge variant={
-                            row.compliance === 'Compliant' ? 'default' : 
-                            row.compliance === 'Non-Compliant' ? 'destructive' : 'secondary'
+                            row.compliance === 'Compliant' ? 'default' :
+                              row.compliance === 'Non-Compliant' ? 'destructive' : 'secondary'
                           }>
                             {row.compliance}
                           </Badge>
@@ -1453,9 +1454,9 @@ function SOWTab({ documents, proposalId }: { documents: Document[]; proposalId: 
               <CardTitle>SOW/PWS Documents</CardTitle>
               <CardDescription>Source documents with extracted sections</CardDescription>
             </div>
-            <Button 
-              onClick={handleGenerateSOW} 
-              disabled={generating} 
+            <Button
+              onClick={handleGenerateSOW}
+              disabled={generating}
               variant="secondary"
               size="sm"
               className="gap-2"
@@ -1504,9 +1505,9 @@ function SOWTab({ documents, proposalId }: { documents: Document[]; proposalId: 
             <CardDescription>AI-generated analysis of the Statement of Work</CardDescription>
           </CardHeader>
           <CardContent>
-            <Textarea 
-              value={sowContent} 
-              readOnly 
+            <Textarea
+              value={sowContent}
+              readOnly
               className="min-h-[500px] font-mono text-sm"
             />
           </CardContent>
@@ -1532,13 +1533,13 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
       });
       if (res.ok) {
         const data = await res.json();
-      console.log('Fetched content:', data);
-      if (data.volumes) {
-        data.volumes.forEach((v: any) => {
-          console.log(`Volume ${v.id} blocks:`, v.blocks);
-        });
-      }
-      setVolumeContent(data.content);
+        console.log('Fetched content:', data);
+        if (data.volumes) {
+          data.volumes.forEach((v: any) => {
+            console.log(`Volume ${v.id} blocks:`, v.blocks);
+          });
+        }
+        setVolumeContent(data.content);
         // alert("Past Performance Volume generated successfully!");
       } else {
         alert("Failed to generate volume.");
@@ -1582,9 +1583,9 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
               <CardDescription>Requirements related to past performance and references</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button 
-                onClick={handleGenerateVolume} 
-                disabled={generatingVolume} 
+              <Button
+                onClick={handleGenerateVolume}
+                disabled={generatingVolume}
                 variant="secondary"
                 size="sm"
                 className="gap-2"
@@ -1592,9 +1593,9 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
                 {generatingVolume ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-purple-500" />}
                 Generate Volume
               </Button>
-              <Button 
-                onClick={handleGeneratePPQs} 
-                disabled={generatingPPQs} 
+              <Button
+                onClick={handleGeneratePPQs}
+                disabled={generatingPPQs}
                 variant="outline"
                 size="sm"
                 className="gap-2"
@@ -1636,9 +1637,9 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
             <CardDescription>AI-generated volume with case studies</CardDescription>
           </CardHeader>
           <CardContent>
-            <Textarea 
-              value={volumeContent} 
-              readOnly 
+            <Textarea
+              value={volumeContent}
+              readOnly
               className="min-h-[500px] font-mono text-sm"
             />
           </CardContent>
@@ -1652,9 +1653,9 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
             <CardDescription>AI-generated responses for Past Performance Questionnaires</CardDescription>
           </CardHeader>
           <CardContent>
-            <Textarea 
-              value={ppqContent} 
-              readOnly 
+            <Textarea
+              value={ppqContent}
+              readOnly
               className="min-h-[500px] font-mono text-sm"
             />
           </CardContent>
@@ -1704,38 +1705,38 @@ function PricingTab({ requirements }: { requirements: Requirement[] }) {
 function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: Artifact[], proposalId: number }) {
   const [artifacts, setArtifacts] = useState<Artifact[]>(initialArtifacts);
   const [uploading, setUploading] = useState<number | null>(null);
-  
+
   useEffect(() => {
     setArtifacts(initialArtifacts);
   }, [initialArtifacts]);
-  
+
   const getStatusColor = (status: string) => {
     if (status === 'COMPLETE') return 'bg-green-100 text-green-700 border-green-300';
     if (status === 'IN_PROGRESS') return 'bg-blue-100 text-blue-700 border-blue-300';
     return 'bg-gray-100 text-gray-700 border-gray-300';
   };
-  
+
   const handleFileUpload = async (artifactId: number, file: File) => {
     setUploading(artifactId);
-    
+
     try {
       // Step 1: Upload file
       const formData = new FormData();
       formData.append('file', file);
       formData.append('opportunity_id', String(proposalId)); // Using proposal_id as fallback
-      
+
       const uploadRes = await fetch('/api/v1/files/upload', {
         method: 'POST',
         body: formData
       });
-      
+
       if (!uploadRes.ok) {
         throw new Error('File upload failed');
       }
-      
+
       const uploadData = await uploadRes.json();
       const fileId = uploadData.id;
-      
+
       // Step 2: Update artifact with file_id
       const updateRes = await fetch(`/api/v1/requirements/proposals/${proposalId}/artifacts/${artifactId}`, {
         method: 'PUT',
@@ -1745,18 +1746,18 @@ function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: 
           file_id: fileId
         })
       });
-      
+
       if (!updateRes.ok) {
         throw new Error('Artifact update failed');
       }
-      
+
       // Update local state
-      setArtifacts(prev => prev.map(art => 
-        art.id === artifactId 
+      setArtifacts(prev => prev.map(art =>
+        art.id === artifactId
           ? { ...art, status: 'COMPLETE', file_id: fileId }
           : art
       ));
-      
+
     } catch (error) {
       console.error('Upload error:', error);
       alert('Failed to upload file. Please try again.');
@@ -1793,7 +1794,7 @@ function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: 
                           {art.source_section}
                         </Badge>
                       )}
-                      
+
                       {/* File Upload Section */}
                       <div className="flex items-center gap-2 mt-3">
                         {art.file_id ? (

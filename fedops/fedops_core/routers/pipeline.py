@@ -118,8 +118,9 @@ async def get_pipeline(include_archived: bool = Query(False), db: AsyncSession =
 async def get_pipeline_item(opportunity_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(OpportunityPipeline).filter(OpportunityPipeline.opportunity_id == opportunity_id))
     item = result.scalar_one_or_none()
+    # Return None instead of 404 to avoid browser console errors when checking status
     if not item:
-        raise HTTPException(status_code=404, detail="Pipeline item not found")
+        return None
     return item
 
 @router.put("/{opportunity_id}")

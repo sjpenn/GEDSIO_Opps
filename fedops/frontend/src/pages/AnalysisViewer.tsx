@@ -179,24 +179,26 @@ function QuoteLink({
  * Helper component for source badges with clickable document links.
  * Displays a badge for each source section (e.g., "Section L") and links it to the corresponding document if available.
  */
-function SourceBadge({
+const SourceBadge = ({
   sources,
   documents,
   onDocumentClick
 }: {
-  /** List of source strings (e.g., ["Section L", "Section M"]) */
   sources: string[];
-  /** List of available source documents to match against */
   documents?: SourceDocument[];
-  /** Callback when a clickable badge is clicked */
   onDocumentClick?: (doc: SourceDocument) => void;
-}) {
+}) => {
   if (!sources || sources.length === 0) return null;
 
   const handleClick = (doc: SourceDocument) => {
     if (onDocumentClick) {
       onDocumentClick(doc);
     }
+  };
+
+  const handleDownloadJson = (e: React.MouseEvent, docId: number) => {
+    e.stopPropagation();
+    window.open(`${API_URL}/api/v1/files/${docId}/docling`, '_blank');
   };
 
   return (
@@ -206,25 +208,37 @@ function SourceBadge({
         const isClickable = !!doc && !!onDocumentClick;
 
         return (
-          <Badge
-            key={i}
-            variant="outline"
-            className={cn(
-              "text-xs bg-blue-50 text-blue-700 border-blue-300",
-              isClickable && "cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+          <div key={i} className="flex items-center gap-1">
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-xs bg-blue-50 text-blue-700 border-blue-300",
+                isClickable && "cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-colors"
+              )}
+              onClick={isClickable ? () => handleClick(doc) : undefined}
+              title={doc ? `Click to view ${doc.filename}` : source}
+            >
+              <FileText className="h-3 w-3 mr-1" />
+              {source}
+              {isClickable && <ExternalLink className="h-3 w-3 ml-1" />}
+            </Badge>
+            {doc?.id && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 rounded-full hover:bg-blue-100"
+                onClick={(e) => handleDownloadJson(e, doc.id!)}
+                title="Download full extraction JSON"
+              >
+                <Download className="h-3 w-3 text-blue-600" />
+              </Button>
             )}
-            onClick={isClickable ? () => handleClick(doc) : undefined}
-            title={doc ? `Click to view ${doc.filename}` : source}
-          >
-            <FileText className="h-3 w-3 mr-1" />
-            {source}
-            {isClickable && <ExternalLink className="h-3 w-3 ml-1" />}
-          </Badge>
+          </div>
         );
       })}
     </div>
   );
-}
+};
 
 const getScoreColor = (score: number) => {
   if (score >= 70) return 'text-green-600';

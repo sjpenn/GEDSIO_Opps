@@ -178,12 +178,40 @@ class OrchestratorAgent(BaseAgent):
                  
                  print(f"DEBUG: Formatted Prompt Length: {len(formatted_prompt)}")
                  
+                 # Override to use Qwen3 for Quick Scan (faster than DeepSeek R1)
+                 ai_service.set_provider("openrouter", "qwen/qwen-3-235b-instruct")
+                 
                  try:
                     # Use generate_content directly because we expect raw HTML, not JSON
-                    quick_scan_html = await ai_service.generate_content(formatted_prompt)
+                    # Increase timeout for Quick Scan since it processes large documents
+                    quick_scan_html = await ai_service.generate_content(formatted_prompt, timeout=180)
+                    print(f"DEBUG: Quick Scan AI call succeeded, response length: {len(quick_scan_html)}")
+                 except TimeoutError as e:
+                    logger.error(f"Quick Scan AI Call Timed Out: {e}")
+                    print(f"ERROR: Quick Scan AI Call Timed Out: {e}")
+                    quick_scan_html = f"""
+                    <div style='padding: 20px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;'>
+                        <h3 style='color: #856404; margin-top: 0;'>⚠️ Quick Scan Timeout</h3>
+                        <p>The AI analysis took too long to complete. This can happen with:</p>
+                        <ul>
+                            <li>Very large or complex solicitation documents</li>
+                            <li>High server load on the AI provider</li>
+                            <li>Network connectivity issues</li>
+                        </ul>
+                        <p><strong>Recommendation:</strong> Try running a <strong>Full Analysis</strong> instead, which processes documents in smaller chunks.</p>
+                    </div>
+                    """
                  except Exception as e:
+                    logger.error(f"Quick Scan AI Call Failed: {e}", exc_info=True)
                     print(f"ERROR: Quick Scan AI Call Failed: {e}")
-                    quick_scan_html = f"<p style='color:red'>Error generating Quick Scan: {str(e)}</p>"
+                    quick_scan_html = f"""
+                    <div style='padding: 20px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px;'>
+                        <h3 style='color: #721c24; margin-top: 0;'>❌ Quick Scan Error</h3>
+                        <p>An error occurred while generating the Quick Scan analysis:</p>
+                        <pre style='background-color: #fff; padding: 10px; border-radius: 4px; overflow-x: auto;'>{str(e)}</pre>
+                        <p><strong>Recommendation:</strong> Try running a <strong>Full Analysis</strong> instead.</p>
+                    </div>
+                    """
                  
                  # Store in a temporary dict to merge into score later
                  # We'll use 'executive_overview' or a custom field. 

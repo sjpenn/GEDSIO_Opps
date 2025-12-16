@@ -31,6 +31,7 @@ class DoclingResult:
     markdown: Optional[str] = None
     tables: List[TableData] = None
     metadata: Dict[str, Any] = None
+    document_dict: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     
     def __post_init__(self):
@@ -203,7 +204,8 @@ class DoclingService:
                 success=True,
                 markdown=markdown,
                 tables=tables,
-                metadata=metadata
+                metadata=metadata,
+                document_dict=result.document.export_to_dict()
             )
             
         except Exception as e:

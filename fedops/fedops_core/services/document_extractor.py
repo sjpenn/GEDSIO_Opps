@@ -113,6 +113,7 @@ class DocumentExtractor:
         
         for idx, file_info in enumerate(files):
             file_path = file_info.get('file_path')
+            file_id = file_info.get('id')
             filename = file_info.get('filename', Path(file_path).name)
             
             # Update progress
@@ -145,14 +146,14 @@ class DocumentExtractor:
                 # Handle combined RFPs by shredding into sections
                 if doc_type in [DocumentType.RFP_COMBINED, DocumentType.RFP]:
                     await self._process_combined_rfp(
-                        content, filename, file_path, extracted_data
+                        content, filename, file_path, extracted_data, file_id
                     )
                     continue
                 
                 # Handle amendments - extract new/modified data
                 if doc_type == DocumentType.AMENDMENT:
                     await self._process_amendment(
-                        content, filename, file_path, extracted_data
+                        content, filename, file_path, extracted_data, file_id
                     )
                     continue
                 
@@ -165,6 +166,7 @@ class DocumentExtractor:
                     if section_key:
                         extracted_data[section_key] = extracted
                         extracted_data["source_documents"].append({
+                            "id": file_id,
                             "filename": filename,
                             "type": doc_type.value,
                             "section": section_key
@@ -183,7 +185,8 @@ class DocumentExtractor:
         content: str,
         filename: str,
         file_path: str,
-        extracted_data: Dict[str, Any]
+        extracted_data: Dict[str, Any],
+        file_id: Optional[int] = None
     ) -> None:
         """
         Process a combined RFP document by shredding it into sections.
@@ -225,6 +228,7 @@ class DocumentExtractor:
                         if extracted_data.get(section_key) is None:
                             extracted_data[section_key] = extracted
                             extracted_data["source_documents"].append({
+                                "id": file_id,
                                 "filename": filename,
                                 "type": f"combined_rfp_section_{section_letter.lower()}",
                                 "section": section_key,
@@ -242,7 +246,8 @@ class DocumentExtractor:
         content: str,
         filename: str,
         file_path: str,
-        extracted_data: Dict[str, Any]
+        extracted_data: Dict[str, Any],
+        file_id: Optional[int] = None
     ) -> None:
         """
         Process an amendment document.
@@ -277,6 +282,7 @@ class DocumentExtractor:
                             # Amendments OVERRIDE existing data
                             extracted_data[section_key] = extracted
                             extracted_data["source_documents"].append({
+                                "id": file_id,
                                 "filename": filename,
                                 "type": f"amendment_section_{section_letter.lower()}",
                                 "section": section_key,

@@ -53,18 +53,27 @@ class AIService:
         
         logger.info(f"Switched AI Provider to: {self.provider} ({self.model})")
 
-    async def generate_content(self, prompt: str) -> str:
+    async def generate_content(self, prompt: str, timeout: int = 120) -> str:
         """
         Generate text content using the configured LLM provider.
+        
+        Args:
+            prompt: The text prompt to send to the LLM
+            timeout: Maximum time in seconds to wait for response (default: 120)
         """
-        if self.provider == "gemini":
-            return await self._call_gemini(prompt)
-        elif self.provider == "openai" or self.provider == "openrouter":
-            return await self._call_openai_compatible(prompt)
-        elif self.provider == "local":
-            return await self._call_mlx_lm(prompt)
-        else:
-            raise ValueError(f"Invalid LLM Provider Configuration: {self.provider}")
+        try:
+            if self.provider == "gemini":
+                result = await asyncio.wait_for(self._call_gemini(prompt), timeout=timeout)
+            elif self.provider == "openai" or self.provider == "openrouter":
+                result = await asyncio.wait_for(self._call_openai_compatible(prompt), timeout=timeout)
+            elif self.provider == "local":
+                result = await asyncio.wait_for(self._call_mlx_lm(prompt), timeout=timeout)
+            else:
+                raise ValueError(f"Invalid LLM Provider Configuration: {self.provider}")
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"AI request timed out after {timeout} seconds with provider={self.provider}, model={self.model}")
+            raise TimeoutError(f"AI request timed out after {timeout} seconds. The model may be overloaded or the prompt may be too large.")
 
     async def generate_shipley_summary(self, content: str, doc_type: DocumentType = DocumentType.RFP) -> str:
         prompt = get_prompt_for_doc_type(doc_type, content)

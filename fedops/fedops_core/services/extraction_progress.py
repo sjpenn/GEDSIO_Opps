@@ -58,6 +58,8 @@ class ExtractionProgress:
             if proposal_id in self._progress:
                 progress = self._progress[proposal_id]
                 progress["status"] = "completed"
+                progress["percent"] = 100  # Ensure progress bar shows 100%
+                progress["message"] = "Analysis complete!"
                 progress["current_file"] = None
                 progress["completed_at"] = datetime.utcnow().isoformat()
                 progress["requirements_count"] = requirements_count

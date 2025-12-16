@@ -39,7 +39,7 @@ class DocumentAnalysisAgent(BaseAgent):
                 
                 # Prepare file list for DocumentExtractor
                 file_list = [
-                    {"file_path": file.file_path, "filename": file.filename}
+                    {"file_path": file.file_path, "filename": file.filename, "id": file.id}
                     for file in files
                 ]
                 

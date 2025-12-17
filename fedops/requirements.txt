@@ -9,20 +9,15 @@ asyncpg
 python-multipart
 pytest
 pytest-asyncio
-# pandas  # REMOVED: Large data processing library - use lighter alternatives if needed
+pandas
 openpyxl
 python-docx
 pypdf
 pdfplumber
-# Pillow  # REMOVED: Image processing - not essential for core API
 openai
 google-generativeai
-# pytesseract  # REMOVED: OCR library - requires Tesseract binaries
 metaphone>=0.6
 cachetools>=5.3.0
 python-Levenshtein>=0.21.0
-# docling>=1.0.0  # REMOVED: Large document processing framework
-# easyocr>=1.7.0  # REMOVED: Includes PyTorch and ML dependencies (>1GB)
-# unstructured[pdf]>=0.10.0  # REMOVED: Large document processing framework
 anthropic>=0.3.0
 pypdfium2>=4.0.0

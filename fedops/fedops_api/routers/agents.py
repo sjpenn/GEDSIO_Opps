@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Dict, Any
 
-from fedops_core.db.engine import get_db
+from fedops_core.db.engine import get_db, AsyncSessionLocal
 from fedops_agents.orchestrator import OrchestratorAgent
 from fedops_core.db.models import OpportunityScore, AgentActivityLog, Opportunity
 from fedops_core.services.extraction_progress import extraction_progress
@@ -21,19 +21,29 @@ async def get_analysis_status(opportunity_id: int):
         return {"status": "idle", "percent": 0, "message": "Not running"}
     return status
 
-@router.post("/opportunities/{opportunity_id}/analyze")
-async def trigger_analysis(opportunity_id: int, mode: str = "full", db: AsyncSession = Depends(get_db)):
+async def run_analysis_background(opportunity_id: int, mode: str):
+    """Background task wrapper for analysis execution"""
+    async with AsyncSessionLocal() as db:
+        orchestrator = OrchestratorAgent(db)
+        try:
+            await orchestrator.execute(opportunity_id, mode=mode)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # We can't return to client, but logs are captured in orchestrator.execute usually
+
+@router.post("/opportunities/{opportunity_id}/analyze", status_code=202)
+async def trigger_analysis(
+    opportunity_id: int, 
+    background_tasks: BackgroundTasks,
+    mode: str = "full", 
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Triggers the full agentic analysis workflow for a given opportunity.
+    Triggers the full agentic analysis workflow for a given opportunity in the background.
     """
-    orchestrator = OrchestratorAgent(db)
-    try:
-        result = await orchestrator.execute(opportunity_id, mode=mode)
-        return result
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    background_tasks.add_task(run_analysis_background, opportunity_id, mode)
+    return {"status": "accepted", "message": "Analysis started in background"}
 
 @router.get("/opportunities/{opportunity_id}/score")
 async def get_opportunity_score(opportunity_id: int, db: AsyncSession = Depends(get_db)):

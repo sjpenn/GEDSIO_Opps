@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fedops_agents.base_agent import BaseAgent
@@ -7,6 +8,8 @@ from fedops_core.services.ai_service import AIService
 from fedops_core.services.document_extractor import DocumentExtractor
 from fedops_core.prompts import SOLICITATION_SUMMARY_PROMPT, determine_document_type, DocumentType, PROPOSAL_DECOMPOSITION_PROMPT
 from fedops_core.services.extraction_progress import extraction_progress
+
+logger = logging.getLogger(__name__)
 
 class DocumentAnalysisAgent(BaseAgent):
     def __init__(self, db: AsyncSession):
@@ -51,9 +54,37 @@ class DocumentAnalysisAgent(BaseAgent):
                     for file in files
                 ]
                 
-                # Extract structured data from all documents with document tracking
+                # --- PHASE 1: Ingest documents for chunking and vector storage ---
+                # This must happen BEFORE AI extraction to ensure chunks are available
                 doc_extractor = DocumentExtractor()
                 
+                extraction_progress.set_operation(
+                    opportunity_id,
+                    "chunking",
+                    "Parsing and chunking documents",
+                    percent=12
+                )
+                
+                # Turbo mode: skip ingestion entirely and go straight to extraction
+                turbo_mode = kwargs.get('turbo', False)
+                
+                if turbo_mode:
+                    logger.info("TURBO MODE: Skipping document ingestion phase")
+                else:
+                    try:
+                        ingest_result = await doc_extractor.ingest_all_documents(
+                            files=file_list,
+                            opportunity_id=opportunity_id,
+                            db_session=self.db,  # Pass DB session for chunk storage
+                            fast_mode=quick_scan,
+                            turbo_mode=turbo_mode
+                        )
+                        logger.info(f"Ingestion complete: {ingest_result['successful']}/{ingest_result['total_files']} files, {ingest_result['total_chunks']} total chunks")
+                    except Exception as e:
+                        logger.error(f"Document ingestion failed: {e}", exc_info=True)
+                        # Continue with extraction even if ingestion fails
+                
+                # --- PHASE 2: AI-based extraction ---
                 # Track each document as it's processed
                 for i, file in enumerate(files, 1):
                     extraction_progress.track_document(opportunity_id, file.filename, "extracting")
@@ -61,7 +92,7 @@ class DocumentAnalysisAgent(BaseAgent):
                         opportunity_id, 
                         "extracting", 
                         f"{file.filename} ({i} of {len(files)})",
-                        percent=10 + int((i / len(files)) * 40)  # 10-50% range
+                        percent=15 + int((i / len(files)) * 35)  # 15-50% range
                     )
                 
                 extracted_data = await doc_extractor.extract_all_documents(

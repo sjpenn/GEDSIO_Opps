@@ -22,6 +22,7 @@ class OrchestratorAgent(BaseAgent):
         await self.log_activity(opportunity_id, "START_WORKFLOW", "IN_PROGRESS", {"step": "init", "mode": mode})
         
         quick_scan = (mode == "quick")
+        turbo_mode = (mode == "turbo")
         
         # Initialize progress with enhanced tracking
         extraction_progress.start(opportunity_id, total_files=0, message=f"🚀 Initializing {mode} analysis...")
@@ -41,7 +42,8 @@ class OrchestratorAgent(BaseAgent):
             doc_results = await doc_agent.execute(
                 opportunity_id, 
                 update_progress=True,
-                quick_scan=quick_scan
+                quick_scan=quick_scan or turbo_mode,  # turbo mode implies quick_scan
+                turbo=turbo_mode  # NEW: pass turbo mode
             )
             
             # Extract the extracted_data to pass to other agents

@@ -35,6 +35,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [loading, setLoading] = useState(false);
   const [score, setScore] = useState<ScoreData | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
 
   const fetchData = async () => {
     console.log('Fetching agent data for opportunity:', opportunityId);
@@ -77,8 +78,27 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         try {
           const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
           if (logsRes.ok) {
-            const logsData = await logsRes.json();
+            const logsData: LogEntry[] = await logsRes.json();
             setLogs(logsData);
+
+            // Check for completion if we initiated a new analysis
+            if (analysisStartTime) {
+              const relevantLogs = logsData.filter(l => new Date(l.timestamp).getTime() > analysisStartTime);
+              const completionLog = relevantLogs.find(l => l.action === 'END_WORKFLOW' && l.status === 'SUCCESS');
+              const errorLog = relevantLogs.find(l => l.status === 'FAILURE' && (l.action === 'WORKFLOW_ERROR' || l.action === 'ANALYSIS_FAILED'));
+
+              if (completionLog) {
+                setLoading(false);
+                setAnalysisStartTime(null);
+                await fetchData(); // Refresh scores
+                alert('Analysis completed successfully! Results updated.');
+              } else if (errorLog) {
+                setLoading(false);
+                setAnalysisStartTime(null);
+                const errMsg = typeof errorLog.details === 'object' ? errorLog.details.error : errorLog.details;
+                alert(`Analysis failed: ${errMsg || 'Unknown error'}`);
+              }
+            }
           }
         } catch (e) {
           console.error("Error polling logs", e);
@@ -89,29 +109,43 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
       interval = setInterval(pollLogs, 2000);
     }
     return () => clearInterval(interval);
-  }, [loading, opportunityId]);
+  }, [loading, opportunityId, analysisStartTime]);
 
   const handleAnalyze = async () => {
     setLoading(true);
+    setAnalysisStartTime(Date.now()); // Mark start time to track new logs
+
     try {
       const response = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze`, {
         method: 'POST'
       });
+
+      if (response.status === 202) {
+        // Async analysis started. 
+        // We keep loading=true and let the polling useEffect handle completion detection.
+        console.log("Analysis started in background (202 Accepted)");
+        return;
+      }
+
       if (!response.ok) {
+        setLoading(false);
+        setAnalysisStartTime(null);
         const errorData = await response.text();
         console.error("Analysis failed:", response.status, errorData);
         alert(`Analysis failed: ${response.status} - ${errorData}`);
       } else {
-        // Give the backend a moment to commit all changes
+        // Legacy synchronous 200 OK support
         await new Promise(resolve => setTimeout(resolve, 500));
         await fetchData();
-        alert('Analysis completed successfully! Scroll up to see the results card above.');
+        setLoading(false);
+        setAnalysisStartTime(null);
+        alert('Analysis completed successfully!');
       }
     } catch (error) {
-      console.error("Analysis failed", error);
-      alert(`Analysis failed: ${error}`);
-    } finally {
+      console.error("Analysis request failed", error);
       setLoading(false);
+      setAnalysisStartTime(null);
+      alert(`Analysis failed: ${error}`);
     }
   };
 

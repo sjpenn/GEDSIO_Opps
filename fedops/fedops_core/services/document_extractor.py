@@ -555,29 +555,33 @@ class DocumentExtractor:
         self,
         files: List[Dict[str, Any]],
         opportunity_id: int,
-        db_session=None
+        db_session=None,
+        fast_mode: bool = False,
+        turbo_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Phase 1: Batch ingest all documents using Docling chunker.
         
-        No AI calls - just parsing, chunking, and storage.
-        This is the first phase of the two-phase extraction process.
+        Uses parallel processing (asyncio.gather) to speed up ingestion.
         
         Args:
             files: List of dicts with 'file_path', 'filename', 'id' keys
             opportunity_id: The opportunity ID
             db_session: Optional database session for chunk storage
+            fast_mode: If True, uses fast parsing options (skips TSR/OCR)
+            turbo_mode: If True, skips vector storage entirely for fastest processing
             
         Returns:
             Summary of ingestion results
         """
         from fedops_core.services.docling_chunker import DoclingChunker
         from fedops_core.services.vector_store import VectorStore
+        import asyncio
         
-        logger.info(f"Starting batch ingestion of {len(files)} documents for opportunity {opportunity_id}")
+        logger.info(f"Starting batch ingestion of {len(files)} documents for opportunity {opportunity_id} (Fast Mode: {fast_mode}, Turbo Mode: {turbo_mode})")
         
-        # Initialize services
-        vector_store = VectorStore()
+        # Initialize services - skip vector store in turbo mode
+        vector_store = None if turbo_mode else VectorStore()
         chunker = DoclingChunker(vector_store=vector_store, db_session=db_session)
         
         results = {
@@ -590,51 +594,80 @@ class DocumentExtractor:
             "docling_outputs": []
         }
         
-        for file_info in files:
-            file_path = file_info.get('file_path')
-            file_id = file_info.get('id', 0)
-            filename = file_info.get('filename', '')
-            
-            try:
-                ingest_result = await chunker.ingest_document(
-                    file_path=file_path,
-                    opportunity_id=opportunity_id,
-                    stored_file_id=file_id,
-                    store_vectors=True
-                )
+        # Concurrency limit (3 concurrent Docling processes is safe for memory)
+        semaphore = asyncio.Semaphore(3)
+        
+        async def process_file(file_info):
+            async with semaphore:
+                file_path = file_info.get('file_path')
+                file_id = file_info.get('id', 0)
+                filename = file_info.get('filename', '')
                 
-                if ingest_result.success:
-                    results["successful"] += 1
-                    results["total_chunks"] += ingest_result.num_chunks
+                try:
+                    logger.info(f"Processing {filename}...")
+                    # Pass extra args via **kwargs if supported by chunker, 
+                    # but DoclingChunker needs update to accept fast_mode.
+                    # For now, we assume DoclingChunker will be updated or we rely on defaults.
                     
-                    # Store Docling JSON output for later use
-                    if ingest_result.docling_json:
-                        results["docling_outputs"].append({
-                            "file_id": file_id,
-                            "filename": filename,
-                            "docling_json": ingest_result.docling_json
-                        })
-                else:
-                    results["failed"] += 1
+                    ingest_result = await chunker.ingest_document(
+                        file_path=file_path,
+                        opportunity_id=opportunity_id,
+                        stored_file_id=file_id,
+                        store_vectors=not turbo_mode,
+                        fast_mode=fast_mode
+                    )
+                    
+                    return {
+                        "file_info": file_info,
+                        "result": ingest_result,
+                        "success": ingest_result.success,
+                        "error": None
+                    }
+                except Exception as e:
+                    logger.error(f"Error ingesting {filename}: {e}")
+                    return {
+                        "file_info": file_info,
+                        "result": None,
+                        "success": False,
+                        "error": str(e)
+                    }
+
+        # Run all tasks in parallel
+        tasks = [process_file(f) for f in files]
+        file_results_list = await asyncio.gather(*tasks)
+        
+        # Aggregate results
+        for item in file_results_list:
+            file_info = item["file_info"]
+            ingest_result = item["result"]
+            
+            if item["success"] and ingest_result:
+                results["successful"] += 1
+                results["total_chunks"] += ingest_result.num_chunks
                 
+                if ingest_result.docling_json:
+                    results["docling_outputs"].append({
+                        "file_id": file_info.get('id'),
+                        "filename": file_info.get('filename'),
+                        "docling_json": ingest_result.docling_json
+                    })
+                    
                 results["file_results"].append({
-                    "file_id": file_id,
-                    "filename": filename,
-                    "success": ingest_result.success,
+                    "file_id": file_info.get('id'),
+                    "filename": file_info.get('filename'),
+                    "success": True,
                     "num_chunks": ingest_result.num_chunks,
                     "num_pages": ingest_result.num_pages,
                     "num_tables": ingest_result.num_tables,
-                    "error": ingest_result.error
+                    "error": None
                 })
-                
-            except Exception as e:
-                logger.error(f"Error ingesting {filename}: {e}")
+            else:
                 results["failed"] += 1
                 results["file_results"].append({
-                    "file_id": file_id,
-                    "filename": filename,
+                    "file_id": file_info.get('id'),
+                    "filename": file_info.get('filename'),
                     "success": False,
-                    "error": str(e)
+                    "error": item["error"] or ingest_result.error if ingest_result else "Unknown error"
                 })
         
         logger.info(f"Ingestion complete: {results['successful']}/{results['total_files']} files, {results['total_chunks']} chunks")

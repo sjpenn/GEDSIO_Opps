@@ -1,15 +1,19 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from fedops_core.db.engine import get_db
+from fedops_core.db.models import DocumentChunk, StoredFile
 from fedops_core.schemas.file import FileResponse, FileUpdate
 from fedops_core.services.file_service import FileService
 from fedops_core.services.docling_service import DoclingService
 import json
+import logging
 from pathlib import Path
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/upload", response_model=FileResponse)
 async def upload_file(
@@ -34,6 +38,37 @@ async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
     file = await service.get_file(file_id)
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
+    
+    # Fallback: If parsed_content is missing, try to reassemble from chunks
+    # This handles files processed via DoclingChunker which stores data in the document_chunks table
+    if not file.parsed_content:
+        try:
+            chunks_result = await db.execute(
+                select(DocumentChunk)
+                .where(DocumentChunk.stored_file_id == file_id)
+                .order_by(DocumentChunk.chunk_index)
+            )
+            chunks = chunks_result.scalars().all()
+            if chunks:
+                logger.info(f"Populating parsed_content from {len(chunks)} chunks for file {file_id}")
+                file.parsed_content = "\n\n".join(chunk.content for chunk in chunks)
+                
+        except Exception as e:
+            logger.error(f"Error reassembling content from chunks for file {file_id}: {e}")
+            
+    # Second fallback: If still no content, try to process the file on-demand
+    # This handles files that were imported but processing failed or was skipped
+    if not file.parsed_content:
+        logger.info(f"File {file_id} has no content and no chunks. Attempting on-demand processing.")
+        try:
+             # Trigger processing
+             updated_file = await service.process_file(file_id)
+             if updated_file.parsed_content:
+                 file.parsed_content = updated_file.parsed_content
+                 file.content_summary = updated_file.content_summary
+        except Exception as e:
+            logger.error(f"On-demand processing failed for file {file_id}: {e}")
+            
     return file
 
 @router.post("/{file_id}/process", response_model=FileResponse)
@@ -129,3 +164,128 @@ async def batch_process_files(
             background_tasks.add_task(service.process_file, file.id)
             count += 1
     return {"message": f"Batch processing started for {count} files"}
+
+
+@router.get("/{file_id}/chunks")
+async def get_file_chunks(
+    file_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all chunks for a file, ordered by chunk_index.
+    
+    This allows the frontend to reassemble file content from stored chunks.
+    Chunks are stored during document analysis via the DoclingChunker.
+    
+    Returns:
+        - file_id: The file ID
+        - filename: The original filename
+        - total_chunks: Total number of chunks
+        - chunks: List of chunks with content, page_number, section, etc.
+    """
+    try:
+        # First, verify the file exists
+        file_result = await db.execute(
+            select(StoredFile).where(StoredFile.id == file_id)
+        )
+        stored_file = file_result.scalar_one_or_none()
+        
+        if not stored_file:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Get all chunks for this file, ordered by chunk_index
+        chunks_result = await db.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.stored_file_id == file_id)
+            .order_by(DocumentChunk.chunk_index)
+        )
+        chunks = chunks_result.scalars().all()
+        
+        if not chunks:
+            logger.info(f"No chunks found for file {file_id} ({stored_file.filename})")
+            return {
+                "file_id": file_id,
+                "filename": stored_file.filename,
+                "total_chunks": 0,
+                "chunks": [],
+                "message": "No chunks available. File may not have been processed yet."
+            }
+        
+        return {
+            "file_id": file_id,
+            "filename": stored_file.filename,
+            "total_chunks": len(chunks),
+            "chunks": [
+                {
+                    "index": chunk.chunk_index,
+                    "content": chunk.content,
+                    "page_number": chunk.page_number,
+                    "section": chunk.section,
+                    "chunk_type": getattr(chunk, 'chunk_type', None),
+                    "heading_context": getattr(chunk, 'heading_context', None),
+                    "metadata": getattr(chunk, 'metadata_', None)
+                }
+                for chunk in chunks
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chunks for file {file_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching chunks: {str(e)}")
+
+
+@router.get("/{file_id}/content")
+async def get_file_content_reassembled(
+    file_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the full reassembled content of a file from its chunks.
+    
+    Returns the content as a single string by joining all chunks in order.
+    """
+    # First, verify the file exists
+    file_result = await db.execute(
+        select(StoredFile).where(StoredFile.id == file_id)
+    )
+    stored_file = file_result.scalar_one_or_none()
+    
+    if not stored_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Get all chunks ordered by index
+    chunks_result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.stored_file_id == file_id)
+        .order_by(DocumentChunk.chunk_index)
+    )
+    chunks = chunks_result.scalars().all()
+    
+    if not chunks:
+        # Fallback to parsed_content if available
+        if stored_file.parsed_content:
+            return {
+                "file_id": file_id,
+                "filename": stored_file.filename,
+                "content": stored_file.parsed_content,
+                "source": "parsed_content"
+            }
+        return {
+            "file_id": file_id,
+            "filename": stored_file.filename,
+            "content": "",
+            "source": "none",
+            "message": "No content available. File may not have been processed yet."
+        }
+    
+    # Reassemble content from chunks
+    full_content = "\n\n".join(chunk.content for chunk in chunks)
+    
+    return {
+        "file_id": file_id,
+        "filename": stored_file.filename,
+        "content": full_content,
+        "source": "chunks",
+        "total_chunks": len(chunks)
+    }

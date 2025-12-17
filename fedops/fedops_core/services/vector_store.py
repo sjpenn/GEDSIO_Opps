@@ -113,7 +113,12 @@ class VectorStore:
             # Prepare data for ChromaDB
             ids = [str(chunk['id']) for chunk in chunks]
             documents = [chunk['content'] for chunk in chunks]
-            metadatas = [chunk.get('metadata', {}) for chunk in chunks]
+            
+            # Filter out None values from metadata - ChromaDB doesn't accept None
+            def clean_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
+                return {k: v for k, v in meta.items() if v is not None}
+            
+            metadatas = [clean_metadata(chunk.get('metadata', {})) for chunk in chunks]
             
             # Add to collection
             collection.add(
@@ -127,6 +132,106 @@ class VectorStore:
             
         except Exception as e:
             logger.error(f"Error adding chunks to vector store: {e}")
+            return []
+    
+    async def add_chunks_batched(
+        self,
+        opportunity_id: int,
+        chunks: List[Dict[str, Any]],
+        batch_size: int = 100,
+        progress_callback: Optional[callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Add chunks in batches with progress tracking.
+        
+        Args:
+            opportunity_id: The opportunity ID
+            chunks: List of chunk dicts with 'id', 'content', and 'metadata'
+            batch_size: Number of chunks to process per batch
+            progress_callback: Optional async function(processed, total, message) for progress updates
+            
+        Returns:
+            Dict with total_added, batches_processed, and errors
+        """
+        import asyncio
+        
+        total_chunks = len(chunks)
+        total_added = 0
+        batches_processed = 0
+        errors = []
+        
+        if progress_callback:
+            await progress_callback(0, total_chunks, f"Starting embedding for {total_chunks} chunks...")
+        
+        for i in range(0, total_chunks, batch_size):
+            batch = chunks[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (total_chunks + batch_size - 1) // batch_size
+            
+            try:
+                # Run the blocking embedding operation in a thread pool
+                result = await asyncio.to_thread(
+                    self._add_chunks_sync,
+                    opportunity_id,
+                    batch
+                )
+                total_added += len(result)
+                batches_processed += 1
+                
+                if progress_callback:
+                    percent = int((i + len(batch)) / total_chunks * 100)
+                    await progress_callback(
+                        i + len(batch), 
+                        total_chunks, 
+                        f"Embedding batch {batch_num}/{total_batches} ({percent}%)"
+                    )
+                    
+            except Exception as e:
+                errors.append({"batch": batch_num, "error": str(e)})
+                logger.error(f"Error in batch {batch_num}: {e}")
+        
+        if progress_callback:
+            await progress_callback(total_chunks, total_chunks, f"Embedding complete: {total_added} chunks")
+        
+        return {
+            "total_added": total_added,
+            "total_chunks": total_chunks,
+            "batches_processed": batches_processed,
+            "errors": errors
+        }
+    
+    def _add_chunks_sync(
+        self,
+        opportunity_id: int,
+        chunks: List[Dict[str, Any]]
+    ) -> List[str]:
+        """Synchronous version of add_chunks for running in thread pool."""
+        if not self._ensure_initialized():
+            return []
+        
+        collection = self._get_or_create_collection(opportunity_id)
+        if not collection:
+            return []
+        
+        try:
+            ids = [str(chunk['id']) for chunk in chunks]
+            documents = [chunk['content'] for chunk in chunks]
+            
+            def clean_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
+                return {k: v for k, v in meta.items() if v is not None}
+            
+            metadatas = [clean_metadata(chunk.get('metadata', {})) for chunk in chunks]
+            
+            collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas
+            )
+            
+            return ids
+            
+        except Exception as e:
+            logger.error(f"Error adding chunks sync: {e}")
             return []
     
     async def search(

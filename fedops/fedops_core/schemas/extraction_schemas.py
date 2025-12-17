@@ -49,7 +49,7 @@ class FormattingRequirements(BaseModel):
     file_size_limit: Optional[str] = None
     naming_convention: Optional[str] = None
     color_printing: Optional[str] = None
-    source_quote: str = Field(description="Exact text defining formatting requirements")
+    source_quote: Optional[str] = Field(None, description="Exact text defining formatting requirements")
 
 
 class SubmissionRequirements(BaseModel):
@@ -66,7 +66,7 @@ class SubmissionRequirements(BaseModel):
     questions_due: Optional[str] = None
     modifications_allowed: Optional[bool] = None
     late_proposals: Optional[str] = None
-    source_quote: str = Field(description="Exact text defining submission requirements")
+    source_quote: Optional[str] = Field(None, description="Exact text defining submission requirements")
 
 
 class VolumeStructure(BaseModel):
@@ -75,7 +75,7 @@ class VolumeStructure(BaseModel):
     page_limit: Optional[int] = None
     content_required: List[str] = Field(default_factory=list)
     file_name: Optional[str] = None
-    source_quote: str
+    source_quote: Optional[str] = None
 
 
 class ContentRequirement(BaseExtractedItem):
@@ -126,7 +126,7 @@ class PriceEvaluation(BaseModel):
         description="How price is evaluated (realism, reasonableness, etc.)"
     )
     most_probable_cost: Optional[bool] = None
-    source_quote: str
+    source_quote: Optional[str] = None
 
 
 class SectionMSchema(BaseModel):
@@ -174,7 +174,7 @@ class SecurityRequirements(BaseModel):
     cmmc_level: Optional[str] = None
     cyber_requirements: List[str] = Field(default_factory=list)
     export_control: Optional[bool] = None
-    source_quote: str
+    source_quote: Optional[str] = None
 
 
 class TransitionRequirement(BaseModel):
@@ -183,7 +183,7 @@ class TransitionRequirement(BaseModel):
     duration: Optional[str] = None
     responsibilities: List[str] = Field(default_factory=list)
     milestones: List[str] = Field(default_factory=list)
-    source_quote: str
+    source_quote: Optional[str] = None
 
 
 class SectionHSchema(BaseModel):
@@ -265,7 +265,7 @@ class PeriodOfPerformance(BaseModel):
     base_period: Optional[str] = None
     option_periods: List[str] = Field(default_factory=list)
     total_potential: Optional[str] = None
-    source_quote: str
+    source_quote: Optional[str] = None
 
 
 class SectionBSchema(BaseModel):

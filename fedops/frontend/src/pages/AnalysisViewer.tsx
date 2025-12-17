@@ -455,14 +455,21 @@ export default function AnalysisViewer() {
     }
   };
 
-  const handleRerunAnalysis = async (mode: 'full' | 'quick' = 'full') => {
+  const handleRerunAnalysis = async (mode: 'full' | 'quick' | 'turbo' = 'full') => {
     if (!opportunityId) return;
     setReanalyzing(true);
 
     const isQuick = mode === 'quick';
-    const messageText = isQuick
-      ? 'Running quick scan...\n\nAnalyzing SOW and Evaluation Criteria for preliminary assessment...'
-      : 'Running comprehensive analysis...\n\nThis may take 30-60 seconds as AI agents analyze:\n• Solicitation requirements\n• Financial viability\n• Strategic alignment\n• Risk assessment\n• Internal capacity\n• Security requirements';
+    const isTurbo = mode === 'turbo';
+
+    let messageText: string;
+    if (isTurbo) {
+      messageText = 'Running TURBO analysis...\n\n⚡ Fastest mode - skipping document ingestion and vector storage...';
+    } else if (isQuick) {
+      messageText = 'Running quick scan...\n\nAnalyzing SOW and Evaluation Criteria for preliminary assessment...';
+    } else {
+      messageText = 'Running comprehensive analysis...\n\nThis may take 30-60 seconds as AI agents analyze:\n• Solicitation requirements\n• Financial viability\n• Strategic alignment\n• Risk assessment\n• Internal capacity\n• Security requirements';
+    }
 
     setAnalysisMessage({
       type: 'info',
@@ -1086,6 +1093,21 @@ export default function AnalysisViewer() {
                       <div className="absolute -top-1 -right-1 h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
                     </div>
                     Quick Scan
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRerunAnalysis('turbo')}
+                    disabled={reanalyzing}
+                    className="gap-2 border-amber-300 hover:bg-amber-50"
+                    title="Fastest processing - skips vector storage"
+                  >
+                    <div className="h-4 w-4 relative">
+                      <Activity className="h-4 w-4 text-amber-600" />
+                      <div className="absolute -top-1 -right-1 h-2 w-2 bg-amber-500 rounded-full" />
+                    </div>
+                    <span className="text-amber-700">Turbo</span>
                   </Button>
 
                   <Button

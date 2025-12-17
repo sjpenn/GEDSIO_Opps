@@ -127,7 +127,8 @@ class DoclingService:
         self,
         file_path: str,
         extract_tables: bool = True,
-        use_ocr: bool = False
+        use_ocr: bool = False,
+        fast: bool = False
     ) -> DoclingResult:
         """
         Parse a document using Docling.
@@ -158,8 +159,15 @@ class DoclingService:
             pipeline_options.do_ocr = False
             pipeline_options.do_table_structure = True
             
-            # Enable OCR if requested
-            if use_ocr:
+            if fast:
+                logger.info("Fast mode enabled: Skipping Table Structure Recognition & OCR")
+                pipeline_options.do_table_structure = False
+                pipeline_options.do_ocr = False
+                # Ensure we don't try to extract tables if we disabled the structure model
+                extract_tables = False
+            
+            # Enable OCR if requested (and not in fast mode)
+            if use_ocr and not fast:
                 logger.info("OCR enabled for document parsing (EasyOCR)")
                 pipeline_options.do_ocr = True
                 pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=True)

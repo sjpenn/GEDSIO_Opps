@@ -107,7 +107,8 @@ class DoclingChunker:
         file_path: str,
         opportunity_id: int,
         stored_file_id: int,
-        store_vectors: bool = True
+        store_vectors: bool = True,
+        fast_mode: bool = False
     ) -> IngestResult:
         """
         Full document ingestion with chunking and storage.
@@ -147,6 +148,11 @@ class DoclingChunker:
             pipeline_options.do_ocr = False  # Enable OCR if needed later
             pipeline_options.do_table_structure = True
             
+            if fast_mode: 
+                pipeline_options.do_ocr = False
+                pipeline_options.do_table_structure = False
+                logger.info("Docling Fast Mode: Skipping TSR and OCR")
+            
             converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
@@ -173,10 +179,15 @@ class DoclingChunker:
             
             # Store chunks in database if session provided
             if self.db_session and chunks:
+                logger.info(f"Storing {len(chunks)} chunks to database for file {stored_file_id}")
                 await self._store_chunks_in_db(chunks, stored_file_id, opportunity_id)
+            else:
+                if not self.db_session:
+                    logger.warning(f"No DB session provided - chunks not stored in database for file {stored_file_id}")
             
             # Store embeddings in vector store if enabled
             if store_vectors and self.vector_store and chunks:
+                logger.info(f"Preparing {len(chunks)} chunks for vector store (opportunity {opportunity_id})")
                 chunk_dicts = [
                     {
                         'id': chunk.id or idx,
@@ -185,12 +196,33 @@ class DoclingChunker:
                             'chunk_type': chunk.chunk_type,
                             'page_number': chunk.page_number,
                             'section': chunk.section,
-                            'file_id': stored_file_id
+                            'file_id': stored_file_id,
+                            'opportunity_id': opportunity_id
                         }
                     }
                     for idx, chunk in enumerate(chunks)
                 ]
-                await self.vector_store.add_chunks(opportunity_id, chunk_dicts)
+                
+                # Use batched method for non-blocking embedding generation
+                if hasattr(self.vector_store, 'add_chunks_batched'):
+                    async def log_progress(processed, total, message):
+                        logger.info(f"Vector store progress: {message}")
+                    
+                    result = await self.vector_store.add_chunks_batched(
+                        opportunity_id, 
+                        chunk_dicts,
+                        batch_size=100,
+                        progress_callback=log_progress
+                    )
+                    logger.info(f"Successfully added {result['total_added']} chunks to vector store for opportunity {opportunity_id}")
+                else:
+                    # Fallback to original method
+                    vector_ids = await self.vector_store.add_chunks(opportunity_id, chunk_dicts)
+                    logger.info(f"Successfully added {len(vector_ids)} chunks to vector store for opportunity {opportunity_id}")
+            elif store_vectors and not self.vector_store:
+                logger.warning(f"Vector store not initialized - embeddings not stored for opportunity {opportunity_id}")
+            elif store_vectors and not chunks:
+                logger.warning(f"No chunks to store in vector store for file {stored_file_id}")
             
             return IngestResult(
                 success=True,
@@ -348,14 +380,16 @@ class DoclingChunker:
             for chunk in chunks:
                 db_chunk = DocumentChunk(
                     stored_file_id=stored_file_id,
+                    opportunity_id=opportunity_id,  # Store as actual column, not just in metadata
                     chunk_index=chunk.chunk_index,
                     content=chunk.content,
                     page_number=chunk.page_number,
                     section=chunk.section,
+                    chunk_type=chunk.chunk_type,
+                    heading_context=chunk.heading_context,
                     metadata_={
-                        'chunk_type': chunk.chunk_type,
-                        'heading_context': chunk.heading_context,
-                        'opportunity_id': opportunity_id
+                        'chunk_type': chunk.chunk_type,  # Keep in metadata for backward compatibility
+                        'heading_context': chunk.heading_context
                     }
                 )
                 self.db_session.add(db_chunk)

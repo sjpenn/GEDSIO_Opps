@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 SAM_API_URL = "https://api.sam.gov/opportunities/v2/search"
 SAM_DESCRIPTION_API_URL = "https://api.sam.gov/prod/opportunities/v1/noticedesc"
 
-async def fetch_description(notice_id: str, api_key: str) -> str:
+async def fetch_description(notice_id: str, api_key: str, client: Optional[httpx.AsyncClient] = None) -> str:
     """Fetch full description text from SAM.gov notice description endpoint"""
     try:
         params = {
@@ -30,20 +30,26 @@ async def fetch_description(notice_id: str, api_key: str) -> str:
             "noticeid": notice_id
         }
         logger.info(f"Fetching description for notice {notice_id} from SAM.gov...")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        
+        if client:
             response = await client.get(SAM_DESCRIPTION_API_URL, params=params)
-            logger.info(f"Description fetch response status: {response.status_code}")
-            if response.status_code == 200:
-                data = response.json()
-                desc = data.get("description", "")
-                if desc:
-                    logger.info(f"Successfully fetched description for {notice_id}: {len(desc)} chars")
-                else:
-                    logger.warning(f"Description response for {notice_id} was empty")
-                return desc
+        else:
+            async with httpx.AsyncClient(timeout=15.0) as local_client:
+                response = await local_client.get(SAM_DESCRIPTION_API_URL, params=params)
+                
+        logger.info(f"Description fetch response status: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            desc = data.get("description", "")
+            if desc:
+                # logger.info(f"Successfully fetched description for {notice_id}: {len(desc)} chars")
+                pass
             else:
-                logger.warning(f"Failed to fetch description for notice {notice_id}: {response.status_code} - {response.text[:200]}")
-                return ""
+                logger.warning(f"Description response for {notice_id} was empty")
+            return desc
+        else:
+            logger.warning(f"Failed to fetch description for notice {notice_id}: {response.status_code} - {response.text[:200]}")
+            return ""
     except Exception as e:
         logger.error(f"Error fetching description for notice {notice_id}: {e}")
         return ""
@@ -184,12 +190,63 @@ async def list_opportunities(
             
             logger.info(f"Final filtered opportunities: {len(opportunities_data)}")
 
+            # --- OPTIMIZATION: Check existing records & Fetch descriptions in parallel ---
+            
+            # 1. Identify all Notice IDs
+            notice_ids = [o.get("noticeId") for o in opportunities_data if o.get("noticeId")]
+            existing_map = {}
+            
+            # 2. Batch fetch existence check from DB
+            if notice_ids:
+                # Chunk IDs for SQL IN clause limit (500)
+                for i in range(0, len(notice_ids), 500):
+                    chunk = notice_ids[i:i+500]
+                    stmt = select(OpportunityModel).where(OpportunityModel.notice_id.in_(chunk))
+                    result = await db.execute(stmt)
+                    for opp in result.scalars().all():
+                        existing_map[opp.notice_id] = opp
+            
+            # 3. Identify fetches needed
+            fetch_queue = []
+            for opp in opportunities_data:
+                nid = opp.get("noticeId")
+                raw_desc = opp.get("description", "")
+                
+                # Check directly if it looks like a URL
+                is_url = False
+                if raw_desc and (raw_desc.startswith("http") or "noticedesc" in raw_desc or "api.sam.gov" in raw_desc):
+                    is_url = True
+                
+                if is_url:
+                    # If existing opp has valid description, we skip unless empty
+                    if nid in existing_map:
+                         existing = existing_map[nid]
+                         if not existing.description or len(existing.description) < 50:
+                             fetch_queue.append(nid)
+                    else:
+                         fetch_queue.append(nid)
+
+            fetched_desc_map = {}
+            if fetch_queue:
+                logger.info(f"Parallel fetching {len(fetch_queue)} descriptions...")
+                sem = asyncio.Semaphore(20)
+                
+                async def _fetch_task(client, nid):
+                    async with sem:
+                        desc = await fetch_description(nid, settings.SAM_API_KEY, client=client)
+                        return nid, desc
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    tasks = [_fetch_task(client, nid) for nid in fetch_queue]
+                    results = await asyncio.gather(*tasks)
+                    fetched_desc_map = dict(results)
+
+            # 4. Process and Upsert
             for opp_data in opportunities_data:
                 try:
                     # Map SAM.gov data to our model
                     notice_id = opp_data.get("noticeId")
                     
-                    # Check if description is a URL or text
                     # Clean up raw description
                     raw_description = opp_data.get("description", "")
                     if raw_description:
@@ -204,24 +261,19 @@ async def list_opportunities(
                             is_url = True
                     
                     if is_url:
-                        fetched_desc = None
-                        if notice_id:
-                            fetched_desc = await fetch_description(notice_id, settings.SAM_API_KEY)
-                        
-                        if fetched_desc and len(fetched_desc) > 50: # Assume real description is reasonably long
-                            description_text = fetched_desc
+                        # Use pre-fetched description if available
+                        if notice_id in fetched_desc_map:
+                            description_text = fetched_desc_map[notice_id]
                         else:
-                            # If fetch failed, returned empty, or returned something short/suspicious
-                            # fallback to empty string. ABSOLUTELY DO NOT USE THE URL.
-                            description_text = ""
+                            # If not fetched (because existing was good), use existing
+                            if notice_id in existing_map:
+                                description_text = existing_map[notice_id].description
+                            else:
+                                description_text = ""
                     
-                    # Check if exists
-                    stmt = select(OpportunityModel).where(OpportunityModel.notice_id == notice_id)
-                    result = await db.execute(stmt)
-                    existing_opp = result.scalar_one_or_none()
+                    # Use existing map instead of querying DB per item
+                    existing_opp = existing_map.get(notice_id)
                     
-                    # logger.info(f"Processing notice {notice_id}. NAICS: {opp_data.get('naicsCode')}")
-
                     opp_dict = {
                         "notice_id": notice_id,
                         "title": opp_data.get("title"),
@@ -260,6 +312,8 @@ async def list_opportunities(
                     else:
                         new_opp = OpportunityModel(**opp_dict)
                         db.add(new_opp)
+                        # Add to map so duplicates in same batch share the object
+                        existing_map[notice_id] = new_opp
                     
                     # Flush to catch integrity errors for this specific opportunity
                     await db.flush()

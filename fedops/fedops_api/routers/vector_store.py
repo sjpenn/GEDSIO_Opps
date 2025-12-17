@@ -17,55 +17,65 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _get_vector_store_stats_sync():
+    """Synchronous function to get vector store stats - runs in thread pool."""
+    import chromadb
+    from chromadb.config import Settings
+    from pathlib import Path
+    
+    persist_dir = "./chroma_db"
+    
+    if not Path(persist_dir).exists():
+        return {
+            "status": "empty",
+            "message": "Vector store not initialized - no embeddings stored yet",
+            "total_collections": 0,
+            "total_chunks": 0,
+            "collections": []
+        }
+    
+    client = chromadb.PersistentClient(
+        path=persist_dir,
+        settings=Settings(anonymized_telemetry=False)
+    )
+    
+    collections = client.list_collections()
+    
+    collection_stats = []
+    total_chunks = 0
+    
+    for coll in collections:
+        count = coll.count()
+        total_chunks += count
+        collection_stats.append({
+            "name": coll.name,
+            "count": count,
+            "metadata": coll.metadata
+        })
+    
+    return {
+        "status": "active",
+        "total_collections": len(collections),
+        "total_chunks": total_chunks,
+        "collections": collection_stats
+    }
+
+
 @router.get("/stats")
 async def get_vector_store_stats():
     """
     Get overall vector store statistics.
     
+    Runs in a thread pool to avoid blocking the event loop.
+    
     Returns:
         Summary of all collections and total chunks
     """
+    import asyncio
     try:
-        import chromadb
-        from chromadb.config import Settings
-        from pathlib import Path
-        
-        persist_dir = "./chroma_db"
-        
-        if not Path(persist_dir).exists():
-            return {
-                "status": "empty",
-                "message": "Vector store not initialized - no embeddings stored yet",
-                "total_collections": 0,
-                "total_chunks": 0,
-                "collections": []
-            }
-        
-        client = chromadb.PersistentClient(
-            path=persist_dir,
-            settings=Settings(anonymized_telemetry=False)
-        )
-        
-        collections = client.list_collections()
-        
-        collection_stats = []
-        total_chunks = 0
-        
-        for coll in collections:
-            count = coll.count()
-            total_chunks += count
-            collection_stats.append({
-                "name": coll.name,
-                "count": count,
-                "metadata": coll.metadata
-            })
-        
-        return {
-            "status": "active",
-            "total_collections": len(collections),
-            "total_chunks": total_chunks,
-            "collections": collection_stats
-        }
+        # Run blocking ChromaDB operations in thread pool
+        result = await asyncio.to_thread(_get_vector_store_stats_sync)
+        return result
         
     except Exception as e:
         logger.error(f"Error getting vector store stats: {e}")

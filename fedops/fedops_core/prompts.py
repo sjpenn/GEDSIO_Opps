@@ -22,6 +22,128 @@ class DocumentType(Enum):
     OTHER = "other"
 
 
+class OpportunityCategory(Enum):
+    """
+    High-level opportunity category for analysis routing.
+    Determines which analysis agents run and which tabs appear in the UI.
+    """
+    RFI = "rfi"              # Sources Sought, RFI, Special Notice, Presolicitation
+    SOLICITATION = "solicitation"  # RFP, RFQ, IFB, Combined Synopsis/Solicitation
+    OTHER = "other"          # Award Notice, Justification, Amendment
+
+
+def determine_opportunity_category(opportunity_type: str) -> OpportunityCategory:
+    """
+    Determine the OpportunityCategory based on SAM.gov opportunity type.
+    
+    Args:
+        opportunity_type: The 'type' field from SAM.gov opportunity data
+        
+    Returns:
+        OpportunityCategory enum value
+    """
+    if not opportunity_type:
+        return OpportunityCategory.SOLICITATION  # Default to full analysis
+    
+    opp_type_lower = opportunity_type.lower().strip()
+    
+    # RFI / Pre-Solicitation types (capability demonstration focus)
+    rfi_types = [
+        "sources sought",
+        "special notice", 
+        "presolicitation",
+        "rfi",
+        "request for information",
+        "market research",
+        "industry day",
+    ]
+    
+    # Solicitation types (full compliance analysis)
+    solicitation_types = [
+        "solicitation",
+        "combined synopsis/solicitation",
+        "combined synopsis",
+        "rfp",
+        "rfq",
+        "ifb",
+        "request for proposal",
+        "request for quotation",
+        "invitation for bid",
+    ]
+    
+    # Other types (minimal/informational analysis)
+    other_types = [
+        "award notice",
+        "award",
+        "justification",
+        "intent to bundle",
+        "modification",
+        "amendment",
+        "sale of surplus",
+        "cancellation",
+    ]
+    
+    # Check RFI types first
+    for rfi_type in rfi_types:
+        if rfi_type in opp_type_lower:
+            return OpportunityCategory.RFI
+    
+    # Check Solicitation types
+    for sol_type in solicitation_types:
+        if sol_type in opp_type_lower:
+            return OpportunityCategory.SOLICITATION
+    
+    # Check Other types
+    for other_type in other_types:
+        if other_type in opp_type_lower:
+            return OpportunityCategory.OTHER
+    
+    # Default to Solicitation for unknown types (full analysis)
+    return OpportunityCategory.SOLICITATION
+
+
+def get_tabs_for_category(category: OpportunityCategory) -> list:
+    """
+    Get the list of applicable analysis tabs for a given opportunity category.
+    
+    Args:
+        category: OpportunityCategory enum value
+        
+    Returns:
+        List of tab IDs that should be displayed
+    """
+    if category == OpportunityCategory.RFI:
+        # RFI/Sources Sought: Focus on capability demonstration
+        return [
+            "overview",
+            "rfi_response",   # RFI Response Engine - block-by-block responses
+            "strategic",      # How to influence the final RFP
+            "capacity",       # Can we perform this work?
+            "past_performance",  # Relevant experience to highlight
+            "logs"
+        ]
+    elif category == OpportunityCategory.SOLICITATION:
+        # Full solicitation: Complete compliance analysis
+        return [
+            "overview",
+            "solicitation",   # Section L/M parsing
+            "financial",      # Pricing analysis
+            "strategic",      # Strategic alignment
+            "risk",           # Risk assessment
+            "security",       # Security requirements
+            "capacity",       # Capacity analysis
+            "personnel",      # Staffing requirements
+            "past_performance",  # Past performance requirements
+            "logs"
+        ]
+    else:  # OTHER
+        # Amendment/Award: Minimal informational analysis
+        return [
+            "overview",
+            "logs"
+        ]
+
+
 COMMON_JSON_STRUCTURE = """
 ### Output Format (JSON Structure)
 
@@ -1383,8 +1505,8 @@ def _detect_multiple_sections(content: str) -> int:
 # ============================================================================
 
 
-FINANCIAL_ANALYSIS_PROMPT = """
-You are a federal government contracting financial analyst. Analyze this opportunity from a financial perspective.
+PRICING_ANALYSIS_PROMPT = """
+You are a federal government contracting **Pricing Analyst** specializing in labor-based contracts. Your primary objective is to extract and analyze all Labor Categories (LCATs), Full-Time Equivalents (FTEs), and pricing potential from this opportunity.
 
 **Opportunity Details:**
 - Title: {title}
@@ -1396,52 +1518,133 @@ You are a federal government contracting financial analyst. Analyze this opportu
 **Incumbent & Market Intelligence:**
 {incumbent_context}
 
-**Extracted Financial Data:**
+**Extracted Pricing/Financial Data:**
 {financial_data_context}
 
-**Analysis Required:**
-1. **Price to Win (PTW) Strategy**: Analyze incumbent data and similar awards to recommend a winning price point.
-2. **LCAT Pricing Table**: Generate a detailed table of Labor Categories (LCATs) likely required, including experience levels, estimated market salaries, and suggested bill rates.
-3. **Estimated Contract Value**: Provide a realistic range based on scope and similar awards.
-4. **Profitability Potential**: Estimate potential profit margins (Low/Medium/High) with justification.
-5. **Cost Drivers**: Identify major cost components (Labor, Materials, Travel, ODC).
-6. **Financial Risks**: Specific risks that could impact profitability.
+---
 
-**Note:** You will be provided with relevant sections of the solicitation documents (Section B for pricing, SOW for scope) below. Use them to validate your analysis.
+## PRIMARY ANALYSIS FOCUS: Labor Categories & FTE Extraction
 
-**Output Format (JSON):**
-Return ONLY a valid JSON object with this structure:
+### CRITICAL INSTRUCTIONS:
+1. **Extract ALL Labor Categories (LCATs)** mentioned in Section B (CLIN structure), SOW/PWS, Section H, or any attachment.
+2. For each LCAT, capture:
+   - Exact title as listed in the solicitation
+   - Minimum qualifications (education, years of experience, certifications)
+   - Security clearance requirements (if any)
+   - Key duties/responsibilities
+   - CLIN reference (if applicable)
+3. **Calculate FTE totals** based on:
+   - Explicitly stated FTE counts in the solicitation
+   - If not stated, estimate based on scope, contract value, and NAICS norms
+   - Provide FTE breakdown by role
+4. **Determine Pricing Potential**:
+   - Contract ceiling value
+   - Base period vs option years
+   - Estimate total contract potential
+
+---
+
+## Output Format (JSON)
+
+Return ONLY a valid JSON object with this EXACT structure:
 {{
-  "summary": "2-3 sentence executive summary of financial viability",
-  "score": <number 0-100>,
-  "estimated_value_range": {{"low": <number>, "high": <number>, "confidence": "Low/Medium/High"}},
-  "margin_potential": "Low (<5%) / Medium (5-10%) / High (>10%)",
+  "summary": "2-3 sentence executive summary focused on LCAT/FTE analysis and pricing potential",
+  "score": <number 0-100, based on pricing attractiveness and margin potential>,
+  
+  "pricing_overview": {{
+    "contract_ceiling": "<Extracted or estimated ceiling value, e.g., '$50M'>",
+    "base_period_value": "<Value for base period if known>",
+    "total_potential": "<Total contract potential including options>",
+    "contract_type": "FFP/T&M/Cost-Plus/Hybrid",
+    "pricing_structure": "Labor-based / ODC-heavy / Mixed",
+    "estimated_value_range": {{"low": <number>, "high": <number>, "confidence": "Low/Medium/High"}}
+  }},
+  
+  "fte_summary": {{
+    "total_fte_estimate": <number, total estimated FTEs>,
+    "fte_source": "Extracted from solicitation / Estimated based on scope / Derived from CLIN structure",
+    "fte_breakdown": [
+      {{"category": "Technical", "count": <number>}},
+      {{"category": "Management", "count": <number>}},
+      {{"category": "Administrative", "count": <number>}}
+    ],
+    "staffing_notes": "Key insight about staffing (e.g., 'Heavy need for cleared personnel')"
+  }},
   
   "lcat_pricing": [
-      {{
-          "lcat_title": "Standardized Job Title (e.g., Senior Software Engineer)",
-          "description": "Brief description of duties/qualifications",
-          "requirements": "Detailed extracted requirements and qualifications",
-          "project_phase": "Phase/Task this LCAT supports",
-          "experience_level": "Junior/Mid/Senior/SME",
-          "education": "BS/MS/None",
-          "estimated_hours": <number>,
-          "fte_count": <number>,
-          "market_salary_low": <number>,
-          "market_salary_high": <number>,
-          "bill_rate_low": <number>,
-          "bill_rate_high": <number>
+    {{
+      "lcat_title": "Exact title from solicitation (e.g., 'Senior Software Developer')",
+      "clin_reference": "CLIN 0001AA or N/A",
+      "description": "Primary duties and responsibilities",
+      "requirements": {{
+        "education": "BS/MS/PhD/None or specific degree",
+        "years_experience": <number or range as string>,
+        "certifications": ["PMP", "CISSP", "AWS Certified"],
+        "clearance": "None/Secret/TS/TS-SCI",
+        "specialized_skills": ["Python", "AWS", "Agile"]
+      }},
+      "fte_count": <number>,
+      "source_quote": "Exact text from solicitation defining this LCAT or 'Inferred from scope'",
+      "pricing": {{
+        "experience_level": "Junior/Mid/Senior/SME/Principal",
+        "market_salary_low": <number, annual>,
+        "market_salary_high": <number, annual>,
+        "bill_rate_low": <number, hourly>,
+        "bill_rate_high": <number, hourly>,
+        "wrap_rate_estimate": <number, multiplier e.g., 2.5>
       }}
+    }}
   ],
   
-  "incumbent_summary": "Analysis of incumbent performance and pricing if available",
-
-  "insights": ["insight 1", "insight 2", "insight 3"],
-  "risks": ["financial risk 1", "financial risk 2"],
-  "opportunities": ["financial opportunity 1", "financial opportunity 2"],
-  "recommendation": "Clear GO/NO-GO/REVIEW recommendation with brief justification"
+  "total_labor_estimate": {{
+    "annual_labor_cost_low": <number>,
+    "annual_labor_cost_high": <number>,
+    "base_period_labor_estimate": <number>,
+    "total_contract_labor_estimate": <number>,
+    "confidence": "Low/Medium/High"
+  }},
+  
+  "margin_potential": "Low (<5%) / Medium (5-10%) / High (>10%)",
+  "margin_justification": "Why margin is low/medium/high based on contract type, competition, etc.",
+  
+  "incumbent_summary": "Analysis of incumbent's performance and estimated pricing if available",
+  
+  "cost_drivers": [
+    {{"driver": "Labor", "impact": "High/Medium/Low", "note": "Explanation"}},
+    {{"driver": "Clearances", "impact": "High/Medium/Low", "note": "Premium for cleared staff"}},
+    {{"driver": "Travel", "impact": "High/Medium/Low", "note": "Travel requirements if any"}},
+    {{"driver": "ODCs", "impact": "High/Medium/Low", "note": "Other Direct Costs"}}
+  ],
+  
+  "pricing_risks": [
+    {{"risk": "Risk description", "severity": "High/Medium/Low", "mitigation": "Suggested mitigation"}}
+  ],
+  
+  "pricing_opportunities": ["opportunity 1", "opportunity 2"],
+  
+  "key_insights": ["insight 1", "insight 2", "insight 3"],
+  
+  "recommendation": "GO/NO-GO/REVIEW with pricing-focused justification"
 }}
+
+---
+
+**EXTRACTION RULES:**
+1. If a LCAT is mentioned but details are vague, still include it with "Inferred from scope" as source_quote
+2. Always provide market salary and bill rates based on GSA Schedule rates or industry benchmarks
+3. Use standard wrap rate multipliers: 2.0-2.5 for commercial, 2.5-3.0 for government with clearances
+4. Flag LCATs that require TS/SCI as premium rates (+20-30% over market)
+5. If FTE count is not explicit, estimate based on contract value ÷ average fully-loaded cost per FTE
+
+**PRICING SOURCES TO REFERENCE:**
+- GSA Multiple Award Schedule rates
+- OPM General Schedule (GS) equivalent rates
+- Industry benchmarks for NAICS {naics_code}
+- Incumbent contract values if known
 """
+
+# Keep backward compatibility alias
+FINANCIAL_ANALYSIS_PROMPT = PRICING_ANALYSIS_PROMPT
 
 STRATEGIC_ANALYSIS_PROMPT = """
 You are a federal government contracting strategist. Analyze this opportunity for strategic alignment.
@@ -2761,4 +2964,435 @@ Use the following HTML structure. Fill in the [PLACEHOLDER] values with extracte
 4. Include the FULL solicitation number, FULL addresses, FULL email addresses
 5. DO NOT wrap output in markdown code blocks
 6. Return ONLY the raw HTML string
+"""
+
+
+# =============================================================================
+# RFI / SOURCES SOUGHT SPECIFIC PROMPTS
+# =============================================================================
+
+RFI_QUICK_SCAN_PROMPT = """You are a federal Government ContractingGPT, specializing in Sources Sought and RFI responses.
+
+**Context:**
+We are Space Metrics Inc. (Account Profile):
+{govcon_profile}
+
+**Opportunity Data:**
+{opportunity_data}
+
+**IMPORTANT:** This is a **Sources Sought / RFI / Pre-Solicitation** notice, NOT a formal solicitation.
+
+**Task:**
+Provide a comprehensive, well-structured summary focused on **CAPABILITY DEMONSTRATION** and **OPPORTUNITY SHAPING**.
+The goal is to help us decide whether and how to respond to influence the final RFP requirements.
+
+**REQUIRED HTML STRUCTURE:**
+Use the following HTML structure. Fill in the [PLACEHOLDER] values with extracted data:
+
+```
+<div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.8; color: #333;">
+  
+  <div style="background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+      <span style="background: white; color: #7c3aed; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">RFI / SOURCES SOUGHT</span>
+    </div>
+    <h1 style="margin: 0; font-size: 24px;">[OPPORTUNITY TITLE]</h1>
+    <p style="margin: 8px 0 0 0; opacity: 0.9;">[AGENCY / DEPARTMENT]</p>
+    <p style="margin: 4px 0 0 0; opacity: 0.8; font-size: 14px;">Notice ID: [NOTICE ID OR SOLICITATION NUMBER]</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px;">
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #dc2626;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Response Deadline</div>
+      <div style="font-size: 16px; font-weight: 600; color: #dc2626;">[DUE DATE]</div>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #9333ea;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Set-Aside Intent</div>
+      <div style="font-size: 16px; font-weight: 600; color: #9333ea;">[SET-ASIDE TYPE OR "TBD"]</div>
+    </div>
+    <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border-left: 4px solid #0891b2;">
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">NAICS</div>
+      <div style="font-size: 16px; font-weight: 600; color: #0891b2;">[NAICS CODE]</div>
+    </div>
+  </div>
+
+  <section style="background: #ede9fe; padding: 20px; border-radius: 8px; border-left: 4px solid #7c3aed; margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #5b21b6; margin: 0 0 12px 0;">🎯 Purpose of This Notice</h2>
+    <p style="margin: 0; color: #5b21b6;">[EXPLAIN WHY THE GOVERNMENT IS ISSUING THIS RFI - E.G., "Market Research to determine if small businesses can perform this work", "Seeking industry input on requirements", etc.]</p>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📋 Anticipated Scope of Work</h2>
+    <p style="margin-bottom: 12px;">[FULL DESCRIPTION OF ANTICIPATED REQUIREMENTS]</p>
+    <h3 style="font-size: 14px; color: #475569; margin: 16px 0 8px 0;">Anticipated Tasks/Services:</h3>
+    <ul style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 6px;">[TASK 1]</li>
+      <li style="margin-bottom: 6px;">[TASK 2]</li>
+      <li style="margin-bottom: 6px;">[TASK 3]</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">❓ Questions to Address in Response</h2>
+    <p style="margin-bottom: 12px;">The government is seeking responses to the following:</p>
+    <ol style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 8px;">[QUESTION 1 - e.g., "Can your company perform this work as a prime?"]</li>
+      <li style="margin-bottom: 8px;">[QUESTION 2 - e.g., "What is your small business status?"]</li>
+      <li style="margin-bottom: 8px;">[QUESTION 3 - e.g., "Describe relevant past performance"]</li>
+    </ol>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">✅ Our Capability Alignment</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #1e3a5f; color: white;">
+        <th style="padding: 10px; border: 1px solid #e2e8f0; text-align: left;">Requirement Area</th>
+        <th style="padding: 10px; border: 1px solid #e2e8f0; text-align: left;">Our Capability</th>
+        <th style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; width: 80px;">Fit</th>
+      </tr>
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[REQUIREMENT 1]</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[HOW WE MEET IT]</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center;">🟢/🟡/🔴</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[REQUIREMENT 2]</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[HOW WE MEET IT]</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center;">🟢/🟡/🔴</td>
+      </tr>
+    </table>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">🔮 Opportunity Shaping Recommendations</h2>
+    <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin-bottom: 12px;">
+      <h4 style="color: #166534; margin: 0 0 8px 0;">✅ Influence the Final RFP</h4>
+      <ul style="margin: 0; padding-left: 20px; color: #166534;">
+        <li style="margin-bottom: 4px;">[RECOMMENDATION 1 - e.g., "Emphasize small business capabilities to encourage set-aside"]</li>
+        <li style="margin-bottom: 4px;">[RECOMMENDATION 2 - e.g., "Highlight Agile methodology experience to shape requirements"]</li>
+        <li style="margin-bottom: 4px;">[RECOMMENDATION 3 - e.g., "Propose evaluation criteria that favor our strengths"]</li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📧 Submission Instructions</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600; width: 35%;">Respond To</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[EMAIL ADDRESS OR PORTAL]</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Page Limit</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[PAGE LIMIT OR "Not Specified"]</td>
+      </tr>
+      <tr style="background: #f8fafc;">
+        <td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: 600;">Contact</td>
+        <td style="padding: 10px; border: 1px solid #e2e8f0;">[POC NAME, EMAIL, PHONE]</td>
+      </tr>
+    </table>
+  </section>
+
+  <section style="background: #fef3c7; padding: 20px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #92400e; margin: 0 0 12px 0;">⚡ Response Recommendation</h2>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+      <span style="background: [COLOR]; color: white; padding: 6px 16px; border-radius: 4px; font-weight: 600; font-size: 14px;">[RESPOND / CONSIDER / DO NOT RESPOND]</span>
+    </div>
+    <ul style="margin: 0; padding-left: 20px; color: #78350f;">
+      <li style="margin-bottom: 8px;">[REASON 1 - Why we should/shouldn't respond]</li>
+      <li style="margin-bottom: 8px;">[REASON 2 - Strategic value of responding]</li>
+      <li style="margin-bottom: 8px;">[REASON 3 - Potential to shape the final RFP]</li>
+    </ul>
+  </section>
+
+</div>
+```
+
+**CRITICAL INSTRUCTIONS:**
+1. This is an RFI/Sources Sought - focus on CAPABILITY DEMONSTRATION, not proposal compliance
+2. Extract and fill in ALL [PLACEHOLDER] values with actual data
+3. For capability alignment, compare OUR profile against the requirements
+4. Include specific SHAPING recommendations - how can we influence the final RFP?
+5. Use 🟢 (Strong Fit), 🟡 (Partial Fit), 🔴 (Gap) for capability ratings
+6. For recommendation color: use #16a34a (RESPOND), #f59e0b (CONSIDER), #dc2626 (DO NOT RESPOND)
+7. DO NOT wrap output in markdown code blocks
+8. Return ONLY the raw HTML string
+"""
+
+
+# =============================================================================
+# AMENDMENT / OTHER NOTICE PROMPTS
+# =============================================================================
+
+OTHER_QUICK_SCAN_PROMPT = """You are a federal Government ContractingGPT, analyzing an informational notice.
+
+**Context:**
+We are Space Metrics Inc. (Account Profile):
+{govcon_profile}
+
+**Opportunity Data:**
+{opportunity_data}
+
+**IMPORTANT:** This is an **informational notice** (Amendment, Award Notice, Justification, etc.), NOT a solicitation requiring a proposal.
+
+**Task:**
+Provide a brief summary of the key information in this notice and any action items.
+
+**REQUIRED HTML STRUCTURE:**
+
+```
+<div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.8; color: #333;">
+  
+  <div style="background: linear-gradient(135deg, #64748b, #94a3b8); color: white; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+      <span style="background: white; color: #64748b; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">[NOTICE TYPE - e.g., AMENDMENT, AWARD NOTICE]</span>
+    </div>
+    <h1 style="margin: 0; font-size: 24px;">[TITLE]</h1>
+    <p style="margin: 8px 0 0 0; opacity: 0.9;">[AGENCY / DEPARTMENT]</p>
+    <p style="margin: 4px 0 0 0; opacity: 0.8; font-size: 14px;">Related Solicitation: [SOLICITATION NUMBER]</p>
+  </div>
+
+  <section style="background: #f1f5f9; padding: 20px; border-radius: 8px; border-left: 4px solid #64748b; margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #334155; margin: 0 0 12px 0;">📋 Summary</h2>
+    <p style="margin: 0; color: #334155;">[BRIEF SUMMARY OF WHAT THIS NOTICE CONTAINS]</p>
+  </section>
+
+  <section style="margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e3a5f; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px;">📝 Key Changes / Information</h2>
+    <ul style="margin: 0; padding-left: 20px;">
+      <li style="margin-bottom: 8px;">[KEY POINT 1]</li>
+      <li style="margin-bottom: 8px;">[KEY POINT 2]</li>
+      <li style="margin-bottom: 8px;">[KEY POINT 3]</li>
+    </ul>
+  </section>
+
+  <section style="background: #eff6ff; padding: 20px; border-radius: 8px; border-left: 4px solid #3b82f6; margin-bottom: 24px;">
+    <h2 style="font-size: 18px; color: #1e40af; margin: 0 0 12px 0;">⚡ Action Required</h2>
+    <p style="margin: 0; color: #1e40af;">[DESCRIBE ANY ACTION REQUIRED - e.g., "No action required - informational only" OR "Update proposal to reflect new deadline"]</p>
+  </section>
+
+</div>
+```
+
+**CRITICAL INSTRUCTIONS:**
+1. Keep analysis brief - this is informational, not a full proposal opportunity
+2. Focus on what CHANGED or what's NEW
+3. Clearly state any action items
+4. DO NOT wrap output in markdown code blocks
+5. Return ONLY the raw HTML string
+"""
+
+
+def get_quick_scan_prompt_for_category(category: OpportunityCategory) -> str:
+    """
+    Get the appropriate Quick Scan prompt based on opportunity category.
+    
+    Args:
+        category: OpportunityCategory enum value
+        
+    Returns:
+        The appropriate prompt template string
+    """
+    if category == OpportunityCategory.RFI:
+        return RFI_QUICK_SCAN_PROMPT
+    elif category == OpportunityCategory.SOLICITATION:
+        return QUICK_SCAN_SLIDEOUT_PROMPT
+    else:  # OTHER
+        return OTHER_QUICK_SCAN_PROMPT
+
+
+# =============================================================================
+# RFI RESPONSE ENGINE PROMPTS
+# =============================================================================
+
+RFI_REQUIREMENTS_EXTRACTION_PROMPT = """You are an expert at analyzing government RFI (Request for Information), Sources Sought notices, and PWS/SOW documents.
+
+**Task:**
+Extract ALL requirements from this document. Be EXHAUSTIVE - extract every single requirement, task, and capability that the government wants demonstrated.
+
+**RFI Document Content:**
+{rfi_content}
+
+**CRITICAL - PWS/SOW Section 3.x.x Extraction:**
+If this document contains a PWS (Performance Work Statement) or SOW (Statement of Work), you MUST extract EVERY subsection from Section 3 as a separate requirement:
+- Section 3.1, 3.1.1, 3.1.2, 3.2, 3.2.1, 3.2.2, 3.3, etc.
+- Each numbered paragraph (3.x.x.x) represents a distinct task/requirement
+- Do NOT summarize or combine subsections - extract each one individually
+- Include the section number in the requirement ID (e.g., REQ-3.1.1, REQ-3.2.3)
+
+**What to Extract:**
+1. **PWS/SOW Tasks (Section 3):** EVERY numbered subsection (3.1, 3.1.1, 3.1.2, 3.2, etc.)
+2. **Explicit Questions:** Any question the government asks respondents to answer
+3. **Capability Requirements:** Skills, tools, certifications, clearances needed
+4. **Experience Requirements:** Past performance, similar contract experience
+5. **Staffing Requirements:** Key personnel, labor categories, FTE counts
+6. **Technical Requirements:** Systems, software, methodologies, approaches
+7. **Compliance Requirements:** Certifications, clearances, set-asides
+
+**Instructions:**
+1. Read the ENTIRE document carefully
+2. For Section 3 (PWS/SOW), extract EACH subsection as its own requirement
+3. Number requirements: REQ-3.1 for section 3.1, REQ-3.1.1 for section 3.1.1, etc.
+4. For non-Section 3 items, use REQ-001, REQ-002, etc.
+5. Expect to find 15-50+ requirements in a typical PWS/SOW
+
+**Return JSON in this exact format:**
+```json
+{{
+  "requirements": [
+    {{
+      "id": "REQ-3.1",
+      "text": "The contractor shall provide program management support including...",
+      "type": "CAPABILITY | EXPERIENCE | TECHNICAL | TEAMING | PRICING | SOCIOECONOMIC | STAFFING | OTHER",
+      "section": "3.1 Program Management",
+      "response_guidance": "Describe PM approach, tools, and relevant experience"
+    }},
+    {{
+      "id": "REQ-3.1.1",
+      "text": "The contractor shall develop and maintain a Program Management Plan...",
+      "type": "TECHNICAL",
+      "section": "3.1.1 Program Management Plan", 
+      "response_guidance": "Describe PMP development methodology and sample deliverable"
+    }}
+  ],
+  "total_count": 25,
+  "summary": "Brief summary of what the government is seeking"
+}}
+```
+
+**Requirement Types:**
+- CAPABILITY: Can you do this work? Do you have these skills?
+- EXPERIENCE: Past performance, relevant contracts, project history
+- TECHNICAL: Specific technical approaches, tools, methodologies, deliverables
+- TEAMING: Prime/sub arrangements, partnerships, JVs
+- PRICING: Cost estimates, pricing approach, rate information
+- SOCIOECONOMIC: Small business status, certifications, set-aside eligibility
+- STAFFING: Key personnel, labor categories, qualifications
+- OTHER: Any other information requests
+
+**IMPORTANT:**
+- Extract EVERY Section 3.x.x subsection - do not skip or combine any
+- Include the EXACT text from the document
+- A typical PWS should yield 20-40+ requirements
+- If you only find a few requirements, re-read the document more carefully
+- Return ONLY valid JSON
+"""
+
+
+
+RFI_BLOCK_RESPONSE_PROMPT = """You are a federal government contracting proposal manager generating a response to an RFI/Sources Sought notice.
+
+**Company Profile:**
+{company_profile}
+
+**Past Performance Summary:**
+{past_performance}
+
+**Requirement to Respond To:**
+ID: {requirement_id}
+Type: {requirement_type}
+Requirement: {requirement_text}
+
+**Instructions:**
+Generate a compelling, professional response that:
+1. DIRECTLY addresses what is being asked
+2. Demonstrates our capability to perform
+3. References relevant past performance when applicable
+4. Highlights our competitive advantages
+5. Uses third-person, professional tone
+6. Is concise but comprehensive (150-300 words typically)
+
+**Response Guidelines by Type:**
+- CAPABILITY: Describe specific skills, tools, methodologies, and team expertise
+- EXPERIENCE: Cite relevant past contracts with agency, scope, value, and outcomes
+- TECHNICAL: Explain technical approach, tools used, certifications held
+- TEAMING: Describe partnership arrangements, subcontracting approach
+- PRICING: Provide general pricing approach (without specifics), rate structures
+- SOCIOECONOMIC: State business size, certifications (8(a), SDVOSB, etc.), set-aside qualifications
+
+**Output Format:**
+Return a JSON object:
+```json
+{{
+  "requirement_id": "{requirement_id}",
+  "response": "Your professionally written response text here...",
+  "fit_score": 85,
+  "fit_rationale": "Brief explanation of why we're a good/poor fit for this requirement",
+  "supporting_evidence": ["Past contract name 1", "Certification name", "Tool/skill"]
+}}
+```
+
+**fit_score guidance:**
+- 90-100: Strong fit - direct experience, proven capability
+- 70-89: Good fit - related experience, can demonstrate capability
+- 50-69: Moderate fit - some gaps but addressable
+- Below 50: Weak fit - significant gaps
+
+**IMPORTANT:**
+- Be specific and evidence-based, not generic
+- If we lack direct experience, explain transferable skills
+- Return ONLY valid JSON
+"""
+
+
+RFI_FULL_RESPONSE_PROMPT = """You are a federal government contracting proposal manager compiling a complete RFI/Sources Sought response.
+
+**Company Profile:**
+{company_profile}
+
+**Past Performance:**
+{past_performance}
+
+**Individual Requirement Responses:**
+{block_responses}
+
+**Opportunity Details:**
+- Title: {title}
+- Agency: {agency}
+- NAICS: {naics_code}
+- Description: {description}
+
+**Task:**
+Compile a complete, professional RFI response document that:
+1. Includes an executive summary/introduction
+2. Presents each requirement with its response in order
+3. Includes a conclusion reiterating our interest
+4. Is formatted for government submission
+
+**Output Format:**
+Return the complete response as Markdown with clear sections:
+
+```markdown
+# Response to Sources Sought Notice: [Title]
+
+## 1. Introduction
+[Brief introduction stating interest and qualifications]
+
+## 2. Response to Information Requests
+
+### Requirement 1: [Requirement Text]
+[Response]
+
+### Requirement 2: [Requirement Text]
+[Response]
+
+[...continue for all requirements...]
+
+## 3. Conclusion
+[Closing statement reiterating interest and readiness]
+
+## 4. Company Information
+- Company Name: [Name]
+- DUNS/UEI: [Number]
+- NAICS Codes: [Codes]
+- Business Size: [Size status]
+- Certifications: [List]
+- Point of Contact: [Name, Email, Phone]
+```
+
+**IMPORTANT:**
+- Maintain professional tone throughout
+- Ensure responses flow naturally together
+- Keep formatting clean for copy/paste into Word
+- Return the Markdown document only, no JSON wrapping
 """

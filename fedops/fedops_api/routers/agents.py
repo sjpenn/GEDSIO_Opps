@@ -204,4 +204,109 @@ async def check_opportunity_eligibility(
         raise HTTPException(status_code=500, detail=f"Error checking eligibility: {str(e)}")
 
 
+# =============================================================================
+# RFI RESPONSE ENGINE ENDPOINTS
+# =============================================================================
 
+@router.post("/opportunities/{opportunity_id}/rfi/extract-requirements")
+async def extract_rfi_requirements(
+    opportunity_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Extract all requirements/questions from an RFI document.
+    Returns structured list of requirements that need responses.
+    """
+    from fedops_core.services.rfi_response_service import RFIResponseService
+    
+    try:
+        service = RFIResponseService(db)
+        result = await service.extract_requirements(opportunity_id)
+        
+        # Return the full result including debug info on error
+        # This helps diagnose AI response parsing issues
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error extracting requirements: {str(e)}")
+
+
+@router.post("/opportunities/{opportunity_id}/rfi/generate-responses")
+async def generate_rfi_responses(
+    opportunity_id: int,
+    requirements: list = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate responses for all RFI requirements.
+    Optionally accepts a list of requirements, otherwise extracts them first.
+    """
+    from fedops_core.services.rfi_response_service import RFIResponseService
+    
+    try:
+        service = RFIResponseService(db)
+        result = await service.generate_all_responses(opportunity_id, requirements)
+        
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating responses: {str(e)}")
+
+
+@router.post("/opportunities/{opportunity_id}/rfi/generate-block-response")
+async def generate_single_block_response(
+    opportunity_id: int,
+    requirement: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate a response for a single requirement block.
+    Used for regenerating individual responses.
+    """
+    from fedops_core.services.rfi_response_service import RFIResponseService
+    
+    try:
+        service = RFIResponseService(db)
+        result = await service.generate_block_response(opportunity_id, requirement)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating block response: {str(e)}")
+
+
+@router.post("/opportunities/{opportunity_id}/rfi/compile-document")
+async def compile_rfi_document(
+    opportunity_id: int,
+    block_responses: list,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Compile all block responses into a complete RFI response document.
+    Returns Markdown-formatted document ready for export.
+    """
+    from fedops_core.services.rfi_response_service import RFIResponseService
+    
+    try:
+        service = RFIResponseService(db)
+        result = await service.compile_full_response(opportunity_id, block_responses)
+        
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error compiling document: {str(e)}")

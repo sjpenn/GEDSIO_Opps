@@ -29,7 +29,10 @@ import {
   ExternalLink,
   Eye,
   RefreshCw,
-  Download
+  Download,
+  Sparkles,
+  Copy,
+  Pencil
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import ShipleyPhaseIndicator from '@/components/ShipleyPhaseIndicator';
@@ -108,7 +111,7 @@ interface AnalysisData {
   }>;
 }
 
-type TabType = 'overview' | 'solicitation' | 'financial' | 'strategic' | 'risk' | 'security' | 'capacity' | 'personnel' | 'past_performance' | 'logs';
+type TabType = 'overview' | 'solicitation' | 'financial' | 'strategic' | 'risk' | 'security' | 'capacity' | 'personnel' | 'past_performance' | 'rfi_response' | 'logs';
 
 // Helper function to parse department and subtier from fullParentPathName
 const parseParentPath = (fullPath: string | null | undefined): { department: string; subTier: string } => {
@@ -477,30 +480,87 @@ export default function AnalysisViewer() {
     });
 
     try {
+      // Start the analysis (returns immediately with 202)
       const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analyze?mode=${mode}`, {
         method: 'POST'
       });
-      if (res.ok) {
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        setAnalysisMessage({
+          type: 'error',
+          text: `Failed to start analysis: ${errorText}`
+        });
+        return;
+      }
+
+      // Poll for completion - the analysis runs in background
+      const pollInterval = 2000; // 2 seconds
+      const maxWait = 180000; // 3 minutes max
+      const startTime = Date.now();
+
+      const pollForCompletion = async (): Promise<boolean> => {
+        while (Date.now() - startTime < maxWait) {
+          try {
+            const statusRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analysis/status`);
+            if (statusRes.ok) {
+              const status = await statusRes.json();
+
+              // Update progress display
+              setAnalysisProgress(status);
+
+              // Check if complete or failed
+              if (status.status === 'complete' || status.stage === 'complete') {
+                return true;
+              }
+              if (status.status === 'error' || status.error) {
+                setAnalysisMessage({
+                  type: 'error',
+                  text: `Analysis failed: ${status.error || 'Unknown error'}`
+                });
+                return false;
+              }
+              if (status.status === 'idle') {
+                // Analysis finished (progress was cleaned up)
+                return true;
+              }
+            }
+          } catch (pollError) {
+            console.error('Error polling status:', pollError);
+          }
+
+          // Wait before next poll
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+
+        // Timeout reached
+        setAnalysisMessage({
+          type: 'error',
+          text: 'Analysis is taking longer than expected. Check the Activity Logs tab for status.'
+        });
+        return false;
+      };
+
+      const completed = await pollForCompletion();
+
+      if (completed) {
         setAnalysisMessage({
           type: 'success',
-          text: `Analysis (${isQuick ? 'Quick' : 'Full'}) completed successfully! Refreshing data...`
+          text: `Analysis (${isQuick ? 'Quick' : isTurbo ? 'Turbo' : 'Full'}) completed successfully! Refreshing data...`
         });
-        // Refresh all analysis data
+
+        // Now refresh the data - analysis is actually complete
         const newData = await fetchAnalysisData();
         await fetchEligibility();
 
-        if (isQuick && newData?.score?.details?.executive_overview?.quick_scan_html) {
+        if ((isQuick || isTurbo) && newData?.score?.details?.executive_overview?.quick_scan_html) {
           setQuickScanHtml(newData.score.details.executive_overview.quick_scan_html);
           setShowQuickScan(true);
         }
 
+        // Clear progress display after success
+        setAnalysisProgress(null);
         setTimeout(() => setAnalysisMessage(null), 3000);
-      } else {
-        const errorText = await res.text();
-        setAnalysisMessage({
-          type: 'error',
-          text: `Analysis failed: ${errorText}`
-        });
       }
     } catch (error) {
       console.error("Analysis failed", error);
@@ -1009,10 +1069,34 @@ export default function AnalysisViewer() {
 
 
 
-  const tabs = [
+  // Get category info from score details
+  const getCategoryInfo = () => {
+    const category = data?.score?.details?.opportunity_category || 'solicitation';
+    const applicableTabs = data?.score?.details?.applicable_tabs || [
+      'overview', 'solicitation', 'financial', 'strategic', 'risk',
+      'security', 'capacity', 'personnel', 'past_performance', 'logs'
+    ];
+
+    const categoryLabels: Record<string, { label: string; color: string; icon: string }> = {
+      'rfi': { label: 'RFI / Sources Sought', color: 'bg-purple-500 hover:bg-purple-600', icon: '🔍' },
+      'solicitation': { label: 'Solicitation', color: 'bg-blue-500 hover:bg-blue-600', icon: '📋' },
+      'other': { label: 'Informational Notice', color: 'bg-gray-500 hover:bg-gray-600', icon: 'ℹ️' },
+    };
+
+    return {
+      category,
+      applicableTabs,
+      ...categoryLabels[category] || categoryLabels['solicitation']
+    };
+  };
+
+  const categoryInfo = getCategoryInfo();
+
+  const allTabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: TrendingUp },
+    { id: 'rfi_response' as TabType, label: 'RFI Response', icon: FileText }, // For RFI opportunities
     { id: 'solicitation' as TabType, label: 'Solicitation', icon: FileText },
-    { id: 'financial' as TabType, label: 'Financial Analysis', icon: DollarSign },
+    { id: 'financial' as TabType, label: 'Pricing Analysis', icon: DollarSign },
     { id: 'strategic' as TabType, label: 'Strategic Alignment', icon: Target },
     { id: 'risk' as TabType, label: 'Risk Assessment', icon: AlertTriangle },
     { id: 'security' as TabType, label: 'Security', icon: Shield },
@@ -1021,6 +1105,9 @@ export default function AnalysisViewer() {
     { id: 'past_performance' as TabType, label: 'Past Performance', icon: History },
     { id: 'logs' as TabType, label: 'Activity Logs', icon: Activity },
   ];
+
+  // Filter tabs based on opportunity category
+  const tabs = allTabs.filter(tab => categoryInfo.applicableTabs.includes(tab.id));
 
   if (loading) {
     return (
@@ -1074,6 +1161,10 @@ export default function AnalysisViewer() {
               <div className="flex items-center gap-2 mt-4">
                 <h1 className="text-xl font-semibold text-foreground">{opportunity.title}</h1>
                 <Badge variant="outline">{opportunity.notice_id}</Badge>
+                {/* Opportunity Category Badge */}
+                <Badge className={cn("text-white text-xs", categoryInfo.color)}>
+                  {categoryInfo.icon} {categoryInfo.label}
+                </Badge>
               </div>
             </div>
 
@@ -1130,24 +1221,35 @@ export default function AnalysisViewer() {
                 </div>
               </div>
 
-              {/* Stack 2: Proposals */}
+              {/* Stack 2: Proposals / RFI Response */}
               <div className="flex flex-col gap-2">
                 <Button
-                  onClick={handleGenerateProposal}
-                  disabled={!canGenerateProposal || generatingProposal}
+                  onClick={() => {
+                    if (categoryInfo.category === 'rfi') {
+                      // For RFI: Navigate to RFI Response tab
+                      setActiveTab('rfi_response');
+                    } else {
+                      // For Solicitation: Generate proposal
+                      handleGenerateProposal();
+                    }
+                  }}
+                  disabled={categoryInfo.category !== 'rfi' && (!canGenerateProposal || generatingProposal)}
                   variant="default"
                   size="sm"
-                  className="gap-1.5 text-xs justify-start w-40"
+                  className={cn(
+                    "gap-1.5 text-xs justify-start w-44",
+                    categoryInfo.category === 'rfi' && "bg-purple-600 hover:bg-purple-700"
+                  )}
                 >
-                  {generatingProposal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                  Generate Proposal
+                  {generatingProposal && categoryInfo.category !== 'rfi' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                  {categoryInfo.category === 'rfi' ? 'Generate RFI Response' : 'Generate Proposal'}
                 </Button>
-                {showPursuitButton && (
+                {showPursuitButton && categoryInfo.category !== 'rfi' && (
                   <Button
                     onClick={() => setShowPursuitDialog(true)}
                     variant="default"
                     size="sm"
-                    className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 justify-start w-40"
+                    className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 justify-start w-44"
                   >
                     <CheckCircle className="h-3.5 w-3.5" />
                     Proposal Decision
@@ -1383,6 +1485,7 @@ export default function AnalysisViewer() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         <ScrollArea className="h-[calc(100vh-280px)]">
           {activeTab === 'overview' && <OverviewTab opportunity={opportunity} score={score} />}
+          {activeTab === 'rfi_response' && <RFIResponseTab opportunityId={data.opportunity.id} />}
           {activeTab === 'solicitation' && <SolicitationTab score={score} />}
           {activeTab === 'financial' && <FinancialTab score={score} />}
           {activeTab === 'strategic' && <StrategicTab score={score} />}
@@ -1922,89 +2025,160 @@ function SecurityTab({ score, opportunityId }: { score: AnalysisData['score']; o
     </div>
   );
 }
-// Financial Tab Component
-// Financial Tab Component
+// Pricing Tab Component (formerly Financial Tab)
+// Pricing Tab Component (formerly Financial Tab)  
 function FinancialTab({ score }: { score: AnalysisData['score'] }) {
   if (!score) return <NoAnalysisCard />;
 
   const financial = score.details?.financial;
+  const pricingOverview = financial?.pricing_overview;
+  const fteSummary = financial?.fte_summary;
+  const totalLaborEstimate = financial?.total_labor_estimate;
+  const costDrivers = financial?.cost_drivers;
+  const pricingRisks = financial?.pricing_risks;
+
+  // Format currency helper
+  const formatCurrency = (value: number | undefined) => {
+    if (!value) return '-';
+    return `$${value.toLocaleString()}`;
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Header with Score */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Viability Score Card */}
         <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <DollarSign className="h-5 w-5 text-green-600" />
-              Financial Viability
+              Pricing Score
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-              <span className="text-sm font-medium">Viability Score</span>
-              <span className={cn("text-2xl font-bold", getScoreColor(score.financial_viability_score))}>
+              <span className="text-sm font-medium">Viability</span>
+              <span className={cn("text-3xl font-bold", getScoreColor(score.financial_viability_score))}>
                 {score.financial_viability_score.toFixed(1)}
               </span>
             </div>
-
-            {financial?.summary && (
-              <div>
-                <h4 className="font-semibold text-sm mb-2">Summary</h4>
-                <p className="text-sm text-muted-foreground">{financial.summary}</p>
+            {financial?.margin_potential && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Margin Potential</span>
+                <Badge variant={
+                  financial.margin_potential.includes('High') ? 'default' :
+                    financial.margin_potential.includes('Medium') ? 'secondary' : 'destructive'
+                }>
+                  {financial.margin_potential}
+                </Badge>
               </div>
             )}
+            {financial?.margin_justification && (
+              <p className="text-xs text-muted-foreground">{financial.margin_justification}</p>
+            )}
+          </CardContent>
+        </Card>
 
-            {financial?.contract_value && (
-              <div>
-                <h4 className="font-semibold text-sm mb-1">Estimated Value</h4>
-                <p className="text-sm font-medium">{financial.contract_value}</p>
+        {/* FTE Summary Card */}
+        <Card className="h-full">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-5 w-5 text-purple-600" />
+              FTE Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-center p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
+              <div className="text-3xl font-bold text-purple-600">
+                {fteSummary?.total_fte_estimate ?? financial?.fte_estimate ?? '-'}
+              </div>
+              <div className="text-xs text-muted-foreground">Total FTEs</div>
+            </div>
+            {fteSummary?.fte_breakdown && fteSummary.fte_breakdown.length > 0 && (
+              <div className="space-y-1.5">
+                {fteSummary.fte_breakdown.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">{item.category}</span>
+                    <span className="font-medium">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {fteSummary?.fte_source && (
+              <div className="text-xs text-muted-foreground italic border-t pt-2">
+                Source: {fteSummary.fte_source}
+              </div>
+            )}
+            {fteSummary?.staffing_notes && (
+              <div className="text-xs text-orange-600 bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
+                {fteSummary.staffing_notes}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Strategies & Factors */}
+        {/* Pricing Overview Card */}
         <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-5 w-5 text-blue-600" />
-              Strategy & Drivers
+              Contract Value
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {financial?.pricing_strategy && (
-              <div>
-                <h4 className="font-semibold text-sm mb-1">Recommended Strategy</h4>
-                <div className="p-3 bg-blue-50 text-blue-900 rounded text-sm">
-                  {financial.pricing_strategy}
-                </div>
+          <CardContent className="space-y-3">
+            <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg">
+              <div className="text-xl font-bold text-green-600">
+                {pricingOverview?.contract_ceiling || financial?.contract_value || 'TBD'}
               </div>
-            )}
-
-            {financial?.cost_factors && financial.cost_factors.length > 0 && (
+              <div className="text-xs text-muted-foreground">Contract Ceiling</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <h4 className="font-semibold text-sm mb-2">Key Cost Drivers</h4>
-                <ul className="list-disc pl-4 space-y-1">
-                  {financial.cost_factors.map((factor: string, i: number) => (
-                    <li key={i} className="text-sm text-muted-foreground">{factor}</li>
-                  ))}
-                </ul>
+                <div className="text-xs text-muted-foreground">Type</div>
+                <div className="font-medium">{pricingOverview?.contract_type || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Structure</div>
+                <div className="font-medium">{pricingOverview?.pricing_structure || 'N/A'}</div>
+              </div>
+            </div>
+            {(pricingOverview?.estimated_value_range || financial?.estimated_value_range) && (
+              <div className="text-xs text-muted-foreground">
+                Range: {formatCurrency((pricingOverview?.estimated_value_range || financial?.estimated_value_range)?.low)} - {formatCurrency((pricingOverview?.estimated_value_range || financial?.estimated_value_range)?.high)}
+                <span className="ml-1">
+                  ({(pricingOverview?.estimated_value_range || financial?.estimated_value_range)?.confidence} confidence)
+                </span>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Price to Win / LCAT Pricing Section */}
+      {/* Summary */}
+      {financial?.summary && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+              <h4 className="font-semibold mb-2 flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-blue-600" />
+                Pricing Analysis Summary
+              </h4>
+              <p className="text-sm">{financial.summary}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* LCAT Pricing Table */}
       {financial?.lcat_pricing && financial.lcat_pricing.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5 text-purple-600" />
-              Price to Win Assessment
+              Labor Category (LCAT) Pricing
             </CardTitle>
             <CardDescription>
-              Estimated market rates for required labor categories based on similar awards and incumbent data.
+              Detailed labor categories with qualifications, FTE counts, and market rates
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -2020,43 +2194,241 @@ function FinancialTab({ score }: { score: AnalysisData['score'] }) {
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-3 font-medium">Labor Category</th>
-                    <th className="text-left p-3 font-medium">Phase</th>
-                    <th className="text-left p-3 font-medium">Level</th>
-                    <th className="text-left p-3 font-medium w-1/3">Requirements</th>
-                    <th className="text-right p-3 font-medium">Hours / FTE</th>
-                    <th className="text-right p-3 font-medium">Est. Salary Range</th>
-                    <th className="text-right p-3 font-medium">Target Bill Rate</th>
+                    <th className="text-left p-3 font-medium">CLIN</th>
+                    <th className="text-left p-3 font-medium">Requirements</th>
+                    <th className="text-center p-3 font-medium">FTE</th>
+                    <th className="text-right p-3 font-medium">Salary Range</th>
+                    <th className="text-right p-3 font-medium">Bill Rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {financial.lcat_pricing.map((lcat: any, idx: number) => (
-                    <tr key={idx} className="border-b hover:bg-muted/10 transition-colors">
-                      <td className="p-3 font-medium">{lcat.lcat_title}</td>
-                      <td className="p-3 text-muted-foreground text-xs">{lcat.project_phase || '-'}</td>
-                      <td className="p-3">
-                        <Badge variant="outline" className="font-normal text-xs">{lcat.experience_level}</Badge>
-                        {lcat.education && <div className="text-xs text-muted-foreground mt-1">{lcat.education}</div>}
-                      </td>
-                      <td className="p-3 text-muted-foreground text-xs">
-                        <p>{lcat.description}</p>
-                        {lcat.requirements && (
-                          <p className="mt-1 pl-2 border-l-2 border-purple-200 dark:border-purple-900 italic">{lcat.requirements}</p>
-                        )}
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="font-medium">{lcat.estimated_hours ? lcat.estimated_hours.toLocaleString() : '-'} hrs</div>
-                        {lcat.fte_count !== undefined && <div className="text-xs text-muted-foreground text-nowrap">{lcat.fte_count} FTE</div>}
-                      </td>
-                      <td className="p-3 text-right tabular-nums">
-                        ${lcat.market_salary_low.toLocaleString()} - ${lcat.market_salary_high.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-right font-mono font-semibold text-green-600">
-                        ${lcat.bill_rate_low.toFixed(2)} - ${lcat.bill_rate_high.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {financial.lcat_pricing.map((lcat: any, idx: number) => {
+                    // Handle both old and new format
+                    const requirements = typeof lcat.requirements === 'object' ? lcat.requirements : null;
+                    const pricing = lcat.pricing || {};
+
+                    return (
+                      <tr key={idx} className="border-b hover:bg-muted/10 transition-colors">
+                        <td className="p-3">
+                          <div className="font-medium">{lcat.lcat_title}</div>
+                          {lcat.description && (
+                            <div className="text-xs text-muted-foreground mt-1">{lcat.description}</div>
+                          )}
+                          {lcat.source_quote && lcat.source_quote !== 'Inferred from scope' && (
+                            <div className="text-xs text-blue-600 mt-1 italic border-l-2 border-blue-200 pl-2">
+                              "{lcat.source_quote}"
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-xs text-muted-foreground font-mono">
+                          {lcat.clin_reference || lcat.project_phase || '-'}
+                        </td>
+                        <td className="p-3 text-xs">
+                          <div className="space-y-1">
+                            {requirements ? (
+                              <>
+                                <div><span className="font-medium">Education:</span> {requirements.education || 'N/A'}</div>
+                                <div><span className="font-medium">Experience:</span> {requirements.years_experience || 'N/A'} years</div>
+                                {requirements.clearance && requirements.clearance !== 'None' && (
+                                  <Badge variant="destructive" className="text-xs">{requirements.clearance}</Badge>
+                                )}
+                                {requirements.certifications && requirements.certifications.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {requirements.certifications.map((cert: string, i: number) => (
+                                      <Badge key={i} variant="outline" className="text-xs">{cert}</Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div>{lcat.requirements || '-'}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="text-lg font-bold text-purple-600">
+                            {lcat.fte_count ?? '-'}
+                          </div>
+                        </td>
+                        <td className="p-3 text-right tabular-nums text-xs">
+                          {formatCurrency(pricing.market_salary_low || lcat.market_salary_low)} - {formatCurrency(pricing.market_salary_high || lcat.market_salary_high)}
+                          {(pricing.experience_level || lcat.experience_level) && (
+                            <div className="text-muted-foreground mt-1">
+                              <Badge variant="secondary" className="text-xs">{pricing.experience_level || lcat.experience_level}</Badge>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-mono font-semibold text-green-600">
+                          ${(pricing.bill_rate_low || lcat.bill_rate_low || 0).toFixed(2)} - ${(pricing.bill_rate_high || lcat.bill_rate_high || 0).toFixed(2)}/hr
+                          {pricing.wrap_rate_estimate && (
+                            <div className="text-xs text-muted-foreground font-normal">
+                              Wrap: {pricing.wrap_rate_estimate}x
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Total Labor Estimate */}
+      {totalLaborEstimate && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-green-600" />
+              Total Labor Estimate
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-muted/30 rounded-lg">
+                <div className="text-lg font-bold">{formatCurrency(totalLaborEstimate.annual_labor_cost_low)} - {formatCurrency(totalLaborEstimate.annual_labor_cost_high)}</div>
+                <div className="text-xs text-muted-foreground">Annual Labor Cost</div>
+              </div>
+              <div className="text-center p-3 bg-muted/30 rounded-lg">
+                <div className="text-lg font-bold">{formatCurrency(totalLaborEstimate.base_period_labor_estimate)}</div>
+                <div className="text-xs text-muted-foreground">Base Period</div>
+              </div>
+              <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="text-lg font-bold text-green-600">{formatCurrency(totalLaborEstimate.total_contract_labor_estimate)}</div>
+                <div className="text-xs text-muted-foreground">Total Contract</div>
+              </div>
+              <div className="text-center p-3 bg-muted/30 rounded-lg">
+                <Badge variant={totalLaborEstimate.confidence === 'High' ? 'default' : totalLaborEstimate.confidence === 'Medium' ? 'secondary' : 'destructive'}>
+                  {totalLaborEstimate.confidence} Confidence
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cost Drivers & Risks */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Cost Drivers */}
+        {costDrivers && costDrivers.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4 text-blue-600" />
+                Cost Drivers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {costDrivers.map((driver: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{driver.driver}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={
+                        driver.impact === 'High' ? 'destructive' :
+                          driver.impact === 'Medium' ? 'secondary' : 'outline'
+                      } className="text-xs">
+                        {driver.impact}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pricing Risks */}
+        {pricingRisks && pricingRisks.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                Pricing Risks
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {pricingRisks.map((risk: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-orange-50 dark:bg-orange-950/20 rounded border border-orange-100 dark:border-orange-900">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium">{risk.risk}</span>
+                      <Badge variant={
+                        risk.severity === 'High' ? 'destructive' :
+                          risk.severity === 'Medium' ? 'secondary' : 'outline'
+                      } className="text-xs flex-shrink-0">
+                        {risk.severity}
+                      </Badge>
+                    </div>
+                    {risk.mitigation && (
+                      <div className="text-xs text-muted-foreground mt-2">
+                        <span className="font-medium">Mitigation:</span> {risk.mitigation}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Key Insights & Opportunities */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {(financial?.key_insights || financial?.insights) && (financial?.key_insights || financial?.insights).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-yellow-600" />
+                Key Insights
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {(financial?.key_insights || financial?.insights).map((insight: string, idx: number) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm">
+                    <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {(financial?.pricing_opportunities || financial?.opportunities) && (financial?.pricing_opportunities || financial?.opportunities).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-green-600" />
+                Pricing Opportunities
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {(financial?.pricing_opportunities || financial?.opportunities).map((opp: string, idx: number) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm">
+                    <Target className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <span>{opp}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Recommendation */}
+      {financial?.recommendation && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="bg-muted/30 p-4 rounded-lg">
+              <h4 className="font-semibold mb-2">Pricing Recommendation</h4>
+              <p className="text-sm">{financial.recommendation}</p>
             </div>
           </CardContent>
         </Card>
@@ -2757,5 +3129,367 @@ function NoAnalysisCard() {
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+// ============================================================================
+// RFI Response Engine Tab Component
+// ============================================================================
+
+interface RFIRequirement {
+  id: string;
+  text: string;
+  type: string;
+  section?: string;
+  response_guidance?: string;
+  response?: string;
+  fit_score?: number;
+  fit_rationale?: string;
+  supporting_evidence?: string[];
+  edited?: boolean;
+}
+
+function RFIResponseTab({ opportunityId }: { opportunityId: number }) {
+  const API_URL = import.meta.env.VITE_API_URL || '';
+  const [extracting, setExtracting] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [requirements, setRequirements] = useState<RFIRequirement[]>([]);
+  const [summary, setSummary] = useState<string>('');
+  const [overallScore, setOverallScore] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState<string>('');
+
+  // Extract requirements from RFI
+  const handleExtractRequirements = async () => {
+    setExtracting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/rfi/extract-requirements`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Failed to extract requirements');
+      }
+      const data = await res.json();
+      setRequirements(data.requirements || []);
+      setSummary(data.summary || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // Generate responses for all requirements
+  const handleGenerateResponses = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/rfi/generate-responses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Failed to generate responses');
+      }
+      const data = await res.json();
+      setRequirements(data.requirements || []);
+      setOverallScore(data.overall_fit_score);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Regenerate a single response
+  const handleRegenerateBlock = async (req: RFIRequirement) => {
+    setRegeneratingId(req.id);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/rfi/generate-block-response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirement: req }),
+      });
+      if (!res.ok) throw new Error('Failed to regenerate');
+      const data = await res.json();
+      setRequirements(prev => prev.map(r =>
+        r.id === req.id ? { ...r, response: data.response, fit_score: data.fit_score, fit_rationale: data.fit_rationale } : r
+      ));
+    } catch (err) {
+      console.error('Regenerate failed:', err);
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
+
+  // Start editing a response
+  const handleStartEdit = (req: RFIRequirement) => {
+    setEditingId(req.id);
+    setEditText(req.response || '');
+  };
+
+  // Save edited response
+  const handleSaveEdit = (reqId: string) => {
+    setRequirements(prev => prev.map(r =>
+      r.id === reqId ? { ...r, response: editText, edited: true } : r
+    ));
+    setEditingId(null);
+    setEditText('');
+  };
+
+  // Copy all responses to clipboard
+  const handleCopyAll = () => {
+    const text = requirements.map(r =>
+      `**${r.id}: ${r.text}**\n\n${r.response || 'No response generated'}\n\n---\n`
+    ).join('\n');
+    navigator.clipboard.writeText(text);
+  };
+
+  // Get fit score color
+  const getFitColor = (score?: number) => {
+    if (!score) return 'bg-gray-400';
+    if (score >= 80) return 'bg-green-500';
+    if (score >= 60) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
+  const getTypeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      CAPABILITY: 'bg-blue-100 text-blue-700 border-blue-300',
+      EXPERIENCE: 'bg-purple-100 text-purple-700 border-purple-300',
+      TECHNICAL: 'bg-cyan-100 text-cyan-700 border-cyan-300',
+      TEAMING: 'bg-orange-100 text-orange-700 border-orange-300',
+      PRICING: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+      SOCIOECONOMIC: 'bg-pink-100 text-pink-700 border-pink-300',
+      OTHER: 'bg-gray-100 text-gray-700 border-gray-300',
+    };
+    return colors[type] || colors.OTHER;
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-purple-600" />
+                RFI Response Engine
+              </CardTitle>
+              <CardDescription>
+                Generate requirement-by-requirement responses for this RFI/Sources Sought notice
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {requirements.length === 0 ? (
+                <Button onClick={handleExtractRequirements} disabled={extracting}>
+                  {extracting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Extracting...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Extract Requirements
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  {!requirements[0]?.response ? (
+                    <Button onClick={handleGenerateResponses} disabled={generating} className="bg-purple-600 hover:bg-purple-700">
+                      {generating ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Generating Responses...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Generate All Responses
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button variant="outline" onClick={handleCopyAll}>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copy All
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={() => { setRequirements([]); setSummary(''); setOverallScore(null); }}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Start Over
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Overall Fit Score */}
+          {overallScore !== null && (
+            <div className="mt-4 flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Overall Fit Score:</span>
+                <Badge className={cn("text-white", getFitColor(overallScore))}>
+                  {overallScore}%
+                </Badge>
+              </div>
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full transition-all", getFitColor(overallScore))}
+                  style={{ width: `${overallScore}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </CardHeader>
+
+        <CardContent>
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
+
+          {/* Summary */}
+          {summary && (
+            <div className="mb-6 p-4 bg-muted/30 rounded-lg border">
+              <h4 className="font-medium mb-2">RFI Summary</h4>
+              <p className="text-sm text-muted-foreground">{summary}</p>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {requirements.length === 0 && !extracting && (
+            <div className="text-center py-12 bg-muted/30 rounded-lg border border-dashed">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Extract RFI Requirements</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Click "Extract Requirements" to identify all questions and requirements from this RFI/Sources Sought notice.
+              </p>
+            </div>
+          )}
+
+          {/* Requirements with Responses - Side by Side */}
+          {requirements.length > 0 && (
+            <div className="space-y-4">
+              {requirements.map((req) => (
+                <div key={req.id} className="border rounded-lg overflow-hidden">
+                  {/* Header */}
+                  <div className="bg-muted/50 px-4 py-2 flex items-center justify-between border-b">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono text-xs">{req.id}</Badge>
+                      <Badge className={cn("text-xs", getTypeColor(req.type))}>{req.type}</Badge>
+                      {req.section && (
+                        <Badge variant="outline" className="text-xs">{req.section}</Badge>
+                      )}
+                    </div>
+                    {req.fit_score !== undefined && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Fit:</span>
+                        <Badge className={cn("text-white text-xs", getFitColor(req.fit_score))}>
+                          {req.fit_score}%
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Side by Side Content */}
+                  <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
+                    {/* Requirement */}
+                    <div className="p-4 bg-purple-50/30">
+                      <div className="text-xs uppercase font-medium text-purple-600 mb-2">Requirement</div>
+                      <p className="text-sm leading-relaxed">{req.text}</p>
+                      {req.response_guidance && (
+                        <p className="text-xs text-muted-foreground mt-2 italic">{req.response_guidance}</p>
+                      )}
+                    </div>
+
+                    {/* Response */}
+                    <div className="p-4 bg-green-50/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs uppercase font-medium text-green-600">Response</div>
+                        {req.response && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => handleStartEdit(req)}
+                            >
+                              <Pencil className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => handleRegenerateBlock(req)}
+                              disabled={regeneratingId === req.id}
+                            >
+                              {regeneratingId === req.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-3 w-3 mr-1" />
+                                  Regen
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+
+                      {editingId === req.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            className="w-full h-32 p-2 text-sm border rounded-md"
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleSaveEdit(req.id)}>Save</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      ) : req.response ? (
+                        <div>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{req.response}</p>
+                          {req.edited && (
+                            <Badge variant="outline" className="mt-2 text-xs">Edited</Badge>
+                          )}
+                          {req.fit_rationale && (
+                            <p className="text-xs text-muted-foreground mt-3 pt-2 border-t">
+                              <span className="font-medium">Fit Rationale:</span> {req.fit_rationale}
+                            </p>
+                          )}
+                        </div>
+                      ) : generating ? (
+                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Generating response...
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          Click "Generate All Responses" to create responses for all requirements.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

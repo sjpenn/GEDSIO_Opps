@@ -10,7 +10,15 @@ from fedops_agents.compliance_agent import ComplianceAgent
 from fedops_agents.capability_agent import CapabilityMappingAgent
 from fedops_agents.financial_agent import FinancialAnalysisAgent
 from fedops_core.services.ai_service import AIService
-from fedops_core.prompts import EXECUTIVE_OVERVIEW_PROMPT, QUICK_SCAN_SLIDEOUT_PROMPT, GOVCON_PROFILE
+from fedops_core.prompts import (
+    EXECUTIVE_OVERVIEW_PROMPT, 
+    QUICK_SCAN_SLIDEOUT_PROMPT, 
+    GOVCON_PROFILE,
+    OpportunityCategory,
+    determine_opportunity_category,
+    get_tabs_for_category,
+    get_quick_scan_prompt_for_category
+)
 
 from fedops_core.services.extraction_progress import extraction_progress
 
@@ -29,8 +37,26 @@ class OrchestratorAgent(BaseAgent):
         extraction_progress.set_stage(opportunity_id, "initialization", percent=0)
         
         try:
+            # 0. Determine Opportunity Category (RFI vs SOLICITATION vs OTHER)
+            result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+            opp = result.scalar_one_or_none()
+            
+            if not opp:
+                raise ValueError(f"Opportunity {opportunity_id} not found")
+            
+            opportunity_category = determine_opportunity_category(opp.type)
+            applicable_tabs = get_tabs_for_category(opportunity_category)
+            
+            await self.log_activity(opportunity_id, "CATEGORY_DETECTED", "SUCCESS", {
+                "opportunity_type": opp.type,
+                "category": opportunity_category.value,
+                "applicable_tabs": applicable_tabs
+            })
+            
+            print(f"DEBUG: Opportunity Category: {opportunity_category.value} (type: {opp.type})")
+            
             # 1. Ingestion Stage
-            extraction_progress.set_stage(opportunity_id, "ingestion", message="📥 Loading opportunity files...", percent=5)
+            extraction_progress.set_stage(opportunity_id, "ingestion", message=f"📥 Loading opportunity files ({opportunity_category.value.upper()})...", percent=5)
             # ingestion_agent = IngestionAgent(self.db)
             # await ingestion_agent.execute(opportunity_id)
 
@@ -104,14 +130,15 @@ class OrchestratorAgent(BaseAgent):
                     personnel_context=personnel_details
                 )
             else:
-                 extraction_progress.set_stage(opportunity_id, "analysis", message="⚡ Running Quick Scan...", percent=60)
-                 extraction_progress.set_operation(opportunity_id, "summarizing", "Quick Scan Summary", percent=70)
-                 # Quick Scan Custom Workflow
-                 # We want to run the specific QUICK_SCAN_SLIDEOUT_PROMPT
+                 # Quick Scan Custom Workflow - Use category-specific prompt
+                 category_label = {
+                     OpportunityCategory.RFI: "RFI/Sources Sought",
+                     OpportunityCategory.SOLICITATION: "Solicitation",
+                     OpportunityCategory.OTHER: "Informational Notice"
+                 }.get(opportunity_category, "Quick Scan")
                  
-                 # Prepare Context
-                 result = await self.db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
-                 opp = result.scalar_one_or_none()
+                 extraction_progress.set_stage(opportunity_id, "analysis", message=f"⚡ Running {category_label} Quick Scan...", percent=60)
+                 extraction_progress.set_operation(opportunity_id, "summarizing", f"{category_label} Summary", percent=70)
                  
                  # Extract core data from document analysis
                  solicitation_text = ""
@@ -176,8 +203,12 @@ class OrchestratorAgent(BaseAgent):
                  
                  print(f"DEBUG: Quick Scan Opportunity Data Length: {len(opportunity_data)}")
                  
+                 # Get the appropriate prompt based on opportunity category
+                 quick_scan_prompt = get_quick_scan_prompt_for_category(opportunity_category)
+                 print(f"DEBUG: Using {opportunity_category.value} Quick Scan prompt")
+                 
                  ai_service = AIService()
-                 formatted_prompt = QUICK_SCAN_SLIDEOUT_PROMPT.format(
+                 formatted_prompt = quick_scan_prompt.format(
                     govcon_profile=GOVCON_PROFILE,
                     opportunity_data=opportunity_data
                  )
@@ -267,7 +298,10 @@ class OrchestratorAgent(BaseAgent):
                 "security_details": comp_results.get("security_details"),
                 "executive_overview": executive_overview,
                 # Store extracted data for reference
-                "extracted_data": extracted_data
+                "extracted_data": extracted_data,
+                # NEW: Store opportunity category for frontend tab filtering
+                "opportunity_category": opportunity_category.value,
+                "applicable_tabs": applicable_tabs
             }
             
             final_score = await self.calculate_score(opportunity_id, score_data)
@@ -333,7 +367,10 @@ class OrchestratorAgent(BaseAgent):
             "solicitation": scores.get("solicitation_details"),
             "security": scores.get("security_details"),
             "executive_overview": scores.get("executive_overview"),
-            "extracted_data": scores.get("extracted_data"),  # NEW: Store extracted document data
+            "extracted_data": scores.get("extracted_data"),  # Store extracted document data
+            # NEW: Store opportunity category for frontend tab filtering
+            "opportunity_category": scores.get("opportunity_category"),
+            "applicable_tabs": scores.get("applicable_tabs"),
             "generated_at": datetime.utcnow().isoformat()
         }
             

@@ -6,6 +6,7 @@ import { Loader2, Calendar, CheckCircle, Target, FileText, Star, Archive, Archiv
 import { useNavigate, Link } from 'react-router-dom';
 import { cn } from "@/lib/utils";
 import { ShipleyPhaseBadge } from '@/components/ShipleyPhaseIndicator';
+import { useToast } from '@/components/ui/toast';
 
 interface PipelineItem {
   pipeline: {
@@ -46,7 +47,7 @@ interface PipelineItem {
 // Notice type color mapping
 const getNoticeTypeStyle = (type: string): { bg: string; text: string } => {
   const lowerType = type.toLowerCase();
-  
+
   if (lowerType.includes('sources sought') || lowerType.includes('rfi')) {
     return { bg: 'bg-cyan-600', text: 'text-white' };
   } else if (lowerType.includes('presolicitation') || lowerType.includes('pre-solicitation')) {
@@ -75,6 +76,7 @@ export default function PipelinePage() {
   const [showArchived, setShowArchived] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const navigate = useNavigate();
+  const toast = useToast();
 
   useEffect(() => {
     fetchPipeline();
@@ -128,19 +130,19 @@ export default function PipelinePage() {
   const handleRerunAnalysis = async (opportunityId: number) => {
     setAnalyzingId(opportunityId);
     try {
-      const res = await fetch(`/api/v1/agents/opportunities/${opportunityId}/analyze`, { 
-        method: 'POST' 
+      const res = await fetch(`/api/v1/agents/opportunities/${opportunityId}/analyze`, {
+        method: 'POST'
       });
       if (res.ok) {
         await fetchPipeline(); // Refresh to get updated scores
-        alert('Analysis completed successfully!');
+        toast.success('Analysis completed successfully!');
       } else {
         const errorText = await res.text();
-        alert(`Analysis failed: ${errorText}`);
+        toast.error(`Analysis failed: ${errorText}`);
       }
     } catch (error) {
       console.error("Failed to run analysis", error);
-      alert("An error occurred while running analysis.");
+      toast.error("An error occurred while running analysis.");
     } finally {
       setAnalyzingId(null);
     }
@@ -161,7 +163,7 @@ export default function PipelinePage() {
           <h2 className="text-3xl font-bold tracking-tight">Pipeline Dashboard</h2>
           <p className="text-muted-foreground">Track and manage your active opportunities.</p>
         </div>
-        <Button 
+        <Button
           variant={showArchived ? "default" : "outline"}
           onClick={() => {
             setShowArchived(!showArchived);
@@ -182,7 +184,7 @@ export default function PipelinePage() {
                 {items.filter(i => i.pipeline.stage === stageKey).length}
               </Badge>
             </div>
-            
+
             <div className="space-y-3">
               {items
                 .filter(i => i.pipeline.stage === stageKey)
@@ -190,15 +192,15 @@ export default function PipelinePage() {
                   const daysLeft = getDaysRemaining(item.pipeline.proposal_due_date || item.opportunity.response_deadline);
                   const noticeStyle = getNoticeTypeStyle(item.opportunity.type);
                   return (
-                    <Card 
-                      key={item.pipeline.id} 
+                    <Card
+                      key={item.pipeline.id}
                       className="transition-all border-l-4 border-l-primary/20 hover:border-l-primary hover:shadow-md cursor-pointer overflow-hidden"
                     >
                       {/* Notice Type Bar */}
                       <div className={cn("px-2 py-0.5 text-[10px] font-semibold text-center", noticeStyle.bg, noticeStyle.text)}>
                         {item.opportunity.type}
                       </div>
-                      
+
                       <CardContent className="p-4 space-y-3">
                         <div className="min-w-0">
                           <div className="flex justify-between items-start gap-2 mb-1">
@@ -212,7 +214,7 @@ export default function PipelinePage() {
                             )}
                           </div>
                           <h4 className="font-semibold text-sm line-clamp-2 break-words" title={item.opportunity.title}>
-                            <Link 
+                            <Link
                               to={`/opportunities/${item.opportunity.id}`}
                               className="hover:underline hover:text-primary transition-colors"
                               onClick={(e) => e.stopPropagation()}
@@ -222,7 +224,7 @@ export default function PipelinePage() {
                           </h4>
                           <p className="text-xs text-muted-foreground mt-1 truncate">{item.opportunity.department}</p>
                         </div>
-                        
+
                         {/* Shipley Phase Indicator */}
                         {item.proposal && item.proposal.shipley_phase && (
                           <div className="flex items-center gap-2 min-w-0">
@@ -232,16 +234,16 @@ export default function PipelinePage() {
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Display Score - prioritizes bid decision score */}
                         {item.display_score !== null && (
                           <div className="flex items-center gap-2">
                             <Star className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
-                            <Badge 
+                            <Badge
                               variant={
-                                item.display_score >= 70 ? "default" : 
-                                item.display_score >= 50 ? "secondary" : 
-                                "destructive"
+                                item.display_score >= 70 ? "default" :
+                                  item.display_score >= 50 ? "secondary" :
+                                    "destructive"
                               }
                               className="text-[10px]"
                               title={item.score_source === 'bid_decision' ? 'Official Bid Decision Score' : 'Automated Analysis Score'}
@@ -250,7 +252,7 @@ export default function PipelinePage() {
                             </Badge>
                           </div>
                         )}
-                        
+
                         <div className="pt-2 border-t flex justify-between items-center text-xs text-muted-foreground min-w-0">
                           <div className="flex items-center gap-1 min-w-0">
                             <Calendar className="h-3 w-3 shrink-0" />
@@ -260,14 +262,14 @@ export default function PipelinePage() {
                           </div>
                           {item.pipeline.status === 'GO' && <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />}
                         </div>
-                        
+
                         {/* Action Buttons */}
                         <div className="flex flex-col gap-2 pt-2">
                           {!showArchived && (
                             <>
-                              <Button 
-                                size="sm" 
-                                variant="default" 
+                              <Button
+                                size="sm"
+                                variant="default"
                                 className="w-full text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -284,9 +286,9 @@ export default function PipelinePage() {
                                   'Re-Run Analysis'
                                 )}
                               </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 className="w-full text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -296,8 +298,8 @@ export default function PipelinePage() {
                                 View Analysis
                               </Button>
                               {(!item.proposal || item.proposal.shipley_phase === 'PHASE_1_LONG_TERM_POSITIONING' || item.proposal.shipley_phase === 'PHASE_2_OPPORTUNITY_ASSESSMENT') && (
-                                <Button 
-                                  size="sm" 
+                                <Button
+                                  size="sm"
                                   className="w-full text-xs bg-blue-600 hover:bg-blue-700"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -309,9 +311,9 @@ export default function PipelinePage() {
                                 </Button>
                               )}
                               {item.proposal && item.proposal.id && (
-                                <Button 
+                                <Button
                                   asChild
-                                  size="sm" 
+                                  size="sm"
                                   variant="default"
                                   className="w-full text-xs"
                                 >
@@ -354,7 +356,7 @@ export default function PipelinePage() {
                     </Card>
                   );
                 })}
-                
+
               {items.filter(i => i.pipeline.stage === stageKey).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
                   No items

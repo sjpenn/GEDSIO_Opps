@@ -40,6 +40,7 @@ import PursuitDecision from '@/components/PursuitDecision';
 import DocumentViewer from '@/components/DocumentViewer';
 import PastPerformanceMatcher from '@/components/PastPerformanceMatcher';
 import QuickScanSlideout from '@/components/QuickScanSlideout';
+import { useToast } from '@/components/ui/toast';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -252,6 +253,7 @@ const getScoreColor = (score: number) => {
 export default function AnalysisViewer() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<AnalysisData | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -416,11 +418,11 @@ export default function AnalysisViewer() {
         window.open(`/proposal-workspace/${opportunityId}`, '_blank');
       } else {
         const errorText = await res.text();
-        alert(`Failed to generate proposal: ${errorText}`);
+        toast.error(`Failed to generate proposal: ${errorText}`);
       }
     } catch (error) {
       console.error("Proposal generation failed", error);
-      alert("An error occurred while generating the proposal.");
+      toast.error("An error occurred while generating the proposal.");
     } finally {
       setGeneratingProposal(false);
     }
@@ -433,16 +435,16 @@ export default function AnalysisViewer() {
         method: 'POST'
       });
       if (res.ok) {
-        alert("Opportunity added to pipeline!");
+        toast.success("Opportunity added to pipeline!");
         // Refresh pipeline status to update badge
         await fetchPipelineStatus();
       } else {
         const data = await res.json();
-        alert(data.message || "Failed to add to pipeline");
+        toast.error(data.message || "Failed to add to pipeline");
       }
     } catch (err) {
       console.error("Failed to add to pipeline", err);
-      alert("An error occurred while adding to pipeline.");
+      toast.error("An error occurred while adding to pipeline.");
     }
   };
 
@@ -452,9 +454,9 @@ export default function AnalysisViewer() {
     if (decision === 'GO' && proposalId) {
       // Refresh proposal data
       await fetchProposalData();
-      alert(`Pursuit decision recorded! Proceeding to Phase 2: Opportunity Assessment. You can now make a Bid/No-Bid decision.`);
+      toast.success(`Pursuit decision recorded! Proceeding to Phase 2: Opportunity Assessment. You can now make a Bid/No-Bid decision.`);
     } else {
-      alert(`Pursuit decision recorded: ${decision}. This opportunity will remain in Phase 1.`);
+      toast.info(`Pursuit decision recorded: ${decision}. This opportunity will remain in Phase 1.`);
     }
   };
 

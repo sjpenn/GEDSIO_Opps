@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2, FileText, Download } from 'lucide-react';
+import { useToast } from "@/components/ui/toast";
 
 interface ResumeViewerProps {
     resume: Resume;
@@ -12,6 +13,7 @@ interface ResumeViewerProps {
 }
 
 export function ResumeViewer({ resume, onUpdate }: ResumeViewerProps) {
+    const toast = useToast();
     const [loading, setLoading] = useState(false);
     const [includeSignature, setIncludeSignature] = useState(false);
 
@@ -22,7 +24,7 @@ export function ResumeViewer({ resume, onUpdate }: ResumeViewerProps) {
             onUpdate(updated);
         } catch (error) {
             console.error(error);
-            alert("Failed to format resume");
+            toast.error("Failed to format resume");
         } finally {
             setLoading(false);
         }
@@ -31,13 +33,13 @@ export function ResumeViewer({ resume, onUpdate }: ResumeViewerProps) {
     const handleDownload = () => {
         // Open the download link in new tab or trigger download
         if (resume.formatted_content_html) {
-             const blob = new Blob([resume.formatted_content_html], { type: 'text/html' });
-             const url = URL.createObjectURL(blob);
-             const a = document.createElement('a');
-             a.href = url;
-             a.download = `resume_${resume.id}.html`;
-             a.click();
-             URL.revokeObjectURL(url);
+            const blob = new Blob([resume.formatted_content_html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `resume_${resume.id}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
     };
 
@@ -62,9 +64,9 @@ export function ResumeViewer({ resume, onUpdate }: ResumeViewerProps) {
             <Card className="flex flex-col h-full">
                 <CardHeader className="border-b">
                     <div className="flex justify-between items-center">
-                         <CardTitle className="text-lg">Formatted Preview</CardTitle>
-                         <div className="flex items-center gap-4">
-                             <div className="flex items-center space-x-2">
+                        <CardTitle className="text-lg">Formatted Preview</CardTitle>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center space-x-2">
                                 <Switch id="sig-mode" checked={includeSignature} onCheckedChange={setIncludeSignature} />
                                 <Label htmlFor="sig-mode">Include Signature</Label>
                             </div>
@@ -78,13 +80,13 @@ export function ResumeViewer({ resume, onUpdate }: ResumeViewerProps) {
                                     Download HTML
                                 </Button>
                             )}
-                         </div>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent className="flex-1 p-0 bg-gray-100 overflow-hidden relative">
                     {resume.formatted_content_html ? (
-                         <iframe 
-                            srcDoc={resume.formatted_content_html} 
+                        <iframe
+                            srcDoc={resume.formatted_content_html}
                             className="w-full h-full border-none bg-white"
                             title="Resume Preview"
                         />

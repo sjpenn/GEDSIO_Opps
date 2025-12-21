@@ -7,8 +7,10 @@ import { Loader2, Upload, FileText, CheckCircle2, XCircle, Clock } from 'lucide-
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/components/ui/toast";
 
 export default function ResumeManager() {
+    const toast = useToast();
     const [resumes, setResumes] = useState<Resume[]>([]);
     const [currentResume, setCurrentResume] = useState<Resume | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -45,7 +47,7 @@ export default function ResumeManager() {
                 await loadResumes();
             } catch (error) {
                 console.error(error);
-                alert("Upload failed");
+                toast.error("Upload failed");
             } finally {
                 setUploading(false);
             }
@@ -64,16 +66,16 @@ export default function ResumeManager() {
     // Poll for updates if current resume is processing
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
-        
+
         if (currentResume && (currentResume.status === 'PROCESSING' || currentResume.status === 'UPLOADED')) {
             interval = setInterval(async () => {
                 try {
                     const updated = await ResumeService.getResume(currentResume.id);
                     setCurrentResume(updated);
-                    
+
                     // Update in the list too
                     setResumes(prev => prev.map(r => r.id === updated.id ? updated : r));
-                    
+
                     if (updated.status === 'PARSED' || updated.status === 'FAILED') {
                         clearInterval(interval);
                     }
@@ -82,7 +84,7 @@ export default function ResumeManager() {
                 }
             }, 2000);
         }
-        
+
         return () => {
             if (interval) clearInterval(interval);
         };
@@ -109,16 +111,16 @@ export default function ResumeManager() {
                 <div className="flex justify-between items-center">
                     <h2 className="text-lg font-semibold">Resumes</h2>
                     <div>
-                        <Input 
-                            type="file" 
-                            accept=".pdf,.docx,.doc,.txt" 
-                            onChange={handleFileChange} 
+                        <Input
+                            type="file"
+                            accept=".pdf,.docx,.doc,.txt"
+                            onChange={handleFileChange}
                             className="hidden"
                             id="resume-upload"
                             disabled={uploading}
                         />
-                        <Button 
-                            size="sm" 
+                        <Button
+                            size="sm"
                             onClick={() => document.getElementById('resume-upload')?.click()}
                             disabled={uploading}
                         >
@@ -142,11 +144,10 @@ export default function ResumeManager() {
                     ) : (
                         <div className="p-2 space-y-2">
                             {resumes.map((resume) => (
-                                <Card 
+                                <Card
                                     key={resume.id}
-                                    className={`cursor-pointer transition-colors hover:bg-accent ${
-                                        currentResume?.id === resume.id ? 'border-primary bg-accent' : ''
-                                    }`}
+                                    className={`cursor-pointer transition-colors hover:bg-accent ${currentResume?.id === resume.id ? 'border-primary bg-accent' : ''
+                                        }`}
                                     onClick={() => handleSelectResume(resume.id)}
                                 >
                                     <CardContent className="p-3">
@@ -172,7 +173,7 @@ export default function ResumeManager() {
             {/* Right Content - Resume Viewer */}
             <div className="flex-1 flex flex-col">
                 <h1 className="text-3xl font-bold tracking-tight mb-4">Resume Manager</h1>
-                
+
                 {currentResume ? (
                     currentResume.status === 'PROCESSING' || currentResume.status === 'UPLOADED' ? (
                         <Card className="h-full flex items-center justify-center">

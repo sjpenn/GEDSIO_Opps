@@ -6,6 +6,7 @@ import { Loader2, Users, PieChart, Table as TableIcon, Plus, Edit, Trash2 } from
 import { TeamBuilder } from "@/components/TeamBuilder";
 import { VennDiagramView } from "@/components/VennDiagramView";
 import { CapabilityMatrix } from "@/components/CapabilityMatrix";
+import { useToast } from "@/components/ui/toast";
 
 interface Team {
   id: number;
@@ -23,6 +24,7 @@ interface Team {
 import { useSearchParams } from 'react-router-dom';
 
 export default function PartnerTeamsPage() {
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const opportunityIdParam = searchParams.get('opportunityId');
   const opportunityId = opportunityIdParam ? parseInt(opportunityIdParam) : 0;
@@ -85,7 +87,7 @@ export default function PartnerTeamsPage() {
     try {
       const url = editingTeam ? `/api/v1/teams/${editingTeam.id}` : '/api/v1/teams/';
       const method = editingTeam ? 'PUT' : 'POST';
-      
+
       const res = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +96,7 @@ export default function PartnerTeamsPage() {
           ...teamData
         })
       });
-      
+
       if (res.ok) {
         setShowBuilder(false);
         setEditingTeam(null);
@@ -103,11 +105,11 @@ export default function PartnerTeamsPage() {
         // Handle error response
         const errorData = await res.json().catch(() => ({ detail: 'Failed to save team' }));
         const errorMessage = errorData.detail || 'Failed to save team';
-        alert(`Error: ${errorMessage}`);
+        toast.error(`Error: ${errorMessage}`);
       }
     } catch (err) {
       console.error("Failed to save team", err);
-      alert("An unexpected error occurred while saving the team. Please try again.");
+      toast.error("An unexpected error occurred while saving the team. Please try again.");
     }
   };
 
@@ -123,7 +125,7 @@ export default function PartnerTeamsPage() {
 
   const confirmDelete = async () => {
     if (!teamToDelete) return;
-    
+
     const { id: teamId, name: teamName } = teamToDelete;
     console.log('Confirming delete for:', { teamId, teamName });
 
@@ -131,13 +133,13 @@ export default function PartnerTeamsPage() {
       const res = await fetch(`/api/v1/teams/${teamId}`, {
         method: 'DELETE'
       });
-      
+
       console.log('DELETE response status:', res.status, res.statusText);
-      
+
       if (res.ok) {
         const data = await res.json();
         console.log('Delete successful:', data);
-        
+
         // If deleted team was selected, clear selection
         if (selectedTeam?.id === teamId) {
           setSelectedTeam(null);
@@ -147,12 +149,12 @@ export default function PartnerTeamsPage() {
       } else {
         const errorData = await res.json().catch(() => ({ detail: 'Failed to delete team' }));
         console.error('Delete failed:', errorData);
-        alert(`Error: ${errorData.detail || 'Failed to delete team'}`);
+        toast.error(`Error: ${errorData.detail || 'Failed to delete team'}`);
         setTeamToDelete(null);
       }
     } catch (err) {
       console.error("Failed to delete team", err);
-      alert("An unexpected error occurred while deleting the team. Please try again.");
+      toast.error("An unexpected error occurred while deleting the team. Please try again.");
       setTeamToDelete(null);
     }
   };
@@ -192,8 +194,8 @@ export default function PartnerTeamsPage() {
             <CardDescription>Select partners and assign roles for this opportunity.</CardDescription>
           </CardHeader>
           <CardContent>
-            <TeamBuilder 
-              opportunityId={opportunityId} 
+            <TeamBuilder
+              opportunityId={opportunityId}
               onSave={handleSaveTeam}
               initialTeamName={editingTeam?.name}
               initialMembers={editingTeam?.members.map(m => ({
@@ -220,11 +222,11 @@ export default function PartnerTeamsPage() {
                   <p className="text-sm text-muted-foreground text-center py-4">No teams created yet.</p>
                 ) : (
                   teams.map(team => (
-                    <div 
+                    <div
                       key={team.id}
                       className={`p-3 rounded-lg border transition-colors ${selectedTeam?.id === team.id ? 'bg-primary/10 border-primary' : 'hover:bg-accent'}`}
                     >
-                      <div 
+                      <div
                         className="cursor-pointer"
                         onClick={() => setSelectedTeam(team)}
                       >
@@ -234,9 +236,9 @@ export default function PartnerTeamsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 mt-2 pt-2 border-t">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="h-7 text-xs flex-1"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -246,9 +248,9 @@ export default function PartnerTeamsPage() {
                           <Edit className="h-3 w-3 mr-1" />
                           Edit
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -288,7 +290,7 @@ export default function PartnerTeamsPage() {
                   {analysisLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
                   ) : analysis ? (
-                    <CapabilityMatrix 
+                    <CapabilityMatrix
                       requirements={analysis.gaps.concat(analysis.coverage_details.map((c: any) => c.requirement))}
                       teamMembers={selectedTeam.members.map(m => ({
                         name: m.entity_name || m.entity_uei,
@@ -303,10 +305,10 @@ export default function PartnerTeamsPage() {
                 </TabsContent>
 
                 <TabsContent value="venn">
-                  <VennDiagramView 
+                  <VennDiagramView
                     teamMembers={selectedTeam.members.map(m => ({
                       name: m.entity_name || m.entity_uei,
-                      capabilities: [] 
+                      capabilities: []
                     }))}
                   />
                 </TabsContent>

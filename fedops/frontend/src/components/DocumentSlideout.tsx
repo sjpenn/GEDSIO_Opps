@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useToast } from '@/components/ui/toast';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -43,6 +44,7 @@ export default function DocumentSlideout({
     opportunityId,
     highlightLocation
 }: DocumentSlideoutProps) {
+    const toast = useToast();
     const [loading, setLoading] = useState(false);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [fileSummary, setFileSummary] = useState<string | null>(null);
@@ -243,7 +245,7 @@ export default function DocumentSlideout({
     const handleDownload = async () => {
         const downloadId = fileId || document.id;
         if (!downloadId || !opportunityId) {
-            alert('Document information not available for download');
+            toast.warning('Document information not available for download');
             return;
         }
 
@@ -263,7 +265,7 @@ export default function DocumentSlideout({
             window.document.body.removeChild(a);
         } catch (err) {
             console.error('Download error:', err);
-            alert('Failed to download document');
+            toast.error('Failed to download document');
         } finally {
             setLoading(false);
         }
@@ -272,7 +274,7 @@ export default function DocumentSlideout({
     const handleOpenExternal = () => {
         const viewId = fileId || document.id;
         if (!viewId || !opportunityId) {
-            alert('Document information not available');
+            toast.warning('Document information not available');
             return;
         }
         window.open(`${API_URL}/api/v1/files/${opportunityId}/${viewId}/view`, '_blank');

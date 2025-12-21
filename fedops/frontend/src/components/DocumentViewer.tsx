@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/components/ui/toast';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -30,6 +31,7 @@ interface DocumentViewerProps {
  * - Other files (via download prompt)
  */
 export default function DocumentViewer({ open, onClose, document, opportunityId, highlightLocation }: DocumentViewerProps & { highlightLocation?: { start: number; end: number } }) {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [fileContent, setFileContent] = useState<string | null>(null);
 
@@ -76,7 +78,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
   const isExcel = filename.match(/\.(xlsx|xls|csv)$/);
   const isWord = filename.match(/\.(docx|doc)$/);
   const isText = filename.match(/\.(txt|md|json)$/);
-  
+
   const getFileIcon = () => {
     if (isExcel) return <FileSpreadsheet className="h-5 w-5 text-green-600" />;
     if (isWord) return <FileType2 className="h-5 w-5 text-blue-600" />;
@@ -85,7 +87,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
 
   const handleDownload = async () => {
     if (!document.id || !opportunityId) {
-      alert('Document information not available for download');
+      toast.warning('Document information not available for download');
       return;
     }
 
@@ -105,7 +107,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
       window.document.body.removeChild(a);
     } catch (error) {
       console.error('Download error:', error);
-      alert('Failed to download document');
+      toast.error('Failed to download document');
     } finally {
       setLoading(false);
     }
@@ -113,7 +115,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
 
   const handleOpenExternal = () => {
     if (!document.id || !opportunityId) {
-      alert('Document information not available');
+      toast.warning('Document information not available');
       return;
     }
     window.open(`${API_URL}/api/v1/files/${opportunityId}/${document.id}/view`, '_blank');
@@ -195,7 +197,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
                   <div>
                     <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 text-sm">Text Preview Mode</h4>
                     <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                      This is a text-only preview extracted from the {isExcel ? 'spreadsheet' : 'document'}. 
+                      This is a text-only preview extracted from the {isExcel ? 'spreadsheet' : 'document'}.
                       Formatting and images are not preserved. Please download the file for the full experience.
                     </p>
                   </div>
@@ -222,7 +224,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
                     {fileContent === null && (isWord || isExcel) ? 'Loading Preview...' : 'Preview Not Available'}
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
-                    {fileContent === null && (isWord || isExcel) 
+                    {fileContent === null && (isWord || isExcel)
                       ? 'Extracting text content from document...'
                       : `This ${isExcel ? 'spreadsheet' : isWord ? 'document' : 'file'} cannot be previewed in the browser.`}
                   </p>

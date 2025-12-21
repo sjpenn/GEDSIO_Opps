@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     
     # Fallback model if primary fails
     LLM_FALLBACK_MODEL: Optional[str] = "google/gemini-2.0-flash-exp"
+    
+    # Appwrite Configuration
+    APPWRITE_ENDPOINT: str = "https://nyc.cloud.appwrite.io/v1"
+    APPWRITE_PROJECT_ID: str = ""
+    APPWRITE_DATABASE_ID: str = ""
+    APPWRITE_API_KEY: str = ""
+    APPWRITE_STORAGE_BUCKET_ID: str = "fedops-files"  # Single bucket for all files
 
     
     class Config:

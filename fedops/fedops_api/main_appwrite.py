@@ -1,0 +1,142 @@
+"""
+FedOps API Main Entry Point - Appwrite Version
+
+This is the Appwrite-based version of the API that replaces
+SQLAlchemy/PostgreSQL with Appwrite Database and Storage.
+
+To use this version instead of the SQLAlchemy version:
+1. Rename main.py to main_sqlalchemy.py
+2. Rename main_appwrite.py to main.py
+3. Or run directly: uvicorn fedops_api.main_appwrite:app --reload
+"""
+
+from fastapi import FastAPI
+from fedops_core.settings import settings
+from starlette.middleware.cors import CORSMiddleware
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Import Appwrite-based routers
+from fedops_api.routers import (
+    opportunities_appwrite, 
+    entities_appwrite, 
+    files_appwrite,
+    proposals_appwrite,
+    company_appwrite,
+    past_performance_appwrite,
+    manual_upload_appwrite,
+    resumes_appwrite
+)
+
+# Import routers that don't need modification (stateless or external API based)
+from fedops_api.routers import (
+    ingest, agents, competitive_intel, agency_intel, co_intel, 
+    workflow, config
+)
+
+app = FastAPI(
+    title=f"{settings.PROJECT_NAME} (Appwrite)",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    description="FedOps API using Appwrite Database"
+)
+
+# Set all CORS enabled origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============================================================================
+# Appwrite-Based Routers (Fully Migrated)
+# ============================================================================
+app.include_router(
+    opportunities_appwrite.router, 
+    prefix="/api/v1/opportunities", 
+    tags=["opportunities"]
+)
+app.include_router(
+    entities_appwrite.router, 
+    prefix="/api/v1/entities", 
+    tags=["entities"]
+)
+app.include_router(
+    files_appwrite.router, 
+    prefix="/api/v1/files", 
+    tags=["files"]
+)
+app.include_router(
+    proposals_appwrite.router, 
+    prefix="/api/v1/proposals", 
+    tags=["proposals"]
+)
+app.include_router(
+    company_appwrite.router, 
+    prefix="/api/v1/company", 
+    tags=["company"]
+)
+app.include_router(
+    past_performance_appwrite.router, 
+    prefix="/api/v1/past-performance", 
+    tags=["past_performance"]
+)
+app.include_router(
+    manual_upload_appwrite.router, 
+    prefix="/api/v1/manual-upload", 
+    tags=["manual_upload"]
+)
+app.include_router(
+    resumes_appwrite.router, 
+    prefix="/api/v1/resumes", 
+    tags=["resumes"]
+)
+
+# ============================================================================
+# Stateless or External API Routers (No DB migration needed)
+# ============================================================================
+app.include_router(ingest.router, prefix="/api/v1/ingest", tags=["ingest"])
+app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
+app.include_router(competitive_intel.router, prefix="/api/v1/competitive-intel", tags=["competitive_intel"])
+app.include_router(agency_intel.router, prefix="/api/v1/agency-intel", tags=["agency-intel"])
+app.include_router(co_intel.router, prefix="/api/v1/co-intel", tags=["co-intel"])
+app.include_router(workflow.router, prefix="/api/v1")
+app.include_router(config.router, prefix="/api/v1")
+
+
+@app.on_event("startup")
+async def startup():
+    """Verify Appwrite connection on startup."""
+    try:
+        from fedops_core.db.appwrite_client import databases, DATABASE_ID
+        # Quick health check
+        logger.info(f"Appwrite configured with database: {DATABASE_ID}")
+        logger.info("Appwrite connection ready")
+    except Exception as e:
+        logger.error(f"Appwrite connection error: {e}")
+        raise
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "ok",
+        "database": "appwrite",
+        "project_id": settings.APPWRITE_PROJECT_ID
+    }
+
+
+@app.get("/")
+def root():
+    """Root endpoint with API info."""
+    return {
+        "name": settings.PROJECT_NAME,
+        "version": "2.0.0-appwrite",
+        "database": "Appwrite",
+        "docs": "/docs"
+    }

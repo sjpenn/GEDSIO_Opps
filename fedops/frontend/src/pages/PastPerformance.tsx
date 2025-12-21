@@ -6,16 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   DialogTrigger,
-  DialogFooter 
+  DialogFooter
 } from "@/components/ui/dialog";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -23,13 +23,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { 
+import {
   pastPerformanceService,
   type PastPerformance,
-  type QuestionnaireTemplate 
+  type QuestionnaireTemplate
 } from '@/services/pastPerformanceService';
+import { useToast } from '@/components/ui/toast';
 
 export default function PastPerformancePage() {
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const entityUei = searchParams.get('entity');
 
@@ -98,34 +100,34 @@ export default function PastPerformancePage() {
         award_id: createForm.award_id || undefined,
         opportunity_id: createForm.opportunity_id ? parseInt(createForm.opportunity_id) : undefined
       });
-      
+
       setPastPerformances([newPP, ...pastPerformances]);
       setShowCreateDialog(false);
       setCreateForm({ entity_uei: entityUei || '', title: '', award_id: '', opportunity_id: '' });
-      
+
       // Open editor for new past performance
       setSelectedPP(newPP);
       setShowEditor(true);
     } catch (error: any) {
-      alert(error.message || 'Failed to create past performance');
+      toast.error(error.message || 'Failed to create past performance');
     }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this past performance?')) return;
-    
+
     try {
       await pastPerformanceService.delete(id);
       setPastPerformances(pastPerformances.filter(pp => pp.id !== id));
     } catch (error: any) {
-      alert(error.message || 'Failed to delete past performance');
+      toast.error(error.message || 'Failed to delete past performance');
     }
   };
 
   const handleExport = async (id: number, format: 'json' | 'text' | 'markdown') => {
     try {
       const result = await pastPerformanceService.export(id, { format, include_metadata: true });
-      
+
       // Download the exported content
       const blob = new Blob([typeof result.content === 'string' ? result.content : JSON.stringify(result.content, null, 2)], {
         type: format === 'json' ? 'application/json' : 'text/plain'
@@ -137,7 +139,7 @@ export default function PastPerformancePage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (error: any) {
-      alert(error.message || 'Failed to export past performance');
+      toast.error(error.message || 'Failed to export past performance');
     }
   };
 
@@ -182,7 +184,7 @@ export default function PastPerformancePage() {
             Manage past performance questionnaires for proposals
           </p>
         </div>
-        
+
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogTrigger asChild>
             <Button>
@@ -197,7 +199,7 @@ export default function PastPerformancePage() {
                 Create a new past performance questionnaire
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4">
               <div>
                 <Label htmlFor="entity_uei">Entity UEI *</Label>
@@ -208,7 +210,7 @@ export default function PastPerformancePage() {
                   placeholder="Enter UEI"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="title">Title *</Label>
                 <Input
@@ -218,7 +220,7 @@ export default function PastPerformancePage() {
                   placeholder="e.g., IT Infrastructure Support for DoD"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="award_id">Award ID (Optional)</Label>
                 <Input
@@ -228,7 +230,7 @@ export default function PastPerformancePage() {
                   placeholder="Link to an award"
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="opportunity_id">Opportunity ID (Optional)</Label>
                 <Input
@@ -240,7 +242,7 @@ export default function PastPerformancePage() {
                 />
               </div>
             </div>
-            
+
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                 Cancel
@@ -289,7 +291,7 @@ export default function PastPerformancePage() {
                       {pp.award_id && ` • Award: ${pp.award_id}`}
                     </CardDescription>
                   </div>
-                  
+
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -302,7 +304,7 @@ export default function PastPerformancePage() {
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </Button>
-                    
+
                     <Select onValueChange={(format) => handleExport(pp.id, format as any)}>
                       <SelectTrigger className="w-[140px] h-9">
                         <Download className="h-4 w-4 mr-2" />
@@ -314,7 +316,7 @@ export default function PastPerformancePage() {
                         <SelectItem value="markdown">Markdown</SelectItem>
                       </SelectContent>
                     </Select>
-                    
+
                     <Button
                       variant="ghost"
                       size="sm"
@@ -325,7 +327,7 @@ export default function PastPerformancePage() {
                   </div>
                 </div>
               </CardHeader>
-              
+
               <CardContent>
                 <div className="text-sm text-muted-foreground">
                   Created: {new Date(pp.created_at).toLocaleDateString()}
@@ -341,17 +343,18 @@ export default function PastPerformancePage() {
 }
 
 // Editor Component (simplified inline version)
-function PastPerformanceEditor({ 
-  pastPerformance, 
+function PastPerformanceEditor({
+  pastPerformance,
   template,
-  onClose, 
-  onUpdate 
-}: { 
+  onClose,
+  onUpdate
+}: {
   pastPerformance: PastPerformance;
   template: QuestionnaireTemplate | null;
   onClose: () => void;
   onUpdate: (updated: PastPerformance) => void;
 }) {
+  const toast = useToast();
   const [data, setData] = useState(pastPerformance.questionnaire_data);
   const [generating, setGenerating] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -365,7 +368,7 @@ function PastPerformanceEditor({
         section_name: sectionName,
         force_regenerate: true
       });
-      
+
       // Update local data
       setData({
         ...data,
@@ -376,7 +379,7 @@ function PastPerformanceEditor({
           model_used: result.model_used
         }
       });
-      
+
       // Save to backend
       await handleSave({
         ...data,
@@ -388,7 +391,7 @@ function PastPerformanceEditor({
         }
       });
     } catch (error: any) {
-      alert(error.message || 'Failed to generate content');
+      toast.error(error.message || 'Failed to generate content');
     } finally {
       setGenerating(null);
     }
@@ -402,7 +405,7 @@ function PastPerformanceEditor({
       });
       onUpdate(updated);
     } catch (error: any) {
-      alert(error.message || 'Failed to save');
+      toast.error(error.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -428,7 +431,7 @@ function PastPerformanceEditor({
         {sections.map((sectionName) => {
           const sectionInfo = template?.sections[sectionName];
           const sectionData = data[sectionName] || { content: '', generated: false };
-          
+
           return (
             <Card key={sectionName}>
               <CardHeader>

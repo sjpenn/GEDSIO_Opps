@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, CheckCircle, XCircle, Play, FileText, Activity, Clock, ExternalLink } from 'lucide-react';
 import { cn } from "@/lib/utils"
+import { useToast } from '@/components/ui/toast';
 
 interface AgentControlPanelProps {
   opportunityId: number;
@@ -36,6 +37,7 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   const [score, setScore] = useState<ScoreData | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
+  const toast = useToast();
 
   const fetchData = async () => {
     console.log('Fetching agent data for opportunity:', opportunityId);
@@ -91,12 +93,12 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
                 setLoading(false);
                 setAnalysisStartTime(null);
                 await fetchData(); // Refresh scores
-                alert('Analysis completed successfully! Results updated.');
+                toast.success('Analysis completed successfully! Results updated.');
               } else if (errorLog) {
                 setLoading(false);
                 setAnalysisStartTime(null);
                 const errMsg = typeof errorLog.details === 'object' ? errorLog.details.error : errorLog.details;
-                alert(`Analysis failed: ${errMsg || 'Unknown error'}`);
+                toast.error(`Analysis failed: ${errMsg || 'Unknown error'}`);
               }
             }
           }
@@ -132,20 +134,20 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
         setAnalysisStartTime(null);
         const errorData = await response.text();
         console.error("Analysis failed:", response.status, errorData);
-        alert(`Analysis failed: ${response.status} - ${errorData}`);
+        toast.error(`Analysis failed: ${response.status} - ${errorData}`);
       } else {
         // Legacy synchronous 200 OK support
         await new Promise(resolve => setTimeout(resolve, 500));
         await fetchData();
         setLoading(false);
         setAnalysisStartTime(null);
-        alert('Analysis completed successfully!');
+        toast.success('Analysis completed successfully!');
       }
     } catch (error) {
       console.error("Analysis request failed", error);
       setLoading(false);
       setAnalysisStartTime(null);
-      alert(`Analysis failed: ${error}`);
+      toast.error(`Analysis failed: ${error}`);
     }
   };
 

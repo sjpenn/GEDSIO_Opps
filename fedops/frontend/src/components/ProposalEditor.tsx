@@ -17,6 +17,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/toast';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -51,6 +52,7 @@ interface ProposalEditorProps {
 }
 
 export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
+  const toast = useToast();
   const [content, setContent] = useState<ProposalContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,7 +77,7 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
       const data = await response.json();
       console.log('ProposalEditor fetched content:', data);
       setContent(data);
-      
+
       // Select first volume by default
       if (data.volumes.length > 0 && !selectedVolume) {
         setSelectedVolume(data.volumes[0].id);
@@ -131,22 +133,22 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
       // Use functional setState to avoid stale closures
       setContent(prevContent => {
         if (!prevContent) return prevContent;
-        
+
         const newContent = JSON.parse(JSON.stringify(prevContent));
         const volume = newContent.volumes.find((v: any) => v.id === volumeId);
-        
+
         if (volume) {
           const blockIndex = volume.blocks.findIndex((b: Block) => String(b.id).trim() === String(blockId).trim());
           if (blockIndex !== -1) {
             volume.blocks[blockIndex] = updatedSection;
           }
         }
-        
+
         return newContent;
       });
     } catch (error) {
       console.error('Error updating section:', error);
-      await fetchContent(true); 
+      await fetchContent(true);
     } finally {
       setSaving(false);
     }
@@ -187,7 +189,7 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
       if (!response.ok) throw new Error('Failed to generate content');
 
       const data = await response.json();
-      
+
       // Update the block with generated content
       await handleUpdateSection(volumeId, blockId, { content: data.content });
     } catch (error) {
@@ -212,10 +214,10 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
       if (!response.ok) throw new Error('Failed to export');
 
       const data = await response.json();
-      alert(`Proposal exported successfully to: ${data.filepath}`);
+      toast.success(`Proposal exported successfully to: ${data.filepath}`);
     } catch (error) {
       console.error('Error exporting:', error);
-      alert('Failed to export proposal');
+      toast.error('Failed to export proposal');
     } finally {
       setExporting(false);
     }
@@ -243,12 +245,12 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
   // Auto-save with debouncing
   const handleContentChange = useCallback((newContent: string, volumeId: number, blockId: string) => {
     setEditContent(newContent);
-    
+
     // Clear existing timeout
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
-    
+
     // Set new timeout for auto-save (2 seconds after user stops typing)
     autoSaveTimeoutRef.current = setTimeout(async () => {
       await handleUpdateSection(volumeId, blockId, { content: newContent });
@@ -261,35 +263,35 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
     if (block.page_limit !== undefined && block.page_limit !== null) {
       return block.page_limit;
     }
-    
+
     // Fallback to heuristic
     const title = block.title.toLowerCase();
-    
+
     // Default page limits based on common section types
     // Cover materials (typically 1 page each)
     if (title.includes('title page') || title.includes('cover page')) return 1;
     if (title.includes('cover letter') || title.includes('transmittal letter')) return 1;
     if (title.includes('table of contents') || title.includes('toc')) return 1;
-    
+
     // Executive materials (short)
     if (title.includes('executive summary')) return 2;
-    
+
     // Technical sections (longer)
     if (title.includes('technical approach') || title.includes('technical solution')) return 15;
     if (title.includes('management') || title.includes('management approach')) return 10;
-    
+
     // Experience and qualifications
     if (title.includes('past performance')) return 5;
     if (title.includes('staffing') || title.includes('key personnel')) return 8;
     if (title.includes('corporate experience') || title.includes('company background')) return 3;
-    
+
     // Quality and process
     if (title.includes('quality assurance') || title.includes('qa')) return 5;
     if (title.includes('transition') || title.includes('phase-in')) return 3;
-    
+
     // Pricing (typically short)
     if (title.includes('pricing') || title.includes('cost') || title.includes('price volume')) return 3;
-    
+
     // Default for other sections (reduced from 5 to 3)
     return 3;
   };
@@ -297,11 +299,11 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
   // Helper function to estimate pages from content
   const estimatePages = (content: string): number => {
     if (!content) return 0;
-    
+
     // Rough estimate: ~500 words per page, ~5 chars per word
     const charCount = content.length;
     const estimatedPages = Math.ceil(charCount / 2500);
-    
+
     return estimatedPages;
   };
 
@@ -421,8 +423,8 @@ export default function ProposalEditor({ proposalId }: ProposalEditorProps) {
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge 
-                                  variant={block.page_limit_source ? "default" : "outline"} 
+                                <Badge
+                                  variant={block.page_limit_source ? "default" : "outline"}
                                   className="text-xs cursor-help"
                                 >
                                   Page Limit: {calculatePageLimit(block)} pages

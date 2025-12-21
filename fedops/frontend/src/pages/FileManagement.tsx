@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import DocumentSlideout from "@/components/DocumentSlideout"
+import { useToast } from "@/components/ui/toast"
 
 interface StoredFile {
   id: number;
@@ -23,6 +24,7 @@ interface FileManagementPageProps {
 }
 
 const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }) => {
+  const toast = useToast();
   const [files, setFiles] = useState<StoredFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<StoredFile | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -107,7 +109,7 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
         method: 'POST',
       });
       if (response.ok) {
-        alert('Batch processing started. Refresh to see updates.');
+        toast.info('Batch processing started. Refresh to see updates.');
       }
     } catch (error) {
       console.error('Error starting batch process:', error);
@@ -137,7 +139,7 @@ const FileManagementPage: React.FC<FileManagementPageProps> = ({ opportunityId }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // Could add toast here
+    toast.success('Copied to clipboard!');
   };
 
   return (

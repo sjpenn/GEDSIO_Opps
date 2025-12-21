@@ -36,6 +36,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/toast';
 
 // ... (keep interfaces)
 
@@ -1420,6 +1421,7 @@ function RequirementResponse({ requirementId, proposalId }: { requirementId: num
 
 // SOW Tab Component
 function SOWTab({ documents, proposalId }: { documents: Document[]; proposalId: number }) {
+  const toast = useToast();
   const [generating, setGenerating] = useState(false);
 
   const [sowContent, setSowContent] = useState<string>('');
@@ -1435,11 +1437,11 @@ function SOWTab({ documents, proposalId }: { documents: Document[]; proposalId: 
         setSowContent(data.content);
         // alert("SOW Decomposition generated successfully!");
       } else {
-        alert("Failed to generate SOW decomposition.");
+        toast.error("Failed to generate SOW decomposition.");
       }
     } catch (error) {
       console.error("Generation failed:", error);
-      alert("An error occurred during generation.");
+      toast.error("An error occurred during generation.");
     } finally {
       setGenerating(false);
     }
@@ -1519,6 +1521,7 @@ function SOWTab({ documents, proposalId }: { documents: Document[]; proposalId: 
 
 // Past Performance Tab Component
 function PastPerformanceTab({ requirements, proposalId }: { requirements: Requirement[]; proposalId: number }) {
+  const toast = useToast();
   const [generatingVolume, setGeneratingVolume] = useState(false);
   const [generatingPPQs, setGeneratingPPQs] = useState(false);
 
@@ -1542,11 +1545,11 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
         setVolumeContent(data.content);
         // alert("Past Performance Volume generated successfully!");
       } else {
-        alert("Failed to generate volume.");
+        toast.error("Failed to generate volume.");
       }
     } catch (error) {
       console.error("Generation failed:", error);
-      alert("An error occurred during generation.");
+      toast.error("An error occurred during generation.");
     } finally {
       setGeneratingVolume(false);
     }
@@ -1563,11 +1566,11 @@ function PastPerformanceTab({ requirements, proposalId }: { requirements: Requir
         setPpqContent(data.content);
         // alert("PPQs generated successfully!");
       } else {
-        alert("Failed to generate PPQs.");
+        toast.error("Failed to generate PPQs.");
       }
     } catch (error) {
       console.error("Generation failed:", error);
-      alert("An error occurred during generation.");
+      toast.error("An error occurred during generation.");
     } finally {
       setGeneratingPPQs(false);
     }
@@ -1703,6 +1706,7 @@ function PricingTab({ requirements }: { requirements: Requirement[] }) {
 
 // Artifacts Tab Component
 function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: Artifact[], proposalId: number }) {
+  const toast = useToast();
   const [artifacts, setArtifacts] = useState<Artifact[]>(initialArtifacts);
   const [uploading, setUploading] = useState<number | null>(null);
 
@@ -1760,7 +1764,7 @@ function ArtifactsTab({ artifacts: initialArtifacts, proposalId }: { artifacts: 
 
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload file. Please try again.');
+      toast.error('Failed to upload file. Please try again.');
     } finally {
       setUploading(null);
     }

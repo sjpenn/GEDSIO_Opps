@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Search, Filter, User, Users, MessageSquare, Trash2, ChevronLeft, ChevronRight, Loader2, Eye, FileText, ExternalLink, Upload, AlertTriangle } from "lucide-react"
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils"
+import { useToast } from "@/components/ui/toast"
 
 interface CompanyProfile {
   uei: string;
@@ -25,6 +26,7 @@ interface CompanyProfile {
 }
 
 export default function OpportunitiesPage() {
+  const toast = useToast()
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -365,12 +367,12 @@ export default function OpportunitiesPage() {
         method: 'POST'
       });
       if (res.ok) {
-        alert("Opportunity added to pipeline!");
+        toast.success("Opportunity added to pipeline!");
         // Refresh pipeline data to update badges
         await fetchPipelineData();
       } else {
         const data = await res.json();
-        alert(data.message || "Failed to watch opportunity");
+        toast.error(data.message || "Failed to watch opportunity");
       }
     } catch (err) {
       console.error("Failed to watch opportunity", err);
@@ -388,7 +390,7 @@ export default function OpportunitiesPage() {
 
       if (res.ok) {
         const data = await res.json();
-        alert(`Opportunity deleted successfully. Removed ${data.summary.deleted_counts.files} files, ${data.summary.deleted_counts.proposals} proposals, and related data.`);
+        toast.success(`Opportunity deleted successfully. Removed ${data.summary.deleted_counts.files} files, ${data.summary.deleted_counts.proposals} proposals, and related data.`);
         setShowDeleteDialog(false);
         setSelectedOpp(null);
         navigate('/opportunities');
@@ -397,11 +399,11 @@ export default function OpportunitiesPage() {
         fetchPipelineData();
       } else {
         const errorData = await res.json();
-        alert(`Failed to delete opportunity: ${errorData.detail || 'Unknown error'}`);
+        toast.error(`Failed to delete opportunity: ${errorData.detail || 'Unknown error'}`);
       }
     } catch (err) {
       console.error("Failed to delete opportunity", err);
-      alert("An error occurred while deleting the opportunity");
+      toast.error("An error occurred while deleting the opportunity");
     } finally {
       setDeleting(false);
     }

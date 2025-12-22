@@ -21,4 +21,4 @@ COPY . .
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "fedops_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "fedops_api.main_appwrite:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

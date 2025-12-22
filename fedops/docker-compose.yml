@@ -9,25 +9,21 @@ services:
       - .env
     environment:
       - TZ=America/New_York
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/fedops
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Appwrite configuration (loaded from .env)
+      - APPWRITE_ENDPOINT=${APPWRITE_ENDPOINT}
+      - APPWRITE_PROJECT_ID=${APPWRITE_PROJECT_ID}
+      - APPWRITE_DATABASE_ID=${APPWRITE_DATABASE_ID}
+      - APPWRITE_API_KEY=${APPWRITE_API_KEY}
+      - APPWRITE_STORAGE_BUCKET_ID=${APPWRITE_STORAGE_BUCKET_ID}
+      # AI/LLM configuration
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    depends_on:
-      - db
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_MODEL=${LLM_MODEL}
     volumes:
       - .:/app
-
-  db:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=fedops
-      - TZ=America/New_York
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./chroma_db:/app/chroma_db
 
   frontend:
     image: node:22-alpine
@@ -42,6 +38,3 @@ services:
       - "5173:5173"
     depends_on:
       - backend
-
-volumes:
-  postgres_data:

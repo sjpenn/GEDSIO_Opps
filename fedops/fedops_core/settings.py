@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "FedOps"
     API_V1_STR: str = "/api/v1"
     
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/fedops"
+    # Database - defaults to SQLite for easy development
+    # For production, use PostgreSQL: postgresql+asyncpg://postgres:postgres@localhost:5432/fedops
+    DATABASE_URL: str = "sqlite+aiosqlite:///./fedops.db"
     
     UPLOAD_DIR: str = "uploads"
     
@@ -65,5 +67,12 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"  # Allow extra fields in .env without validation errors
+
+    @property
+    def ASYNC_DATABASE_URL(self):
+        url = self.DATABASE_URL
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://")
+        return url
 
 settings = Settings()

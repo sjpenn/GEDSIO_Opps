@@ -4,18 +4,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fedops_core.db.engine import get_db
 from fedops_core.db.models import DocumentChunk, StoredFile
-from fedops_core.schemas.file import FileResponse, FileUpdate
+from fedops_core.schemas.file import FileResponse as FileResponseSchema, FileUpdate
 from fedops_core.services.file_service import FileService
 from fedops_core.services.docling_service import DoclingService
 import json
 import logging
 from pathlib import Path
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/upload", response_model=FileResponse)
+@router.post("/upload", response_model=FileResponseSchema)
 async def upload_file(
     file: UploadFile = File(...),
     opportunity_id: int = Form(None),
@@ -24,7 +24,7 @@ async def upload_file(
     service = FileService(db)
     return await service.upload_file(file, opportunity_id)
 
-@router.get("/", response_model=List[FileResponse])
+@router.get("/", response_model=List[FileResponseSchema])
 async def list_files(
     opportunity_id: int = None,
     db: AsyncSession = Depends(get_db)
@@ -32,7 +32,7 @@ async def list_files(
     service = FileService(db)
     return await service.get_files(opportunity_id)
 
-@router.get("/{file_id}", response_model=FileResponse)
+@router.get("/{file_id}", response_model=FileResponseSchema)
 async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
     service = FileService(db)
     file = await service.get_file(file_id)
@@ -71,7 +71,7 @@ async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
             
     return file
 
-@router.post("/{file_id}/process", response_model=FileResponse)
+@router.post("/{file_id}/process", response_model=FileResponseSchema)
 async def process_file(
     file_id: int, 
     background_tasks: BackgroundTasks,
@@ -289,3 +289,73 @@ async def get_file_content_reassembled(
         "source": "chunks",
         "total_chunks": len(chunks)
     }
+
+@router.get("/{file_id}/download", response_class=FileResponse)
+async def download_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download a file by ID."""
+    service = FileService(db)
+    file_record = await service.get_file(file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    file_path = Path(file_record.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File content not found on server")
+        
+    return FileResponse(
+        path=file_path, 
+        filename=file_record.filename,
+        media_type='application/octet-stream'
+    )
+
+@router.get("/{file_id}/view", response_class=FileResponse)
+async def view_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        """View a file inline by ID (for PDFs etc)."""
+        # Validate ID
+        if not file_id.isdigit():
+             logger.error(f"Invalid file_id format: {file_id}. Expected integer.")
+             raise HTTPException(status_code=400, detail=f"Invalid file ID: {file_id}. Please refresh the page.")
+             
+        file_id_int = int(file_id)
+        
+        service = FileService(db)
+        logger.info(f"Viewing file ID: {file_id_int}")
+        
+        file_record = await service.get_file(file_id_int)
+        if not file_record:
+            logger.error(f"File ID {file_id} not found in DB")
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        file_path = Path(file_record.file_path)
+        logger.info(f"File path: {file_path}")
+        
+        if not file_path.exists():
+            logger.error(f"File path {file_path} does not exist on disk (CWD: {Path.cwd()})")
+            raise HTTPException(status_code=404, detail=f"File content not found on server at {file_path}")
+            
+        # Determine media type
+        media_type = 'application/octet-stream'
+        if file_record.filename.lower().endswith('.pdf'):
+            media_type = 'application/pdf'
+        elif file_record.filename.lower().endswith(('.txt', '.md', '.json', '.log')):
+            media_type = 'text/plain'
+            
+        path_str = str(file_path.absolute())
+        return FileResponse(
+            path=path_str, 
+            filename=file_record.filename,
+            media_type=media_type,
+            content_disposition_type='inline'
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in view_file for ID {file_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")

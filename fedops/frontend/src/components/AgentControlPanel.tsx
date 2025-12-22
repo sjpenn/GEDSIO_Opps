@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, CheckCircle, XCircle, Play, FileText, Activity, Clock, ExternalLink } from 'lucide-react';
 import { cn } from "@/lib/utils"
 import { useToast } from '@/components/ui/toast';
+import { Progress } from "@/components/ui/progress";
 
 interface AgentControlPanelProps {
   opportunityId: number;
@@ -68,6 +69,14 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
     }
   };
 
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    status: string;
+    percent: number;
+    message: string;
+    stage?: string;
+    current_operation?: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,8 +85,16 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
   useEffect(() => {
     let interval: any;
     if (loading) {
-      const pollLogs = async () => {
+      const pollProgress = async () => {
         try {
+          const statusRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/analysis/status`);
+          if (statusRes.ok) {
+            const status = await statusRes.json();
+            if (status.status === 'running') {
+              setAnalysisProgress(status);
+            }
+          }
+
           const logsRes = await fetch(`${API_URL}/api/v1/agents/opportunities/${opportunityId}/logs`);
           if (logsRes.ok) {
             const logsData: LogEntry[] = await logsRes.json();
@@ -92,23 +109,27 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
               if (completionLog) {
                 setLoading(false);
                 setAnalysisStartTime(null);
+                setAnalysisProgress(null);
                 await fetchData(); // Refresh scores
                 toast.success('Analysis completed successfully! Results updated.');
               } else if (errorLog) {
                 setLoading(false);
                 setAnalysisStartTime(null);
+                setAnalysisProgress(null);
                 const errMsg = typeof errorLog.details === 'object' ? errorLog.details.error : errorLog.details;
                 toast.error(`Analysis failed: ${errMsg || 'Unknown error'}`);
               }
             }
           }
         } catch (e) {
-          console.error("Error polling logs", e);
+          console.error("Error polling status/logs", e);
         }
       };
 
-      pollLogs();
-      interval = setInterval(pollLogs, 2000);
+      pollProgress();
+      interval = setInterval(pollProgress, 1000);
+    } else {
+      setAnalysisProgress(null);
     }
     return () => clearInterval(interval);
   }, [loading, opportunityId, analysisStartTime]);
@@ -239,39 +260,53 @@ export function AgentControlPanel({ opportunityId }: AgentControlPanelProps) {
           <CardTitle className="text-sm font-medium uppercase text-muted-foreground">Activity Logs</CardTitle>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[200px] w-full rounded-md border bg-muted/10 p-4">
-            <div className="space-y-3">
-              {logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-3 text-sm group">
-                  <div className="mt-0.5">
-                    {log.status === 'SUCCESS' ? <CheckCircle className="h-4 w-4 text-green-500" /> :
-                      log.status === 'FAILURE' ? <XCircle className="h-4 w-4 text-red-500" /> :
-                        loading ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> :
-                          <Clock className="h-4 w-4 text-muted-foreground" />}
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-foreground">{log.agent_name}</span>
-                      <span className="text-xs text-muted-foreground font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                    <p className="text-muted-foreground">{log.action}</p>
-                  </div>
+          <div className="space-y-4">
+            {loading && analysisProgress && (
+              <div className="space-y-2 bg-muted/20 p-4 rounded-lg border border-primary/20">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium text-primary">{analysisProgress.stage ? analysisProgress.stage.toUpperCase() : 'ANALYSIS IN PROGRESS'}</span>
+                  <span className="text-muted-foreground">{analysisProgress.percent}%</span>
                 </div>
-              ))}
-              {logs.length === 0 && (
-                <div className="text-muted-foreground text-center py-8 text-sm italic">
-                  {loading ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                      <span>Initializing analysis agents... this may take 2-3 minutes.</span>
+                <Progress value={analysisProgress.percent} className="h-2" />
+                <p className="text-xs text-muted-foreground italic h-5 truncate">
+                  {analysisProgress.message || 'Processing...'}
+                </p>
+              </div>
+            )}
+            <ScrollArea className="h-[200px] w-full rounded-md border bg-muted/10 p-4">
+              <div className="space-y-3">
+                {logs.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 text-sm group">
+                    <div className="mt-0.5">
+                      {log.status === 'SUCCESS' ? <CheckCircle className="h-4 w-4 text-green-500" /> :
+                        log.status === 'FAILURE' ? <XCircle className="h-4 w-4 text-red-500" /> :
+                          loading ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> :
+                            <Clock className="h-4 w-4 text-muted-foreground" />}
                     </div>
-                  ) : (
-                    "No activity logs recorded yet."
-                  )}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-foreground">{log.agent_name}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="text-muted-foreground">{log.action}</p>
+                    </div>
+                  </div>
+                ))}
+                {logs.length === 0 && (
+                  <div className="text-muted-foreground text-center py-8 text-sm italic">
+                    {loading ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        <span>Initializing analysis agents... this may take 2-3 minutes.</span>
+                      </div>
+                    ) : (
+                      "No activity logs recorded yet."
+                    )}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
         </CardContent>
       </Card>
     </div>

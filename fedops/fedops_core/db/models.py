@@ -675,3 +675,17 @@ class EvaluationMapping(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class ExtractionHistory(Base):
+    __tablename__ = "extraction_history"
+    
+    id = Column(String, primary_key=True, index=True) # UUID
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    extraction_types = Column(JSONB, nullable=True) # List of types
+    file_count = Column(Integer, default=0)
+    files = Column(JSONB, nullable=True) # List of filenames
+    results = Column(JSONB, nullable=True) # Full extraction results
+    preview = Column(Text, nullable=True)
+    opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)

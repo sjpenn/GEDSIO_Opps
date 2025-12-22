@@ -28,14 +28,14 @@ from fedops_api.routers import (
     company_appwrite,
     past_performance_appwrite,
     manual_upload_appwrite,
-    resumes_appwrite
+    resumes_appwrite,
+    extraction_appwrite,
+    vector_store_appwrite
 )
 
-# Import routers that don't need modification (stateless or external API based)
-from fedops_api.routers import (
-    ingest, agents, competitive_intel, agency_intel, co_intel, 
-    workflow, config
-)
+# Import routers that don't need DB modification (stateless or external API based)
+# Note: Removed most routers as they use SQLAlchemy
+from fedops_api.routers import config
 
 app = FastAPI(
     title=f"{settings.PROJECT_NAME} (Appwrite)",
@@ -95,16 +95,21 @@ app.include_router(
     prefix="/api/v1/resumes", 
     tags=["resumes"]
 )
+app.include_router(
+    extraction_appwrite.router,
+    prefix="/api/v1/extraction",
+    tags=["extraction"]
+)
+app.include_router(
+    vector_store_appwrite.router,
+    prefix="/api/v1/vector-store",
+    tags=["vector_store"]
+)
 
 # ============================================================================
 # Stateless or External API Routers (No DB migration needed)
 # ============================================================================
-app.include_router(ingest.router, prefix="/api/v1/ingest", tags=["ingest"])
-app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
-app.include_router(competitive_intel.router, prefix="/api/v1/competitive-intel", tags=["competitive_intel"])
-app.include_router(agency_intel.router, prefix="/api/v1/agency-intel", tags=["agency-intel"])
-app.include_router(co_intel.router, prefix="/api/v1/co-intel", tags=["co-intel"])
-app.include_router(workflow.router, prefix="/api/v1")
+# Note: Other routers (ingest, agents, workflow, etc.) removed as they use SQLAlchemy
 app.include_router(config.router, prefix="/api/v1")
 
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 import {
     Search,
     Globe,
@@ -12,54 +13,42 @@ import {
     ExternalLink,
     Sparkles,
     Clock,
-    ArrowRight
+    ArrowRight,
+    Loader2
 } from "lucide-react";
+import {
+    unifiedSearch,
+    truncateContent,
+    type SearchResult
+} from "@/services/researchService";
 
-interface ResearchResult {
+interface DisplayResult {
     id: string;
     title: string;
     source: "internal" | "web" | "sam.gov";
     snippet: string;
     date: string;
     relevance: number;
+    filename?: string;
 }
 
 const Research = () => {
+    const toastContext = useToast();
     const [query, setQuery] = useState("");
     const [isSearching, setIsSearching] = useState(false);
+    const [results, setResults] = useState<DisplayResult[]>([]);
+    const [hasSearched, setHasSearched] = useState(false);
+    const [sources, setSources] = useState({
+        library: true,
+        web: true,
+        sam: true
+    });
 
-    const recentSearches = [
+    const [recentSearches, setRecentSearches] = useState<string[]>([
         "Cybersecurity compliance requirements NIST 800-53",
         "Department of Defense cloud migration best practices",
         "Federal contractor past performance requirements",
-    ];
-
-    const sampleResults: ResearchResult[] = [
-        {
-            id: "1",
-            title: "NIST 800-53 Security Controls Framework",
-            source: "internal",
-            snippet: "Comprehensive security controls for federal information systems including access control, audit and accountability, and system protection requirements...",
-            date: "Library",
-            relevance: 95,
-        },
-        {
-            id: "2",
-            title: "DoD Cloud Computing Security Requirements Guide",
-            source: "internal",
-            snippet: "Security requirements for cloud computing implementations within the Department of Defense, including FedRAMP and DoD IL requirements...",
-            date: "Library",
-            relevance: 88,
-        },
-        {
-            id: "3",
-            title: "Federal Acquisition Regulation Part 15",
-            source: "web",
-            snippet: "Contracting by negotiation procedures, source selection, and evaluation factors for competitive proposals...",
-            date: "2024",
-            relevance: 82,
-        },
-    ];
+    ]);
 
     const quickResearchCards = [
         { icon: Building2, title: "Agency Research", description: "Research government agencies" },
@@ -68,14 +57,69 @@ const Research = () => {
         { icon: Globe, title: "Market Intelligence", description: "Industry trends" },
     ];
 
-    const handleSearch = () => {
+    const handleSearch = async () => {
         if (!query.trim()) return;
+
         setIsSearching(true);
-        // Simulate search
-        setTimeout(() => setIsSearching(false), 1000);
+        setHasSearched(true);
+
+        try {
+            const searchResults = await unifiedSearch(query, sources);
+
+            // Combine and transform results
+            const combinedResults: DisplayResult[] = [];
+
+            // Add library results
+            searchResults.library.forEach((result: SearchResult, idx: number) => {
+                combinedResults.push({
+                    id: `lib-${idx}`,
+                    title: result.filename || `Document ${idx + 1}`,
+                    source: "internal",
+                    snippet: truncateContent(result.content, 200),
+                    date: "Library",
+                    relevance: Math.round(result.score * 100),
+                    filename: result.filename
+                });
+            });
+
+            // Add SAM.gov results
+            searchResults.sam.forEach((result: any, idx: number) => {
+                combinedResults.push({
+                    id: `sam-${idx}`,
+                    title: result.title || result.name || `Opportunity ${idx + 1}`,
+                    source: "sam.gov",
+                    snippet: result.description || result.synopsis || "",
+                    date: result.posted_date || "SAM.gov",
+                    relevance: 80 - (idx * 5) // Decreasing relevance by order
+                });
+            });
+
+            // Sort by relevance
+            combinedResults.sort((a, b) => b.relevance - a.relevance);
+
+            setResults(combinedResults);
+
+            // Add to recent searches if not already there
+            if (!recentSearches.includes(query)) {
+                setRecentSearches(prev => [query, ...prev.slice(0, 4)]);
+            }
+
+            if (combinedResults.length === 0) {
+                toastContext.info("No results found. Try different keywords.");
+            }
+        } catch (error) {
+            console.error("Search failed:", error);
+            toastContext.error("Search failed. Please try again.");
+        } finally {
+            setIsSearching(false);
+        }
     };
 
-    const getSourceIcon = (source: ResearchResult["source"]) => {
+    const toggleSource = (source: keyof typeof sources) => {
+        setSources(prev => ({ ...prev, [source]: !prev[source] }));
+    };
+
+    const getSourceIcon = (source: DisplayResult["source"]) => {
         switch (source) {
             case "internal": return BookOpen;
             case "web": return Globe;
@@ -84,7 +128,7 @@ const Research = () => {
         }
     };
 
-    const getSourceBadge = (source: ResearchResult["source"]) => {
+    const getSourceBadge = (source: DisplayResult["source"]) => {
         const configs = {
             internal: { label: "Library", className: "bg-purple-500/20 text-purple-400" },
             web: { label: "Web", className: "bg-blue-500/20 text-blue-400" },
@@ -92,6 +136,12 @@ const Research = () => {
         };
         const config = configs[source];
         return <Badge variant="outline" className={config.className}>{config.label}</Badge>;
+    };
+
+    const getRelevanceColor = (relevance: number) => {
+        if (relevance >= 80) return "text-green-400";
+        if (relevance >= 60) return "text-yellow-400";
+        return "text-muted-foreground";
     };
 
     return (
@@ -119,9 +169,18 @@ const Research = () => {
                                 className="w-full pl-12 pr-4 py-4 rounded-lg border border-border bg-background text-lg focus:outline-none focus:ring-2 focus:ring-primary"
                             />
                         </div>
-                        <Button size="lg" onClick={handleSearch} disabled={isSearching}>
-                            <Sparkles className="h-5 w-5 mr-2" />
-                            {isSearching ? "Searching..." : "Research"}
+                        <Button size="lg" onClick={handleSearch} disabled={isSearching || !query.trim()}>
+                            {isSearching ? (
+                                <>
+                                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                    Searching...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-5 w-5 mr-2" />
+                                    Research
+                                </>
+                            )}
                         </Button>
                     </div>
 
@@ -129,17 +188,32 @@ const Research = () => {
                     <div className="flex items-center gap-4 mt-4">
                         <span className="text-sm text-muted-foreground">Search in:</span>
                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" defaultChecked className="rounded" />
+                            <input
+                                type="checkbox"
+                                checked={sources.library}
+                                onChange={() => toggleSource('library')}
+                                className="rounded"
+                            />
                             <BookOpen className="h-4 w-4" />
                             <span className="text-sm">Library</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" defaultChecked className="rounded" />
+                            <input
+                                type="checkbox"
+                                checked={sources.web}
+                                onChange={() => toggleSource('web')}
+                                className="rounded"
+                            />
                             <Globe className="h-4 w-4" />
                             <span className="text-sm">Web</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" defaultChecked className="rounded" />
+                            <input
+                                type="checkbox"
+                                checked={sources.sam}
+                                onChange={() => toggleSource('sam')}
+                                className="rounded"
+                            />
                             <Building2 className="h-4 w-4" />
                             <span className="text-sm">SAM.gov</span>
                         </label>
@@ -175,44 +249,64 @@ const Research = () => {
                         <CardHeader>
                             <CardTitle>Research Results</CardTitle>
                             <CardDescription>
-                                {sampleResults.length} results found across all sources
+                                {hasSearched
+                                    ? `${results.length} results found across all sources`
+                                    : "Enter a search query to find relevant information"
+                                }
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {sampleResults.map((result) => {
-                                const Icon = getSourceIcon(result.source);
-                                return (
-                                    <div
-                                        key={result.id}
-                                        className="p-4 rounded-lg border border-border hover:border-primary/50 transition-colors"
-                                    >
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <Icon className="h-4 w-4 text-muted-foreground" />
-                                                <h3 className="font-semibold">{result.title}</h3>
+                            {isSearching ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                </div>
+                            ) : results.length === 0 && hasSearched ? (
+                                <div className="text-center py-12 text-muted-foreground">
+                                    <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                    <p>No results found</p>
+                                    <p className="text-sm mt-1">Try different keywords or enable more sources</p>
+                                </div>
+                            ) : results.length === 0 ? (
+                                <div className="text-center py-12 text-muted-foreground">
+                                    <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                    <p>Enter a search query above to get started</p>
+                                </div>
+                            ) : (
+                                results.map((result) => {
+                                    const Icon = getSourceIcon(result.source);
+                                    return (
+                                        <div
+                                            key={result.id}
+                                            className="p-4 rounded-lg border border-border hover:border-primary/50 transition-colors"
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <Icon className="h-4 w-4 text-muted-foreground" />
+                                                    <h3 className="font-semibold">{result.title}</h3>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {getSourceBadge(result.source)}
+                                                    <span className={`text-xs ${getRelevanceColor(result.relevance)}`}>
+                                                        {result.relevance}% match
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                {getSourceBadge(result.source)}
-                                                <span className="text-xs text-muted-foreground">
-                                                    {result.relevance}% match
-                                                </span>
+                                            <p className="text-sm text-muted-foreground mb-3">
+                                                {result.snippet}
+                                            </p>
+                                            <div className="flex items-center gap-3">
+                                                <Button variant="outline" size="sm">
+                                                    View Full
+                                                    <ExternalLink className="h-3 w-3 ml-2" />
+                                                </Button>
+                                                <Button variant="ghost" size="sm">
+                                                    Add to Proposal
+                                                </Button>
                                             </div>
                                         </div>
-                                        <p className="text-sm text-muted-foreground mb-3">
-                                            {result.snippet}
-                                        </p>
-                                        <div className="flex items-center gap-3">
-                                            <Button variant="outline" size="sm">
-                                                View Full
-                                                <ExternalLink className="h-3 w-3 ml-2" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm">
-                                                Add to Proposal
-                                            </Button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })
+                            )}
                         </CardContent>
                     </Card>
                 </div>

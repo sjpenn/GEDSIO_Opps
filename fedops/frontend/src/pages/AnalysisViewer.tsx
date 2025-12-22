@@ -32,7 +32,8 @@ import {
   Download,
   Sparkles,
   Copy,
-  Pencil
+  Pencil,
+  Code
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import ShipleyPhaseIndicator from '@/components/ShipleyPhaseIndicator';
@@ -583,6 +584,27 @@ export default function AnalysisViewer() {
   const handleExportFull = () => {
     if (!data) return;
     exportAnalysis('full');
+  };
+
+  const handleExportData = () => {
+    if (!data || !data.score) return;
+
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const sanitizedTitle = data.opportunity.title.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
+    const filename = `${sanitizedTitle}_extracted_data_${timestamp}.json`;
+
+    const jsonContent = JSON.stringify(data.score.details, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Extraction data exported successfully!");
   };
 
   const exportAnalysis = (type: 'summary' | 'full') => {
@@ -1211,6 +1233,26 @@ export default function AnalysisViewer() {
                   >
                     <RefreshCw className={cn("h-4 w-4 mr-2", reanalyzing && "animate-spin")} />
                     Re-Run Analysis
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const docs = data?.score?.details?.source_documents || data?.score?.details?.extracted_data?.source_documents || [];
+                      if (docs.length > 0) {
+                        setSelectedDoc(docs[0]);
+                        setViewerOpen(true);
+                      } else {
+                        toast.info("No documents found to preview.");
+                      }
+                    }}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview Docs
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleExportData()}>
+                    <Code className="h-4 w-4 mr-2" />
+                    Export Data
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => handleExportSummary()}>
                     <Download className="h-4 w-4 mr-2" />

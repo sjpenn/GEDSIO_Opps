@@ -4,7 +4,7 @@ from fedops_api.routers import (
     opportunities, ingest, files, company, entities, agents, proposals, 
     requirements, gates, competitive_intel, capture, proposal_content, 
     reviews, submission, manual_upload, teams, agency_intel, co_intel, 
-    resumes, past_performance, workflow, vector_store
+    resumes, past_performance, workflow, vector_store, extraction
 )
 from fedops_core.routers import pipeline
 from fedops_core.db.engine import engine, Base
@@ -48,6 +48,7 @@ app.include_router(workflow.router, prefix="/api/v1")
 from fedops_api.routers import config
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(vector_store.router, prefix="/api/v1/vector-store", tags=["vector_store"])
+app.include_router(extraction.router, prefix="/api/v1/extraction", tags=["extraction"])
 app.include_router(pipeline.router)
 
 @app.on_event("startup")

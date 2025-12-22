@@ -93,7 +93,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
 
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/v1/files/${opportunityId}/${document.id}/download`);
+      const response = await fetch(`${API_URL}/api/v1/files/${document.id}/download`);
       if (!response.ok) throw new Error('Download failed');
 
       const blob = await response.blob();
@@ -118,7 +118,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
       toast.warning('Document information not available');
       return;
     }
-    window.open(`${API_URL}/api/v1/files/${opportunityId}/${document.id}/view`, '_blank');
+    window.open(`${API_URL}/api/v1/files/${document.id}/view`, '_blank');
   };
 
   const renderContent = () => {
@@ -185,7 +185,7 @@ export default function DocumentViewer({ open, onClose, document, opportunityId,
         <div className="flex-1 border rounded-lg overflow-hidden bg-muted/30">
           {isPDF && document.id && opportunityId ? (
             <iframe
-              src={`${API_URL}/api/v1/files/${opportunityId}/${document.id}/view`}
+              src={`${API_URL}/api/v1/files/${document.id}/view`}
               className="w-full h-full"
               title={document.filename}
             />

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,8 @@ import {
     Sparkles,
     Clock,
     ArrowRight,
-    Loader2
+    Loader2,
+    ArrowLeft
 } from "lucide-react";
 import {
     unifiedSearch,
@@ -33,11 +35,13 @@ interface DisplayResult {
 }
 
 const Research = () => {
+    const { opportunityId } = useParams<{ opportunityId: string }>();
     const toastContext = useToast();
     const [query, setQuery] = useState("");
     const [isSearching, setIsSearching] = useState(false);
     const [results, setResults] = useState<DisplayResult[]>([]);
     const [hasSearched, setHasSearched] = useState(false);
+    const [opportunity, setOpportunity] = useState<any>(null);
     const [sources, setSources] = useState({
         library: true,
         web: true,
@@ -50,12 +54,33 @@ const Research = () => {
         "Federal contractor past performance requirements",
     ]);
 
+    // Load opportunity details if we have an ID
+    useEffect(() => {
+        if (opportunityId) {
+            loadOpportunityData();
+        }
+    }, [opportunityId]);
+
     const quickResearchCards = [
         { icon: Building2, title: "Agency Research", description: "Research government agencies" },
         { icon: Users, title: "Competitor Analysis", description: "Analyze competitors" },
         { icon: FileText, title: "Past Contracts", description: "Search FPDS data" },
         { icon: Globe, title: "Market Intelligence", description: "Industry trends" },
     ];
+
+    const loadOpportunityData = async () => {
+        if (!opportunityId) return;
+
+        try {
+            const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+            if (response.ok) {
+                const oppData = await response.json();
+                setOpportunity(oppData);
+            }
+        } catch (error) {
+            console.error('Error loading opportunity:', error);
+        }
+    };
 
     const handleSearch = async () => {
         if (!query.trim()) return;
@@ -148,9 +173,20 @@ const Research = () => {
         <div className="space-y-6">
             {/* Page Header */}
             <div>
+                {opportunityId && opportunity && (
+                    <Link
+                        to={`/opportunities/${opportunityId}`}
+                        className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 mb-2"
+                    >
+                        <ArrowLeft className="h-4 w-4" /> Back to {opportunity.title}
+                    </Link>
+                )}
                 <h1 className="text-3xl font-bold">Research</h1>
                 <p className="text-muted-foreground mt-2">
-                    Query your library and the web to gather intelligence for your proposals.
+                    {opportunityId
+                        ? `Query your library and the web to gather intelligence for ${opportunity?.solicitation_number || 'this opportunity'}.`
+                        : "Query your library and the web to gather intelligence for your proposals."
+                    }
                 </p>
             </div>
 

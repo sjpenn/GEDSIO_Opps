@@ -1,213 +1,477 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    Sparkles,
-    BookOpen,
-    Lightbulb,
+    GripVertical,
+    ChevronDown,
     ChevronRight,
-    MessageSquare,
-    History,
-    Wand2
+    Plus,
+    MoreHorizontal,
+    Check,
+    User,
+    Calendar,
+    Grid3x3,
+    ArrowLeft,
+    Loader2,
+    AlertCircle
 } from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+type SectionStatus = "preparing" | "writing" | "formal-review" | "ready-to-submit";
 
 interface Section {
     id: string;
     title: string;
-    status: "not-started" | "drafting" | "review" | "complete";
+    status: SectionStatus;
+    owner?: string;
+    dueDate?: string;
+    wordLimit?: number;
     wordCount: number;
-    targetWords: number;
+    subsections?: Section[];
+    isExpanded?: boolean;
+}
+
+interface Volume {
+    id: string;
+    title: string;
+    sections: Section[];
+    isExpanded: boolean;
 }
 
 const Write = () => {
-    const [activeSection, setActiveSection] = useState<string | null>(null);
-    const [content, setContent] = useState("");
+    const { opportunityId } = useParams<{ opportunityId: string }>();
+    const navigate = useNavigate();
 
-    const sections: Section[] = [
-        { id: "exec-summary", title: "Executive Summary", status: "complete", wordCount: 850, targetWords: 1000 },
-        { id: "technical", title: "Technical Approach", status: "drafting", wordCount: 2100, targetWords: 5000 },
-        { id: "management", title: "Management Approach", status: "not-started", wordCount: 0, targetWords: 3000 },
-        { id: "past-perf", title: "Past Performance", status: "review", wordCount: 1500, targetWords: 1500 },
-        { id: "pricing", title: "Pricing Volume", status: "not-started", wordCount: 0, targetWords: 500 },
-    ];
+    const [volumes, setVolumes] = useState<Volume[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [opportunity, setOpportunity] = useState<any>(null);
 
-    const getStatusBadge = (status: Section["status"]) => {
-        const configs = {
-            "not-started": { label: "Not Started", className: "bg-muted text-muted-foreground" },
-            drafting: { label: "Drafting", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-            review: { label: "In Review", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-            complete: { label: "Complete", className: "bg-green-500/20 text-green-400 border-green-500/30" },
-        };
-        const config = configs[status];
-        return <Badge variant="outline" className={config.className}>{config.label}</Badge>;
+    // Load opportunity details and proposal volumes
+    useEffect(() => {
+        if (opportunityId) {
+            loadOpportunityData();
+        } else {
+            // No opportunity context - use default/sample data
+            setVolumes(getDefaultVolumes());
+        }
+    }, [opportunityId]);
+
+    const loadOpportunityData = async () => {
+        if (!opportunityId) return;
+
+        setLoading(true);
+        try {
+            // Load opportunity details
+            const oppResponse = await fetch(`/api/v1/opportunities/${opportunityId}`);
+            if (oppResponse.ok) {
+                const oppData = await oppResponse.json();
+                setOpportunity(oppData);
+            }
+
+            // Load or generate proposal for this opportunity
+            const proposalResponse = await fetch(`/api/v1/proposals/generate/${opportunityId}`);
+            if (proposalResponse.ok) {
+                const proposalData = await proposalResponse.json();
+                // Transform proposal data to volumes format if needed
+                if (proposalData.volumes && proposalData.volumes.length > 0) {
+                    setVolumes(proposalData.volumes.map((vol: any) => ({
+                        id: vol.id || `vol-${vol.order}`,
+                        title: vol.title,
+                        isExpanded: true,
+                        sections: vol.sections || []
+                    })));
+                } else {
+                    // No volumes yet, use default structure
+                    setVolumes(getDefaultVolumes());
+                }
+            }
+        } catch (error) {
+            console.error('Error loading opportunity data:', error);
+            // Fall back to default volumes on error
+            setVolumes(getDefaultVolumes());
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const aiTools = [
-        { id: "ideate", label: "Ideate", icon: Lightbulb, description: "Generate ideas and outlines" },
-        { id: "improve", label: "Improve", icon: Wand2, description: "Enhance your writing" },
-        { id: "sources", label: "Source Finder", icon: BookOpen, description: "Find relevant sources" },
-        { id: "chat", label: "Ask AI", icon: MessageSquare, description: "Get writing assistance" },
-    ];
+    const getDefaultVolumes = (): Volume[] => {
+        return [
+            {
+                id: "vol-1",
+                title: "Volume 1: Technical Proposal",
+                isExpanded: true,
+                sections: [
+                    {
+                        id: "toc",
+                        title: "Table of Contents",
+                        status: "preparing",
+                        owner: "JD",
+                        dueDate: "3/30/2025",
+                        wordCount: 19,
+                    },
+                    {
+                        id: "cover",
+                        title: "Cover Page",
+                        status: "ready-to-submit",
+                        dueDate: "2/7/2025",
+                        wordLimit: 1500,
+                        wordCount: 2542,
+                        isExpanded: false,
+                    },
+                    {
+                        id: "exec-summary",
+                        title: "Executive Summary",
+                        status: "formal-review",
+                        dueDate: "2/28/2025",
+                        wordCount: 43,
+                    },
+                    {
+                        id: "background",
+                        title: "Background and Introduction",
+                        status: "preparing",
+                        dueDate: "3/7/2025",
+                        wordCount: 100,
+                    },
+                    {
+                        id: "tech-approach",
+                        title: "1. Technical Approach",
+                        status: "writing",
+                        dueDate: "3/28/2025",
+                        wordCount: 879,
+                        isExpanded: false,
+                    },
+                    {
+                        id: "mgmt-approach",
+                        title: "2. Management Approach",
+                        status: "writing",
+                        dueDate: "3/14/2025",
+                        wordCount: 487,
+                        isExpanded: false,
+                    },
+                    {
+                        id: "institutional",
+                        title: "3. Institutional Capability",
+                        status: "preparing",
+                        dueDate: "3/16/2025",
+                        wordLimit: 1500,
+                        wordCount: 433,
+                        isExpanded: false,
+                    },
+                ],
+            },
+        ];
+    };
+
+    const toggleVolume = (volumeId: string) => {
+        setVolumes(prev => prev.map(vol =>
+            vol.id === volumeId ? { ...vol, isExpanded: !vol.isExpanded } : vol
+        ));
+    };
+
+    const toggleSection = (volumeId: string, sectionId: string) => {
+        setVolumes(prev => prev.map(vol => {
+            if (vol.id !== volumeId) return vol;
+            return {
+                ...vol,
+                sections: vol.sections.map(sec =>
+                    sec.id === sectionId ? { ...sec, isExpanded: !sec.isExpanded } : sec
+                )
+            };
+        }));
+    };
+
+    const updateSectionStatus = (volumeId: string, sectionId: string, status: SectionStatus) => {
+        setVolumes(prev => prev.map(vol => {
+            if (vol.id !== volumeId) return vol;
+            return {
+                ...vol,
+                sections: vol.sections.map(sec =>
+                    sec.id === sectionId ? { ...sec, status } : sec
+                )
+            };
+        }));
+    };
+
+    const getStatusConfig = (status: SectionStatus) => {
+        const configs = {
+            "preparing": {
+                label: "Preparing",
+                icon: null,
+                className: "bg-blue-500/10 text-blue-500 border-blue-500/30"
+            },
+            "writing": {
+                label: "Writing",
+                icon: null,
+                className: "bg-purple-500/10 text-purple-500 border-purple-500/30"
+            },
+            "formal-review": {
+                label: "Formal Review",
+                icon: Check,
+                className: "bg-pink-500/10 text-pink-500 border-pink-500/30"
+            },
+            "ready-to-submit": {
+                label: "Ready to Submit",
+                icon: Check,
+                className: "bg-green-500/10 text-green-500 border-green-500/30"
+            },
+        };
+        return configs[status];
+    };
+
+    const renderSection = (volume: Volume, section: Section, depth: number = 0) => {
+        const statusConfig = getStatusConfig(section.status);
+        const StatusIcon = statusConfig.icon;
+        const hasSubsections = section.subsections && section.subsections.length > 0;
+
+        return (
+            <div key={section.id}>
+                <div
+                    className={cn(
+                        "grid grid-cols-[auto,2fr,1.5fr,1fr,1fr,1fr,1fr,auto] gap-4 items-center p-3 hover:bg-muted/30 transition-colors border-b border-border/50",
+                        depth > 0 && "bg-muted/20"
+                    )}
+                    style={{ paddingLeft: `${depth * 24 + 12}px` }}
+                >
+                    {/* Drag Handle */}
+                    <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+                        {hasSubsections && (
+                            <button
+                                onClick={() => toggleSection(volume.id, section.id)}
+                                className="hover:bg-muted rounded p-0.5"
+                            >
+                                {section.isExpanded ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                )}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Title */}
+                    <div className="font-medium text-sm">{section.title}</div>
+
+                    {/* Status */}
+                    <div>
+                        <Select
+                            value={section.status}
+                            onValueChange={(value) => updateSectionStatus(volume.id, section.id, value as SectionStatus)}
+                        >
+                            <SelectTrigger className={cn("w-full border", statusConfig.className)}>
+                                <SelectValue>
+                                    <div className="flex items-center gap-2">
+                                        {StatusIcon && <StatusIcon className="h-3.5 w-3.5" />}
+                                        {statusConfig.label}
+                                    </div>
+                                </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="preparing">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                        Preparing
+                                    </div>
+                                </SelectItem>
+                                <SelectItem value="writing">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-purple-500" />
+                                        Writing
+                                    </div>
+                                </SelectItem>
+                                <SelectItem value="formal-review">
+                                    <div className="flex items-center gap-2">
+                                        <Check className="h-3.5 w-3.5 text-pink-500" />
+                                        Formal Review
+                                    </div>
+                                </SelectItem>
+                                <SelectItem value="ready-to-submit">
+                                    <div className="flex items-center gap-2">
+                                        <Check className="h-3.5 w-3.5 text-green-500" />
+                                        Ready to Submit
+                                    </div>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Owner */}
+                    <div>
+                        {section.owner ? (
+                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-xs font-medium">
+                                {section.owner}
+                            </div>
+                        ) : (
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <User className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Due Date */}
+                    <div className="text-sm text-muted-foreground">
+                        {section.dueDate || (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                                Add Value
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Word Limit */}
+                    <div className="text-sm text-muted-foreground">
+                        {section.wordLimit || (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                                Add Value
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Word Count */}
+                    <div className="text-sm font-medium">{section.wordCount}</div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Grid3x3 className="h-4 w-4" />
+                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem>Edit</DropdownMenuItem>
+                                <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                                <DropdownMenuItem>Move to...</DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
+
+                {/* Subsections */}
+                {section.isExpanded && section.subsections?.map(subsection =>
+                    renderSection(volume, subsection, depth + 1)
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-6">
-            {/* Page Header */}
+            {/* Page Header with Opportunity Context */}
             <div>
+                {opportunityId && opportunity && (
+                    <Link
+                        to={`/opportunities/${opportunityId}`}
+                        className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 mb-2"
+                    >
+                        <ArrowLeft className="h-4 w-4" /> Back to {opportunity.title}
+                    </Link>
+                )}
                 <h1 className="text-3xl font-bold">Write</h1>
                 <p className="text-muted-foreground mt-2">
-                    AI-powered proposal writing with intelligent assistance and source verification.
+                    {opportunityId
+                        ? `Organize and write proposal volumes for ${opportunity?.solicitation_number || 'this opportunity'}`
+                        : "Organize and write your proposal volumes with section-by-section tracking and collaboration."
+                    }
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                {/* Left Sidebar - Sections */}
-                <div className="lg:col-span-1">
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-lg">Proposal Sections</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                            {sections.map((section) => (
-                                <button
-                                    key={section.id}
-                                    onClick={() => setActiveSection(section.id)}
-                                    className={`w-full text-left p-3 rounded-lg transition-colors ${activeSection === section.id
-                                        ? "bg-primary/20 border border-primary/50"
-                                        : "hover:bg-muted"
-                                        }`}
-                                >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="font-medium text-sm">{section.title}</span>
-                                        <ChevronRight className={`h-4 w-4 transition-transform ${activeSection === section.id ? "rotate-90" : ""
-                                            }`} />
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        {getStatusBadge(section.status)}
-                                        <span className="text-xs text-muted-foreground">
-                                            {section.wordCount}/{section.targetWords}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-primary rounded-full"
-                                            style={{ width: `${Math.min((section.wordCount / section.targetWords) * 100, 100)}%` }}
-                                        />
-                                    </div>
-                                </button>
-                            ))}
-                        </CardContent>
-                    </Card>
+            {loading ? (
+                <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-3 text-muted-foreground">Loading proposal volumes...</span>
                 </div>
-
-                {/* Center - Editor */}
-                <div className="lg:col-span-2">
-                    <Card className="h-[600px] flex flex-col">
-                        <CardHeader className="pb-3 border-b">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle>Technical Approach</CardTitle>
-                                    <CardDescription>Section 2 of 5 • 2,100 / 5,000 words</CardDescription>
-                                </div>
-                                <div className="flex gap-2">
+            ) : volumes.length === 0 ? (
+                <Card>
+                    <CardContent className="p-12 text-center">
+                        <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                        <h3 className="text-lg font-semibold mb-2">No Proposal Volumes</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Get started by creating your first proposal volume.
+                        </p>
+                        <Button onClick={() => setVolumes(getDefaultVolumes())}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Create First Volume
+                        </Button>
+                    </CardContent>
+                </Card>
+            ) : (
+                <>
+                    {/* Volumes */}
+                    {volumes.map(volume => (
+                        <Card key={volume.id}>
+                            <CardContent className="p-0">
+                                {/* Volume Header */}
+                                <div className="flex items-center justify-between p-4 border-b">
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => toggleVolume(volume.id)}
+                                            className="hover:bg-muted rounded p-1"
+                                        >
+                                            {volume.isExpanded ? (
+                                                <ChevronDown className="h-5 w-5" />
+                                            ) : (
+                                                <ChevronRight className="h-5 w-5" />
+                                            )}
+                                        </button>
+                                        <h2 className="text-lg font-semibold">{volume.title}</h2>
+                                    </div>
                                     <Button variant="outline" size="sm">
-                                        <History className="h-4 w-4 mr-2" />
-                                        History
-                                    </Button>
-                                    <Button size="sm">
-                                        Save Draft
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        ADD SECTION
                                     </Button>
                                 </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="flex-1 p-0">
-                            <textarea
-                                value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                placeholder="Start writing your technical approach here...
 
-The AI assistant on the right can help you:
-• Generate outlines and ideas
-• Improve your writing style
-• Find relevant sources from your library
-• Answer questions about requirements"
-                                className="w-full h-full p-6 bg-transparent resize-none focus:outline-none text-foreground placeholder:text-muted-foreground"
-                            />
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Right Sidebar - AI Assistance */}
-                <div className="lg:col-span-1">
-                    <Card className="h-[600px] flex flex-col">
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                <Sparkles className="h-5 w-5 text-primary" />
-                                AI Assistant
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="flex-1 flex flex-col">
-                            <Tabs defaultValue="tools" className="flex-1 flex flex-col">
-                                <TabsList className="grid w-full grid-cols-2">
-                                    <TabsTrigger value="tools">Tools</TabsTrigger>
-                                    <TabsTrigger value="chat">Chat</TabsTrigger>
-                                </TabsList>
-
-                                <TabsContent value="tools" className="flex-1 mt-4 space-y-3">
-                                    {aiTools.map((tool) => {
-                                        const Icon = tool.icon;
-                                        return (
-                                            <button
-                                                key={tool.id}
-                                                className="w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors text-left"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2 rounded-lg bg-primary/10">
-                                                        <Icon className="h-4 w-4 text-primary" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-medium text-sm">{tool.label}</p>
-                                                        <p className="text-xs text-muted-foreground">{tool.description}</p>
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-
-                                    <div className="pt-4 border-t mt-4">
-                                        <h4 className="text-sm font-medium mb-3">Quick Actions</h4>
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button variant="outline" size="sm">Expand</Button>
-                                            <Button variant="outline" size="sm">Condense</Button>
-                                            <Button variant="outline" size="sm">Formalize</Button>
-                                            <Button variant="outline" size="sm">Simplify</Button>
+                                {/* Section Table */}
+                                {volume.isExpanded && (
+                                    <>
+                                        {/* Table Header */}
+                                        <div className="grid grid-cols-[auto,2fr,1.5fr,1fr,1fr,1fr,1fr,auto] gap-4 items-center p-3 bg-muted/50 border-b font-medium text-xs text-muted-foreground uppercase tracking-wider">
+                                            <div></div>
+                                            <div>Title</div>
+                                            <div>Status</div>
+                                            <div>Owner</div>
+                                            <div>Due Date</div>
+                                            <div>Word Limit</div>
+                                            <div>Word Count</div>
+                                            <div>Actions</div>
                                         </div>
-                                    </div>
-                                </TabsContent>
 
-                                <TabsContent value="chat" className="flex-1 mt-4 flex flex-col">
-                                    <div className="flex-1 border rounded-lg p-4 bg-muted/30 mb-3">
-                                        <p className="text-sm text-muted-foreground text-center">
-                                            Ask me anything about your proposal...
-                                        </p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            placeholder="Type a message..."
-                                            className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                                        />
-                                        <Button size="sm">
-                                            <MessageSquare className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </TabsContent>
-                            </Tabs>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
+                                        {/* Sections */}
+                                        {volume.sections.map(section => renderSection(volume, section))}
+                                    </>
+                                )}
+                            </CardContent>
+                        </Card>
+                    ))}
+                    {/* Add Volume Button */}
+                    <Button variant="outline" className="w-full border-dashed">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add New Volume
+                    </Button>
+                </>
+            )}
         </div>
     );
 };

@@ -5,6 +5,10 @@ Provides base CRUD operations for Appwrite collections.
 All entity-specific repositories inherit from this class.
 """
 
+# Suppress Appwrite SDK deprecation warnings relating to Documents->Rows rename
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*deprecated.*")
+
 from typing import TypeVar, Generic, Optional, List, Dict, Any
 from datetime import datetime
 from appwrite.id import ID

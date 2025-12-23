@@ -9,6 +9,7 @@ services:
       - .env
     environment:
       - TZ=America/New_York
+      - PYTHONWARNINGS=ignore
       # Appwrite configuration (loaded from .env)
       - APPWRITE_ENDPOINT=${APPWRITE_ENDPOINT}
       - APPWRITE_PROJECT_ID=${APPWRITE_PROJECT_ID}

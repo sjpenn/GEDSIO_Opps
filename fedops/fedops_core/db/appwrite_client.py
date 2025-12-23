@@ -7,7 +7,8 @@ Uses server-side API key for backend operations.
 
 # Suppress Appwrite SDK deprecation warnings (SDK v14+ renamed APIs)
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="appwrite")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*deprecated.*")
 
 from appwrite.client import Client
 from appwrite.services.databases import Databases
@@ -65,6 +66,7 @@ COLLECTIONS = {
     "contracting_officers": "contracting_officers",
     "saved_agency_searches": "saved_agency_searches",
     "document_classifications": "document_classifications",
+    "cache_metadata": "cache_metadata",
 }
 
 

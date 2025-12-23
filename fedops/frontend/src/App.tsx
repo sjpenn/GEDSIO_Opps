@@ -33,7 +33,7 @@ function App() {
         <Router>
           <Layout>
             <Routes>
-              {/* New Primary Module Routes */}
+              {/* New Primary Module Routes - Standalone (for backward compatibility) */}
               <Route path="/qualify-extract" element={
                 <PageTransition>
                   <QualifyExtract />
@@ -62,6 +62,28 @@ function App() {
               <Route path="/integrations" element={
                 <PageTransition>
                   <Integrations />
+                </PageTransition>
+              } />
+
+              {/* Opportunity-Scoped Workflow Routes */}
+              <Route path="/opportunities/:opportunityId/qualify-extract" element={
+                <PageTransition>
+                  <QualifyExtract />
+                </PageTransition>
+              } />
+              <Route path="/opportunities/:opportunityId/write" element={
+                <PageTransition>
+                  <Write />
+                </PageTransition>
+              } />
+              <Route path="/opportunities/:opportunityId/research" element={
+                <PageTransition>
+                  <Research />
+                </PageTransition>
+              } />
+              <Route path="/opportunities/:opportunityId/review" element={
+                <PageTransition>
+                  <Review />
                 </PageTransition>
               } />
 

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
-import { Upload, FolderOpen, FileText, Clock, Sparkles, Trash2, CheckCircle2, Loader2, AlertCircle, Eye, Download, Copy } from "lucide-react";
+import { useParams, Link } from "react-router-dom";
+import { Upload, FolderOpen, FileText, Clock, Sparkles, Trash2, CheckCircle2, Loader2, AlertCircle, Eye, Download, Copy, ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -53,6 +54,7 @@ interface ExtractionResult {
 }
 
 const QualifyExtract = () => {
+    const { opportunityId } = useParams<{ opportunityId: string }>();
     const toastContext = useToast();
     const [activeInputTab, setActiveInputTab] = useState("upload");
     const [activeActionTab, setActiveActionTab] = useState("actions");
@@ -64,12 +66,20 @@ const QualifyExtract = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [isExtracting, setIsExtracting] = useState(false);
     const [extractionHistory, setExtractionHistory] = useState<ExtractionResult[]>([]);
+    const [opportunity, setOpportunity] = useState<any>(null);
 
     // View States
     const [viewResult, setViewResult] = useState<ExtractionResult | null>(null);
     const [viewFile, setViewFile] = useState<LibraryFile | LocalFile | null>(null);
     const [extractedText, setExtractedText] = useState<string | null>(null);
     const [isLoadingContent, setIsLoadingContent] = useState(false);
+
+    // Load opportunity details if we have an ID
+    useEffect(() => {
+        if (opportunityId) {
+            loadOpportunityData();
+        }
+    }, [opportunityId]);
 
     // Initial Load
     useEffect(() => {
@@ -91,6 +101,20 @@ const QualifyExtract = () => {
             setExtractionHistory(formattedHistory);
         } catch (error) {
             console.error("Failed to load history:", error);
+        }
+    };
+
+    const loadOpportunityData = async () => {
+        if (!opportunityId) return;
+
+        try {
+            const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+            if (response.ok) {
+                const oppData = await response.json();
+                setOpportunity(oppData);
+            }
+        } catch (error) {
+            console.error('Error loading opportunity:', error);
         }
     };
 
@@ -413,10 +437,20 @@ const QualifyExtract = () => {
         <div className="space-y-6">
             {/* Page Header */}
             <div>
+                {opportunityId && opportunity && (
+                    <Link
+                        to={`/opportunities/${opportunityId}`}
+                        className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 mb-2"
+                    >
+                        <ArrowLeft className="h-4 w-4" /> Back to {opportunity.title}
+                    </Link>
+                )}
                 <h1 className="text-3xl font-bold">Extract</h1>
                 <p className="text-muted-foreground mt-2">
-                    Extract key information from one or more sources in your library, uploaded files, or text you
-                    already have into a single output. You can select or upload up to 20 files per extraction.
+                    {opportunityId
+                        ? `Extract key information from documents for ${opportunity?.solicitation_number || 'this opportunity'}.`
+                        : "Extract key information from one or more sources in your library, uploaded files, or text you already have into a single output. You can select or upload up to 20 files per extraction."
+                    }
                 </p>
             </div>
 

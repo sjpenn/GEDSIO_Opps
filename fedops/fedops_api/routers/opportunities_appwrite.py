@@ -495,3 +495,248 @@ async def sync_from_sam(
     except Exception as e:
         logger.error(f"Error syncing from SAM.gov: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-fetch-sam")
+async def auto_fetch_from_sam(force_refresh: bool = Query(False, description="Force refresh ignoring cache")):
+    """
+    Auto-fetch opportunities from SAM.gov when database is empty.
+    Uses company profile for search criteria if available, otherwise fetches all active opportunities.
+    
+    Implements 2-hour cache TTL to prevent excessive API calls.
+    Set force_refresh=true to bypass cache.
+    """
+    from fedops_core.services.additional_repositories import CompanyProfilesRepository
+    from fedops_core.services.cache_metadata import CacheMetadataRepository, DEFAULT_CACHE_TTL_SECONDS
+    from fedops_sources.sam_opportunities.adapter import SAMOpportunitiesConnector
+    from datetime import timedelta
+    
+    # Try to get company profile (optional)
+    profile_repo = CompanyProfilesRepository()
+    profiles_result = await profile_repo.list(limit=1)
+    profile = profiles_result.get("documents", [None])[0] if profiles_result.get("documents") else None
+    
+    # Build SAM.gov search params
+    today = datetime.now()
+    thirty_days_ago = today - timedelta(days=30)
+    
+    if profile:
+        # Use profile criteria for targeted search
+        sam_params = {
+            "naics": profile.get("target_naics", []),
+            "setAside": profile.get("target_set_asides", []),
+            "keywords": " ".join(profile.get("target_keywords", [])[:3]) if profile.get("target_keywords") else None,
+            "limit": 50,
+            "active": "yes",
+            "postedFrom": thirty_days_ago.strftime("%m/%d/%Y"),
+            "postedTo": today.strftime("%m/%d/%Y")
+        }
+        search_type = "profile-based"
+        company_name = profile.get("company_name", "your company")
+    else:
+        # No profile - fetch all active opportunities (generic search)
+        sam_params = {
+            "limit": 100,  # Fetch more when no filtering
+            "active": "yes",
+            "postedFrom": thirty_days_ago.strftime("%m/%d/%Y"),
+            "postedTo": today.strftime("%m/%d/%Y")
+        }
+        search_type = "generic"
+        company_name = None
+    
+    # Remove None values
+    sam_params = {k: v for k, v in sam_params.items() if v}
+    
+    # Check cache before fetching (unless force_refresh)
+    cache_repo = CacheMetadataRepository()
+    if not force_refresh:
+        cache_valid = await cache_repo.is_cache_valid(sam_params, ttl_seconds=DEFAULT_CACHE_TTL_SECONDS)
+        if cache_valid:
+            # Cache is still valid, return cached info
+            cache_entry = await cache_repo.get_cache_entry(sam_params)
+            time_remaining = await cache_repo.get_time_until_expiry(sam_params, DEFAULT_CACHE_TTL_SECONDS)
+            
+            return {
+                "status": "cache_hit",
+                "message": "Using cached data from recent SAM.gov fetch",
+                "opportunities_fetched": 0,
+                "opportunities_skipped": cache_entry.get("record_count", 0) if cache_entry else 0,
+                "errors": 0,
+                "search_type": search_type,
+                "cache_info": {
+                    "last_fetch": cache_entry.get("last_fetch_time") if cache_entry else None,
+                    "ttl_remaining_seconds": time_remaining,
+                    "cached_record_count": cache_entry.get("record_count", 0) if cache_entry else 0
+                },
+                "search_criteria": {
+                    "naics": profile.get("target_naics") if profile else "all",
+                    "set_asides": profile.get("target_set_asides") if profile else "all",
+                    "company": company_name,
+                    "date_range": f"{thirty_days_ago.strftime('%m/%d/%Y')} - {today.strftime('%m/%d/%Y')}"
+                }
+            }
+    
+    try:
+        # Initialize SAM.gov connector
+        sam_connector = SAMOpportunitiesConnector()
+        
+        opportunities_added = 0
+        opportunities_skipped = 0
+        errors = 0
+        repo = OpportunitiesRepository()
+        
+        async for opp_data in sam_connector.pull(sam_params):
+            try:
+                # Check if already exists by notice_id
+                notice_id = opp_data.get("notice_id")
+                if notice_id:
+                    existing = await repo.get_by_notice_id(notice_id)
+                    if existing:
+                        opportunities_skipped += 1
+                        continue
+                
+                # Create opportunity
+                await repo.create(opp_data)
+                opportunities_added += 1
+                
+            except Exception as e:
+                logger.error(f"Error adding opportunity {opp_data.get('notice_id')}: {e}")
+                errors += 1
+        
+        # Update cache metadata after successful fetch
+        await cache_repo.update_cache_entry(
+            fetch_params=sam_params,
+            record_count=opportunities_added + opportunities_skipped,
+            source="SAM.gov"
+        )
+        
+        return {
+            "status": "success",
+            "opportunities_fetched": opportunities_added,
+            "opportunities_skipped": opportunities_skipped,
+            "errors": errors,
+            "search_type": search_type,
+            "search_criteria": {
+                "naics": profile.get("target_naics") if profile else "all",
+                "set_asides": profile.get("target_set_asides") if profile else "all",
+                "company": company_name,
+                "date_range": f"{thirty_days_ago.strftime('%m/%d/%Y')} - {today.strftime('%m/%d/%Y')}"
+            }
+        }
+    
+    except ValueError as e:
+        # This will catch the "SAM_GOV_API_KEY is required" error
+        logger.error(f"Configuration error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"SAM.gov API configuration error: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to auto-fetch from SAM.gov: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"SAM.gov fetch failed: {str(e)}"
+        )
+
+"""
+Cache Management Endpoints
+
+These endpoints will be appended to opportunities_appwrite.py
+"""
+
+@router.get("/cache-status")
+async def get_cache_status():
+    """
+    Get current cache status for SAM.gov data fetches.
+    
+    Returns information about the most recent cache entry and time until expiry.
+    """
+    from fedops_core.services.additional_repositories import CompanyProfilesRepository
+    from fedops_core.services.cache_metadata import CacheMetadataRepository, DEFAULT_CACHE_TTL_SECONDS
+    from datetime import timedelta
+    
+    # Try to get company profile to determine cache key
+    profile_repo = CompanyProfilesRepository()
+    profiles_result = await profile_repo.list(limit=1)
+    profile = profiles_result.get("documents", [None])[0] if profiles_result.get("documents") else None
+    
+    # Build same params used in auto_fetch_from_sam
+    today = datetime.now()
+    thirty_days_ago = today - timedelta(days=30)
+    
+    if profile:
+        sam_params = {
+            "naics": profile.get("target_naics", []),
+            "setAside": profile.get("target_set_asides", []),
+            "keywords": " ".join(profile.get("target_keywords", [])[:3]) if profile.get("target_keywords") else None,
+            "limit": 50,
+            "active": "yes",
+            "postedFrom": thirty_days_ago.strftime("%m/%d/%Y"),
+            "postedTo": today.strftime("%m/%d/%Y")
+        }
+    else:
+        sam_params = {
+            "limit": 100,
+            "active": "yes",
+            "postedFrom": thirty_days_ago.strftime("%m/%d/%Y"),
+            "postedTo": today.strftime("%m/%d/%Y")
+        }
+    
+    sam_params = {k: v for k, v in sam_params.items() if v}
+    
+    cache_repo = CacheMetadataRepository()
+    cache_entry = await cache_repo.get_cache_entry(sam_params)
+    
+    if not cache_entry:
+        return {
+            "cache_exists": False,
+            "message": "No cache entry found for current search parameters"
+        }
+    
+    is_valid = await cache_repo.is_cache_valid(sam_params, DEFAULT_CACHE_TTL_SECONDS)
+    time_remaining = await cache_repo.get_time_until_expiry(sam_params, DEFAULT_CACHE_TTL_SECONDS)
+    
+    return {
+        "cache_exists": True,
+        "cache_valid": is_valid,
+        "last_fetch_time": cache_entry.get("last_fetch_time"),
+        "record_count": cache_entry.get("record_count"),
+        "ttl_seconds": DEFAULT_CACHE_TTL_SECONDS,
+        "ttl_remaining_seconds": time_remaining,
+        "fetch_params": cache_entry.get("fetch_params"),
+        "source": cache_entry.get("source")
+    }
+
+
+@router.post("/refresh-cache")
+async def refresh_cache():
+    """
+    Manually refresh SAM.gov data, bypassing cache.
+    
+    This will force a new fetch from SAM.gov regardless of cache TTL.
+    """
+    # Simply call auto_fetch_from_sam with force_refresh=True
+    result = await auto_fetch_from_sam(force_refresh=True)
+    return {
+        **result,
+        "message": "Cache manually refreshed from SAM.gov"
+    }
+
+
+@router.post("/invalidate-cache")
+async def invalidate_cache():
+    """
+    Invalidate all cache entries.
+    
+    This will clear all cached SAM.gov fetch metadata, forcing fresh fetches on next request.
+    """
+    from fedops_core.services.cache_metadata import CacheMetadataRepository
+    
+    cache_repo = CacheMetadataRepository()
+    deleted_count = await cache_repo.invalidate_all_caches()
+    
+    return {
+        "status": "success",
+        "message": f"Invalidated {deleted_count} cache entries",
+        "deleted_count": deleted_count
+    }

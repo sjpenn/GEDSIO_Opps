@@ -4,6 +4,7 @@ import type { Opportunity, OpportunityComment } from '../types'
 import FileManagementPage from './FileManagement'
 import { AgentControlPanel } from '@/components/AgentControlPanel'
 import DocumentSlideout from '@/components/DocumentSlideout'
+import { CacheStatus } from '@/components/CacheStatus'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -43,6 +44,17 @@ export default function OpportunitiesPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [naicsCounts, setNaicsCounts] = useState<Record<string, number>>({})
+
+  // Cache state for tracking browser-level caching
+  const [cacheInfo, setCacheInfo] = useState<{
+    isCached: boolean;
+    lastFetch: number | null;
+    timeRemaining: number | null;
+  }>({
+    isCached: false,
+    lastFetch: null,
+    timeRemaining: null
+  });
 
   // Document Slideout state
   const [slideoutOpen, setSlideoutOpen] = useState(false)
@@ -113,8 +125,9 @@ export default function OpportunitiesPage() {
   };
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [hasAttemptedAutoFetch, setHasAttemptedAutoFetch] = useState(false);
 
-  const fetchOpportunities = async () => {
+  const fetchOpportunities = async (autoFetchSAM: boolean = true) => {
     // Cancel any pending request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -151,6 +164,18 @@ export default function OpportunitiesPage() {
       console.log(`Successfully fetched ${data.items.length} opportunities`);
       setOpportunities(data.items);
       setTotal(data.total);
+
+      // Update cache info after successful fetch
+      setCacheInfo({
+        isCached: false,
+        lastFetch: Date.now(),
+        timeRemaining: 2 * 60 * 60 * 1000 // 2 hours in milliseconds
+      });
+
+      // NEW: Auto-fetch from SAM.gov if empty (works with or without profile)
+      if (data.items.length === 0 && autoFetchSAM && !hasAttemptedAutoFetch) {
+        await autoFetchFromSAM();
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // console.log('Fetch aborted');
@@ -162,6 +187,57 @@ export default function OpportunitiesPage() {
       if (abortControllerRef.current === controller) {
         setLoading(false);
       }
+    }
+  };
+
+  const autoFetchFromSAM = async () => {
+    try {
+      setHasAttemptedAutoFetch(true);
+      setLoading(true);
+      setError(null);
+
+      const message = profile && useProfileFilters
+        ? "No local opportunities found. Fetching from SAM.gov using your company profile..."
+        : "No local opportunities found. Fetching latest opportunities from SAM.gov...";
+
+      toast.info(message);
+
+      const response = await fetch('/api/v1/opportunities/auto-fetch-sam', {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to fetch from SAM.gov');
+      }
+
+      const result = await response.json();
+
+      if (result.opportunities_fetched > 0) {
+        toast.success(
+          `Found ${result.opportunities_fetched} opportunities from SAM.gov matching your profile!`
+        );
+
+        // Refresh opportunities list
+        await fetchOpportunities(false); // Don't auto-fetch again
+      } else {
+        toast.info("No new opportunities found on SAM.gov matching your profile.");
+      }
+
+    } catch (err) {
+      console.error('Auto-fetch from SAM.gov failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+
+      // Check if it's a SAM.gov infrastructure issue
+      if (errorMessage.includes('SUSPENDED') || errorMessage.includes('Runtime Error')) {
+        toast.error('SAM.gov API is currently unavailable. Please try again later.');
+      } else if (errorMessage.includes('SAM.gov API configuration error')) {
+        toast.error('SAM.gov API key not configured. Please contact administrator.');
+      } else {
+        toast.error(`Failed to fetch from SAM.gov: ${errorMessage}`);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -597,6 +673,15 @@ export default function OpportunitiesPage() {
 
         {/* Results List */}
         <div className="lg:col-span-3 space-y-4">
+          {/* Cache Status */}
+          {!loading && cacheInfo.lastFetch && (
+            <CacheStatus
+              cacheInfo={cacheInfo}
+              onRefresh={() => fetchOpportunities(false)}
+              loading={loading}
+            />
+          )}
+
           {loading && (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
               <Loader2 className="h-12 w-12 animate-spin text-primary" />

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,8 @@ import {
     BarChart3,
     RefreshCw,
     ChevronDown,
-    ChevronRight
+    ChevronRight,
+    ArrowLeft
 } from "lucide-react";
 
 interface ReviewItem {
@@ -34,8 +36,31 @@ interface ComplianceCheck {
 }
 
 const Review = () => {
+    const { opportunityId } = useParams<{ opportunityId: string }>();
     const [activeTab, setActiveTab] = useState("compliance");
     const [expandedSections, setExpandedSections] = useState<string[]>(["technical"]);
+    const [opportunity, setOpportunity] = useState<any>(null);
+
+    // Load opportunity details if we have an ID
+    useEffect(() => {
+        if (opportunityId) {
+            loadOpportunityData();
+        }
+    }, [opportunityId]);
+
+    const loadOpportunityData = async () => {
+        if (!opportunityId) return;
+
+        try {
+            const response = await fetch(`/api/v1/opportunities/${opportunityId}`);
+            if (response.ok) {
+                const oppData = await response.json();
+                setOpportunity(oppData);
+            }
+        } catch (error) {
+            console.error('Error loading opportunity:', error);
+        }
+    };
 
     const reviewItems: ReviewItem[] = [
         {
@@ -134,9 +159,20 @@ const Review = () => {
             {/* Page Header */}
             <div className="flex items-center justify-between">
                 <div>
+                    {opportunityId && opportunity && (
+                        <Link
+                            to={`/opportunities/${opportunityId}`}
+                            className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1 mb-2"
+                        >
+                            <ArrowLeft className="h-4 w-4" /> Back to {opportunity.title}
+                        </Link>
+                    )}
                     <h1 className="text-3xl font-bold">Review</h1>
                     <p className="text-muted-foreground mt-2">
-                        Check your proposal for compliance and quality against evaluation criteria.
+                        {opportunityId
+                            ? `Check your proposal for ${opportunity?.solicitation_number || 'this opportunity'} for compliance and quality.`
+                            : "Check your proposal for compliance and quality against evaluation criteria."
+                        }
                     </p>
                 </div>
                 <Button>

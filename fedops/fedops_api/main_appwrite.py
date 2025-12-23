@@ -30,7 +30,8 @@ from fedops_api.routers import (
     manual_upload_appwrite,
     resumes_appwrite,
     extraction_appwrite,
-    vector_store_appwrite
+    vector_store_appwrite,
+    pipeline_appwrite
 )
 
 # Import routers that don't need DB modification (stateless or external API based)
@@ -104,6 +105,11 @@ app.include_router(
     vector_store_appwrite.router,
     prefix="/api/v1/vector-store",
     tags=["vector_store"]
+)
+app.include_router(
+    pipeline_appwrite.router,
+    prefix="/api/v1/pipeline",
+    tags=["pipeline"]
 )
 
 # ============================================================================
